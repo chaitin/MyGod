@@ -17,7 +17,14 @@ func OpenPostgres(dsn string) (*gorm.DB, error) {
 }
 
 func AutoMigrate(db *gorm.DB) error {
-	if err := db.AutoMigrate(&User{}, &AdminSession{}, &UserSession{}); err != nil {
+	if err := db.AutoMigrate(
+		&User{},
+		&AdminSession{},
+		&UserSession{},
+		&Conversation{},
+		&ConversationMember{},
+		&AppSettings{},
+	); err != nil {
 		return fmt.Errorf("auto migrate: %w", err)
 	}
 

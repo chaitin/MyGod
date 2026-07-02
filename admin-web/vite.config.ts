@@ -8,7 +8,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     host: "0.0.0.0",
-    port: 56789,
+    port: 20060,
     proxy: {
       "/api/admin": {
         changeOrigin: true,

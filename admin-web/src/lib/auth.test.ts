@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
   AUTH_SESSION_KEY,
+  ADMIN_UNAUTHORIZED_EVENT,
   AdminLoginRequestError,
+  addAdminUnauthorizedListener,
+  adminFetch,
   adminLogin,
   clearAuthSession,
   isAuthenticated,
@@ -117,5 +120,37 @@ describe("auth", () => {
     clearAuthSession(storage)
 
     expect(isAuthenticated(storage)).toBe(false)
+  })
+
+  it("clears the authenticated session and emits an event when an admin API returns 401", async () => {
+    const eventTarget = new EventTarget()
+    const listener = vi.fn()
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 401 }))
+    eventTarget.addEventListener(ADMIN_UNAUTHORIZED_EVENT, listener)
+    setAuthSession(storage)
+
+    const response = await adminFetch("/api/admin/users", undefined, {
+      eventTarget,
+      fetcher,
+      storage,
+    })
+
+    expect(response.status).toBe(401)
+    expect(isAuthenticated(storage)).toBe(false)
+    expect(listener).toHaveBeenCalledOnce()
+  })
+
+  it("registers and removes admin unauthorized listeners", () => {
+    const eventTarget = new EventTarget()
+    const listener = vi.fn()
+    const unsubscribe = addAdminUnauthorizedListener(listener, eventTarget)
+
+    eventTarget.dispatchEvent(new Event(ADMIN_UNAUTHORIZED_EVENT))
+    unsubscribe()
+    eventTarget.dispatchEvent(new Event(ADMIN_UNAUTHORIZED_EVENT))
+
+    expect(listener).toHaveBeenCalledOnce()
   })
 })

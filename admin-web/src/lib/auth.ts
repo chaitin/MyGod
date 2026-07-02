@@ -1,4 +1,5 @@
 export const AUTH_SESSION_KEY = "mygod.authenticated"
+export const ADMIN_UNAUTHORIZED_EVENT = "mygod:admin-unauthorized"
 
 type AuthStorage = Pick<Storage, "getItem" | "removeItem" | "setItem">
 
@@ -47,6 +48,14 @@ function getBrowserStorage(): AuthStorage | null {
   }
 
   return window.localStorage
+}
+
+function getBrowserEventTarget(): EventTarget | null {
+  if (typeof window === "undefined") {
+    return null
+  }
+
+  return window
 }
 
 export async function adminLogin(
@@ -103,6 +112,38 @@ export function clearAuthSession(
   storage: AuthStorage | null = getBrowserStorage()
 ) {
   storage?.removeItem(AUTH_SESSION_KEY)
+}
+
+export async function adminFetch(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  options: {
+    eventTarget?: EventTarget | null
+    fetcher?: AuthFetch
+    storage?: AuthStorage | null
+  } = {}
+) {
+  const response = await (options.fetcher ?? fetch)(input, init)
+
+  if (response.status === 401) {
+    clearAuthSession(options.storage ?? getBrowserStorage())
+    const eventTarget = options.eventTarget ?? getBrowserEventTarget()
+
+    eventTarget?.dispatchEvent(new Event(ADMIN_UNAUTHORIZED_EVENT))
+  }
+
+  return response
+}
+
+export function addAdminUnauthorizedListener(
+  listener: EventListenerOrEventListenerObject,
+  eventTarget: EventTarget | null = getBrowserEventTarget()
+) {
+  eventTarget?.addEventListener(ADMIN_UNAUTHORIZED_EVENT, listener)
+
+  return () => {
+    eventTarget?.removeEventListener(ADMIN_UNAUTHORIZED_EVENT, listener)
+  }
 }
 
 async function readJson<T>(response: Response): Promise<T | undefined> {

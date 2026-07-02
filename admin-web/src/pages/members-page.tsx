@@ -17,6 +17,16 @@ import {
 import { useEffect, useId, useState, type FormEvent } from "react"
 import { toast } from "sonner"
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -94,6 +104,19 @@ type ResetPasswordDialogState = {
   open: boolean
 }
 
+type MemberActionConfirmationAction = "disable" | "enable" | "reset_password"
+
+type MemberActionConfirmationState = {
+  action: MemberActionConfirmationAction
+  member: Member
+}
+
+type MemberActionConfirmationCopy = {
+  confirmLabel: string
+  description: string
+  title: string
+}
+
 const pageSizeOptions = [50, 100, 200, 500] as const
 type PageSize = (typeof pageSizeOptions)[number]
 type PaginationItemModel =
@@ -142,6 +165,31 @@ function getResetPasswordSuccessDialogState(
     member,
     newPassword,
     open: true,
+  }
+}
+
+export function getMemberActionConfirmation(
+  action: MemberActionConfirmationAction
+): MemberActionConfirmationCopy {
+  switch (action) {
+    case "enable":
+      return {
+        confirmLabel: "确认启用",
+        description: "启用后，该成员可以重新登录系统。",
+        title: "确认启用成员",
+      }
+    case "disable":
+      return {
+        confirmLabel: "确认禁用",
+        description: "禁用后，该成员将无法继续登录，已有会话也会失效。",
+        title: "确认禁用成员",
+      }
+    case "reset_password":
+      return {
+        confirmLabel: "确认重置",
+        description: "重置后旧密码将失效，新密码只会显示一次。",
+        title: "确认重置密码",
+      }
   }
 }
 
@@ -282,6 +330,8 @@ export default function MembersPage() {
   const [memberTotal, setMemberTotal] = useState(0)
   const [members, setMembers] = useState<Member[]>([])
   const [membersReloadKey, setMembersReloadKey] = useState(0)
+  const [memberActionConfirmation, setMemberActionConfirmation] =
+    useState<MemberActionConfirmationState | null>(null)
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize: 50,
@@ -292,8 +342,8 @@ export default function MembersPage() {
   const [sorting, setSorting] = useState<SortingState>([])
   const [updatingMemberId, setUpdatingMemberId] = useState<string | null>(null)
   const columns = getColumns({
-    onResetPassword: handleResetMemberPassword,
-    onStatusChange: handleMemberStatusChange,
+    onResetPassword: handleRequestResetMemberPassword,
+    onStatusChange: handleRequestMemberStatusChange,
     updatingMemberId,
   })
   const serverPageCount = Math.max(
@@ -322,6 +372,9 @@ export default function MembersPage() {
   const page = pagination.pageIndex + 1
   const pageCount = table.getPageCount()
   const isAddMemberComplete = addMemberInitialPassword !== null
+  const memberActionConfirmationCopy = memberActionConfirmation
+    ? getMemberActionConfirmation(memberActionConfirmation.action)
+    : null
   const visiblePaginationItems = getVisiblePaginationItems(page, pageCount)
 
   useEffect(() => {
@@ -419,6 +472,12 @@ export default function MembersPage() {
     setResetPasswordDialog(getResetPasswordClosedDialogState())
   }
 
+  function handleMemberActionConfirmationOpenChange(open: boolean) {
+    if (!open) {
+      setMemberActionConfirmation(null)
+    }
+  }
+
   async function handleAddMemberSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
@@ -472,6 +531,45 @@ export default function MembersPage() {
       )
     } finally {
       setUpdatingMemberId(null)
+    }
+  }
+
+  function handleRequestMemberStatusChange(
+    member: Member,
+    status: Member["status"]
+  ) {
+    setMemberActionConfirmation({
+      action: status === "enabled" ? "enable" : "disable",
+      member,
+    })
+  }
+
+  function handleRequestResetMemberPassword(member: Member) {
+    setMemberActionConfirmation({
+      action: "reset_password",
+      member,
+    })
+  }
+
+  function handleConfirmMemberAction() {
+    const confirmation = memberActionConfirmation
+
+    if (!confirmation) {
+      return
+    }
+
+    setMemberActionConfirmation(null)
+
+    switch (confirmation.action) {
+      case "enable":
+        void handleMemberStatusChange(confirmation.member, "enabled")
+        return
+      case "disable":
+        void handleMemberStatusChange(confirmation.member, "disabled")
+        return
+      case "reset_password":
+        void handleResetMemberPassword(confirmation.member)
+        return
     }
   }
 
@@ -671,6 +769,28 @@ export default function MembersPage() {
               </div>
             </DialogContent>
           </Dialog>
+
+          <AlertDialog
+            onOpenChange={handleMemberActionConfirmationOpenChange}
+            open={memberActionConfirmation !== null}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  {memberActionConfirmationCopy?.title}
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  {memberActionConfirmationCopy?.description}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>取消</AlertDialogCancel>
+                <AlertDialogAction onClick={handleConfirmMemberAction}>
+                  {memberActionConfirmationCopy?.confirmLabel}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
 

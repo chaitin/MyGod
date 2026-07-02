@@ -11,6 +11,38 @@ definitions:
         example: admin
         type: string
     type: object
+  httpserver.conversationMemberResponse:
+    properties:
+      email:
+        example: user@example.com
+        type: string
+      id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      name:
+        example: 张三
+        type: string
+      role:
+        example: member
+        type: string
+    type: object
+  httpserver.createGroupConversationRequest:
+    properties:
+      member_ids:
+        example:
+        - 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        items:
+          type: string
+        type: array
+      name:
+        example: 产品讨论组
+        type: string
+    type: object
+  httpserver.createGroupConversationResponse:
+    properties:
+      conversation:
+        $ref: '#/definitions/httpserver.groupConversationResponse'
+    type: object
   httpserver.createUserRequest:
     properties:
       email:
@@ -42,6 +74,46 @@ definitions:
       success:
         example: false
         type: boolean
+    type: object
+  httpserver.groupConversationResponse:
+    properties:
+      created_at:
+        format: date-time
+        type: string
+      created_by_user_id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      member_count:
+        example: 3
+        type: integer
+      members:
+        items:
+          $ref: '#/definitions/httpserver.conversationMemberResponse'
+        type: array
+      name:
+        example: 产品讨论组
+        type: string
+      posting_policy:
+        example: open
+        type: string
+      status:
+        example: active
+        type: string
+      type:
+        example: group
+        type: string
+    type: object
+  httpserver.infoSettingsResponse:
+    properties:
+      app_name:
+        example: MyGod
+        type: string
+      organization_name:
+        example: 长亭科技
+        type: string
     type: object
   httpserver.listUsersResponse:
     properties:
@@ -88,6 +160,15 @@ definitions:
       success:
         example: true
         type: boolean
+    type: object
+  httpserver.updateInfoSettingsRequest:
+    properties:
+      app_name:
+        example: MyGod
+        type: string
+      organization_name:
+        example: 长亭科技
+        type: string
     type: object
   httpserver.updateUserStatusResponse:
     properties:
@@ -162,6 +243,70 @@ paths:
       summary: 管理员登录
       tags:
       - 管理员认证
+  /api/admin/settings/info:
+    get:
+      description: 管理员读取 App 名称和组织名称。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httpserver.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/httpserver.infoSettingsResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+      summary: 获取系统基础信息设置
+      tags:
+      - 管理员设置
+    put:
+      consumes:
+      - application/json
+      description: 管理员更新 App 名称和组织名称。
+      parameters:
+      - description: 基础信息设置
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/httpserver.updateInfoSettingsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httpserver.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/httpserver.infoSettingsResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+      summary: 更新系统基础信息设置
+      tags:
+      - 管理员设置
   /api/admin/users:
     get:
       description: 管理员列出普通用户。keyword 会同时搜索邮箱和名称；sort 仅支持 email、created_at、status；order
@@ -415,4 +560,65 @@ paths:
       summary: 普通用户登录
       tags:
       - 客户端认证
+  /api/client/conversations/groups:
+    post:
+      consumes:
+      - application/json
+      description: 普通用户创建群聊。当前登录用户会自动成为群主，member_ids 只需要传其他成员。
+      parameters:
+      - description: 群聊信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/httpserver.createGroupConversationRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/httpserver.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/httpserver.createGroupConversationResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+      summary: 创建群聊
+      tags:
+      - 客户端会话
+  /api/client/info:
+    get:
+      description: 返回客户端启动和登录页展示所需的公开信息，不需要登录。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httpserver.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/httpserver.infoSettingsResponse'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+      summary: 获取客户端公开信息
+      tags:
+      - 客户端信息
 swagger: "2.0"

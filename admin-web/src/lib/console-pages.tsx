@@ -1,4 +1,4 @@
-import { UsersRoundIcon } from "lucide-react"
+import { SettingsIcon, UsersRoundIcon } from "lucide-react"
 
 type ConsoleChildPage = {
   path: string
@@ -17,6 +17,11 @@ export const consolePages: ConsolePage[] = [
     path: "/members",
     title: "成员管理",
     icon: <UsersRoundIcon />,
+  },
+  {
+    path: "/settings",
+    title: "系统设置",
+    icon: <SettingsIcon />,
   },
 ] as const
 

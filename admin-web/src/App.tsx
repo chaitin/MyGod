@@ -1,14 +1,19 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Navigate, Route, Routes, useLocation } from "react-router-dom"
 
 import Console from "@/console"
-import { isAuthenticated } from "@/lib/auth"
+import { addAdminUnauthorizedListener, isAuthenticated } from "@/lib/auth"
 import { defaultConsolePage } from "@/lib/console-pages"
 import LoginPage from "@/pages/login-page"
 import MembersPage from "@/pages/members-page"
+import SettingsPage from "@/pages/settings-page"
 
 export function App() {
   const [authenticated, setAuthenticated] = useState(() => isAuthenticated())
+
+  useEffect(() => {
+    return addAdminUnauthorizedListener(() => setAuthenticated(false))
+  }, [])
 
   return (
     <Routes>
@@ -21,9 +26,13 @@ export function App() {
         }
         path="/login"
       />
-      <Route element={<ProtectedConsole authenticated={authenticated} />} path="/">
+      <Route
+        element={<ProtectedConsole authenticated={authenticated} />}
+        path="/"
+      >
         <Route element={<Navigate replace to={defaultConsolePage} />} index />
         <Route element={<MembersPage />} path="members" />
+        <Route element={<SettingsPage />} path="settings" />
       </Route>
       <Route
         element={

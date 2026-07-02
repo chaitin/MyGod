@@ -72,6 +72,112 @@
                 }
             }
         },
+        "/api/admin/settings/info": {
+            "get": {
+                "description": "管理员读取 App 名称和组织名称。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "管理员设置"
+                ],
+                "summary": "获取系统基础信息设置",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/httpserver.infoSettingsResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "管理员更新 App 名称和组织名称。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "管理员设置"
+                ],
+                "summary": "更新系统基础信息设置",
+                "parameters": [
+                    {
+                        "description": "基础信息设置",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.updateInfoSettingsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/httpserver.infoSettingsResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
         "/api/admin/users": {
             "get": {
                 "description": "管理员列出普通用户。keyword 会同时搜索邮箱和名称；sort 仅支持 email、created_at、status；order 仅支持 asc、desc。",
@@ -480,6 +586,108 @@
                     }
                 }
             }
+        },
+        "/api/client/conversations/groups": {
+            "post": {
+                "description": "普通用户创建群聊。当前登录用户会自动成为群主，member_ids 只需要传其他成员。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端会话"
+                ],
+                "summary": "创建群聊",
+                "parameters": [
+                    {
+                        "description": "群聊信息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.createGroupConversationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/httpserver.createGroupConversationResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/client/info": {
+            "get": {
+                "description": "返回客户端启动和登录页展示所需的公开信息，不需要登录。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端信息"
+                ],
+                "summary": "获取客户端公开信息",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/httpserver.infoSettingsResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -497,6 +705,53 @@
                 "email": {
                     "type": "string",
                     "example": "admin"
+                }
+            }
+        },
+        "httpserver.conversationMemberResponse": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "user@example.com"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "张三"
+                },
+                "role": {
+                    "type": "string",
+                    "example": "member"
+                }
+            }
+        },
+        "httpserver.createGroupConversationRequest": {
+            "type": "object",
+            "properties": {
+                "member_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                    ]
+                },
+                "name": {
+                    "type": "string",
+                    "example": "产品讨论组"
+                }
+            }
+        },
+        "httpserver.createGroupConversationResponse": {
+            "type": "object",
+            "properties": {
+                "conversation": {
+                    "$ref": "#/definitions/httpserver.groupConversationResponse"
                 }
             }
         },
@@ -545,6 +800,62 @@
                 "success": {
                     "type": "boolean",
                     "example": false
+                }
+            }
+        },
+        "httpserver.groupConversationResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "created_by_user_id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "member_count": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "members": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/httpserver.conversationMemberResponse"
+                    }
+                },
+                "name": {
+                    "type": "string",
+                    "example": "产品讨论组"
+                },
+                "posting_policy": {
+                    "type": "string",
+                    "example": "open"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "active"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "group"
+                }
+            }
+        },
+        "httpserver.infoSettingsResponse": {
+            "type": "object",
+            "properties": {
+                "app_name": {
+                    "type": "string",
+                    "example": "MyGod"
+                },
+                "organization_name": {
+                    "type": "string",
+                    "example": "长亭科技"
                 }
             }
         },
@@ -611,6 +922,19 @@
                 "success": {
                     "type": "boolean",
                     "example": true
+                }
+            }
+        },
+        "httpserver.updateInfoSettingsRequest": {
+            "type": "object",
+            "properties": {
+                "app_name": {
+                    "type": "string",
+                    "example": "MyGod"
+                },
+                "organization_name": {
+                    "type": "string",
+                    "example": "长亭科技"
                 }
             }
         },

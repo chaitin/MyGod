@@ -11,8 +11,9 @@
 - 创建普通用户时自动生成随机初始密码。
 - 普通用户登录。
 - 服务端具备配置文件机制。
+- 普通用户创建群聊会话。
 
-暂不实现聊天、通讯录、AI 助手、WebSocket、任务、Agent、外部 IM 接入和复杂权限。这些能力只在架构上预留边界。
+当前只实现群聊会话创建，不实现消息发送、聊天历史、WebSocket、AI 助手回复、任务、Agent、外部 IM 接入和复杂权限。这些能力只在架构上预留边界。
 
 ## 技术选型
 
@@ -167,11 +168,12 @@ git config core.hooksPath .githooks
 - 管理员 session 存在 `admin_sessions`。
 - 普通用户 session 存在 `user_sessions`。
 
-分开存储可以让管理员登录态和普通用户登录态的生命周期、清理策略和后续权限扩展更清晰。当前阶段仍然使用同一个 cookie 名称 `session`。管理员 API 只查询 `admin_sessions`，普通用户 API 只查询 `user_sessions`。
+分开存储可以让管理员登录态和普通用户登录态的生命周期、清理策略和后续权限扩展更清晰。管理员和普通用户使用不同的 cookie 名称，避免两个面板在同一浏览器中登录时互相覆盖。管理员 API 只查询 `admin_sessions`，普通用户 API 只查询 `user_sessions`。
 
 Cookie 建议：
 
-- 名称：`session`
+- 管理员名称：`admin_session`
+- 普通用户名称：`user_session`
 - `HttpOnly: true`
 - `SameSite: Lax`
 - `Secure` 可以先由运行环境判断或后续再配置
@@ -210,7 +212,8 @@ admin:
 
 - HTTP 监听地址默认使用 `:20080`。
 - 管理员账号固定为 `admin`。
-- Session cookie 名称固定为 `session`。
+- 管理员 Session cookie 名称固定为 `admin_session`。
+- 普通用户 Session cookie 名称固定为 `user_session`。
 - Session 过期时间固定为 7 天。
 - 随机初始密码长度固定为 16 位。
 
@@ -269,6 +272,52 @@ admin:
 - `user_id` 指向 `users.id`。
 - 普通用户被禁用后，对应的 user session 应被视为不可用。
 
+### conversations
+
+统一会话表，用于承载一对一、群聊和 AI 会话。当前先实现 `group`。
+
+字段建议：
+
+- `id`
+- `kind`：`direct`、`group`、`assistant`
+- `name`
+- `created_by_user_id`
+- `status`：`active`、`dissolved`
+- `posting_policy`：`open`、`muted`
+- `created_at`
+- `updated_at`
+- `dissolved_at`
+- `last_message_id`
+- `last_message_at`
+
+约束：
+
+- `created_by_user_id` 指向 `users.id`，表示创建者这个历史事实。
+- 群聊创建时 `status = active`，`posting_policy = open`。
+- 群主不放在 `conversations` 表中，而是通过 `conversation_members.role = owner` 表达。
+
+### conversation_members
+
+会话成员表，记录成员身份和该成员在会话里的角色。
+
+字段建议：
+
+- `conversation_id`
+- `member_type`：`user`、`assistant`
+- `member_id`
+- `user_member_id`：数据库生成列，仅当 `member_type = user` 时等于 `member_id`
+- `role`：`owner`、`admin`、`member`
+- `joined_at`
+- `left_at`
+- `last_read_message_id`
+
+约束：
+
+- 当前群聊只写入 `member_type = user`。
+- `user_member_id` 指向 `users.id`，用数据库约束保证 user 成员必须存在。
+- 创建者成员角色为 `owner`，其他成员角色为 `member`。
+- 通过部分唯一索引保证每个未退出的会话最多只有一个 `owner`。
+
 ## Migration 策略
 
 使用 Goose 管理 migration。
@@ -285,6 +334,8 @@ server/migrations/
 00001_create_users.sql
 00002_create_admin_sessions.sql
 00003_create_user_sessions.sql
+00004_create_app_settings.sql
+00005_create_conversations.sql
 ```
 
 服务端启动时不自动执行 destructive migration。开发环境可以通过命令执行：

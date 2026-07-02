@@ -1,3 +1,5 @@
+import { adminFetch } from "@/lib/auth"
+
 type AdminUsersFetch = (
   input: RequestInfo | URL,
   init?: RequestInit
@@ -83,7 +85,7 @@ export class AdminUserRequestError extends Error {
 
 export async function listAdminUsers(
   input: ListAdminUsersInput = {},
-  fetcher: AdminUsersFetch = fetch
+  fetcher: AdminUsersFetch = adminFetch
 ) {
   const params = new URLSearchParams()
   const keyword = input.keyword?.trim()
@@ -144,7 +146,7 @@ export async function listAdminUsers(
 
 export async function createAdminUser(
   input: CreateAdminUserInput,
-  fetcher: AdminUsersFetch = fetch
+  fetcher: AdminUsersFetch = adminFetch
 ) {
   const response = await fetcher("/api/admin/users", {
     body: JSON.stringify({
@@ -182,7 +184,7 @@ export async function createAdminUser(
 
 export async function resetAdminUserPassword(
   id: string,
-  fetcher: AdminUsersFetch = fetch
+  fetcher: AdminUsersFetch = adminFetch
 ) {
   const response = await fetcher(
     `/api/admin/users/${encodeURIComponent(id)}/reset-password`,
@@ -220,7 +222,7 @@ export async function resetAdminUserPassword(
 export async function updateAdminUserStatus(
   id: string,
   status: AdminUser["status"],
-  fetcher: AdminUsersFetch = fetch
+  fetcher: AdminUsersFetch = adminFetch
 ) {
   const action = status === "active" ? "enable" : "disable"
   const response = await fetcher(

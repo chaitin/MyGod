@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	sessionCookieName = "session"
-	sessionTTL        = 7 * 24 * time.Hour
+	adminSessionCookieName = "admin_session"
+	userSessionCookieName  = "user_session"
+	sessionTTL             = 7 * 24 * time.Hour
 )
 
 type Server struct {
@@ -42,8 +43,14 @@ func NewRouter(db *gorm.DB, cfg config.Config) *echo.Echo {
 	}
 	router.POST("/api/admin/auth/login", server.adminLogin)
 	router.POST("/api/client/auth/login", server.userLogin)
+	router.GET("/api/client/info", server.clientInfo)
+
+	client := router.Group("/api/client", server.requireUserSession)
+	client.POST("/conversations/groups", server.createGroupConversation)
 
 	admin := router.Group("/api/admin", server.requireAdminSession)
+	admin.GET("/settings/info", server.getInfoSettings)
+	admin.PUT("/settings/info", server.updateInfoSettings)
 	admin.GET("/users", server.listUsers)
 	admin.POST("/users", server.createUser)
 	admin.POST("/users/:id/disable", server.disableUser)

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import {
   AdminUserRequestError,
@@ -7,8 +7,31 @@ import {
   resetAdminUserPassword,
   updateAdminUserStatus,
 } from "@/lib/admin-users"
+import {
+  ADMIN_UNAUTHORIZED_EVENT,
+  AUTH_SESSION_KEY,
+  setAuthSession,
+} from "@/lib/auth"
+
+function createStorage() {
+  const values = new Map<string, string>()
+
+  return {
+    getItem: (key: string) => values.get(key) ?? null,
+    removeItem: (key: string) => {
+      values.delete(key)
+    },
+    setItem: (key: string, value: string) => {
+      values.set(key, value)
+    },
+  }
+}
 
 describe("admin users", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it("lists members through the admin users API", async () => {
     const fetcher = vi.fn().mockResolvedValue(
       new Response(
@@ -164,6 +187,47 @@ describe("admin users", () => {
       message: "邮箱已存在",
       name: "AdminUserRequestError",
     } satisfies AdminUserRequestError)
+  })
+
+  it("uses the shared admin fetcher for unauthorized admin API responses", async () => {
+    const storage = createStorage()
+    const eventTarget = new EventTarget()
+    const listener = vi.fn()
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: false,
+          error: {
+            code: "unauthorized",
+            message: "未登录",
+          },
+        }),
+        {
+          headers: {
+            "content-type": "application/json",
+          },
+          status: 401,
+        }
+      )
+    )
+    eventTarget.addEventListener(ADMIN_UNAUTHORIZED_EVENT, listener)
+    setAuthSession(storage)
+    vi.stubGlobal(
+      "window",
+      Object.assign(eventTarget, {
+        localStorage: storage,
+      })
+    )
+    vi.stubGlobal("fetch", fetcher)
+
+    await expect(listAdminUsers()).rejects.toMatchObject({
+      code: "unauthorized",
+      message: "未登录",
+      name: "AdminUserRequestError",
+    } satisfies AdminUserRequestError)
+
+    expect(storage.getItem(AUTH_SESSION_KEY)).toBeNull()
+    expect(listener).toHaveBeenCalledOnce()
   })
 
   it("enables a member through the admin users API", async () => {

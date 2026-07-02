@@ -113,7 +113,7 @@ func (s *Server) adminLogin(c echo.Context) error {
 		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
 	}
 
-	setSessionCookie(c, token, session.ExpiresAt)
+	setSessionCookie(c, adminSessionCookieName, token, session.ExpiresAt)
 	return success(c, http.StatusOK, adminLoginResponse{
 		Admin: adminResponse{
 			Email: "admin",
@@ -398,7 +398,7 @@ func (s *Server) userLogin(c echo.Context) error {
 		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
 	}
 
-	setSessionCookie(c, token, session.ExpiresAt)
+	setSessionCookie(c, userSessionCookieName, token, session.ExpiresAt)
 	return success(c, http.StatusOK, userLoginResponse{
 		User: newUserResponse(user),
 	})
