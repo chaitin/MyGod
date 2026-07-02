@@ -14,7 +14,14 @@ import {
   MoreHorizontalIcon,
   PlusIcon,
 } from "lucide-react"
-import { useEffect, useId, useState, type FormEvent } from "react"
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+  type FormEvent,
+} from "react"
 import { toast } from "sonner"
 
 import {
@@ -27,6 +34,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -136,6 +144,7 @@ const columnLabels: Record<string, string> = {
   email: "邮箱",
   joinedAt: "加入时间",
   name: "名称",
+  nickname: "昵称",
   phone: "手机号",
   status: "状态",
 }
@@ -197,7 +206,7 @@ export function getMemberActionConfirmation(
   }
 }
 
-function getColumns({
+export function getColumns({
   onResetPassword,
   onStatusChange,
   updatingMemberId,
@@ -233,6 +242,18 @@ function getColumns({
       ),
     },
     {
+      accessorKey: "name",
+      header: "名称",
+      cell: ({ row }) => <MemberIdentity member={row.original} />,
+    },
+    {
+      accessorKey: "nickname",
+      header: "昵称",
+      cell: ({ row }) => (
+        <MemberOptionalText value={row.original.nickname} />
+      ),
+    },
+    {
       accessorKey: "email",
       header: ({ column }) => (
         <Button
@@ -248,14 +269,11 @@ function getColumns({
       cell: ({ row }) => row.getValue("email"),
     },
     {
-      accessorKey: "name",
-      header: "名称",
-      cell: ({ row }) => row.getValue("name"),
-    },
-    {
       accessorKey: "phone",
       header: "手机号",
-      cell: ({ row }) => formatMemberPhone(row.original.phone),
+      cell: ({ row }) => (
+        <MemberOptionalText value={formatMemberPhone(row.original.phone)} />
+      ),
     },
     {
       accessorKey: "joinedAt",
@@ -278,11 +296,10 @@ function getColumns({
         <Button
           className="-ml-2"
           onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-          size="sm"
+          size="xs"
           variant="ghost"
         >
           状态
-          <ArrowUpDownIcon data-icon="inline-end" />
         </Button>
       ),
       cell: ({ row }) => {
@@ -321,20 +338,8 @@ function getColumns({
 }
 
 export default function MembersPage() {
-  const addMemberEmailId = useId()
-  const addMemberNameId = useId()
-  const addMemberPasswordId = useId()
-  const addMemberPhoneId = useId()
   const resetPasswordEmailId = useId()
   const resetPasswordValueId = useId()
-  const [addMemberEmail, setAddMemberEmail] = useState("")
-  const [addMemberInitialPassword, setAddMemberInitialPassword] = useState<
-    string | null
-  >(null)
-  const [addMemberName, setAddMemberName] = useState("")
-  const [addMemberOpen, setAddMemberOpen] = useState(false)
-  const [addMemberPhone, setAddMemberPhone] = useState("")
-  const [isAddingMember, setIsAddingMember] = useState(false)
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({})
   const [isLoadingMembers, setIsLoadingMembers] = useState(true)
   const [keyword, setKeyword] = useState("")
@@ -352,11 +357,34 @@ export default function MembersPage() {
     useState<ResetPasswordDialogState>(getResetPasswordClosedDialogState)
   const [sorting, setSorting] = useState<SortingState>([])
   const [updatingMemberId, setUpdatingMemberId] = useState<string | null>(null)
-  const columns = getColumns({
-    onResetPassword: handleRequestResetMemberPassword,
-    onStatusChange: handleRequestMemberStatusChange,
-    updatingMemberId,
-  })
+  const handleRequestMemberStatusChange = useCallback(
+    (member: Member, status: Member["status"]) => {
+      setMemberActionConfirmation({
+        action: status === "enabled" ? "enable" : "disable",
+        member,
+      })
+    },
+    []
+  )
+  const handleRequestResetMemberPassword = useCallback((member: Member) => {
+    setMemberActionConfirmation({
+      action: "reset_password",
+      member,
+    })
+  }, [])
+  const columns = useMemo(
+    () =>
+      getColumns({
+        onResetPassword: handleRequestResetMemberPassword,
+        onStatusChange: handleRequestMemberStatusChange,
+        updatingMemberId,
+      }),
+    [
+      handleRequestMemberStatusChange,
+      handleRequestResetMemberPassword,
+      updatingMemberId,
+    ]
+  )
   const serverPageCount = Math.max(
     1,
     Math.ceil(memberTotal / pagination.pageSize)
@@ -382,7 +410,6 @@ export default function MembersPage() {
   })
   const page = pagination.pageIndex + 1
   const pageCount = table.getPageCount()
-  const isAddMemberComplete = addMemberInitialPassword !== null
   const memberActionConfirmationCopy = memberActionConfirmation
     ? getMemberActionConfirmation(memberActionConfirmation.action)
     : null
@@ -453,21 +480,6 @@ export default function MembersPage() {
     })
   }
 
-  function resetAddMemberForm() {
-    setAddMemberEmail("")
-    setAddMemberInitialPassword(null)
-    setAddMemberName("")
-    setAddMemberPhone("")
-  }
-
-  function handleAddMemberOpenChange(open: boolean) {
-    if (open) {
-      resetAddMemberForm()
-    }
-
-    setAddMemberOpen(open)
-  }
-
   function handleResetPasswordOpenChange(open: boolean) {
     if (open) {
       setResetPasswordDialog((currentDialog) => ({
@@ -490,31 +502,12 @@ export default function MembersPage() {
     }
   }
 
-  async function handleAddMemberSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-
-    setIsAddingMember(true)
-
-    try {
-      const created = await createAdminUser({
-        email: addMemberEmail,
-        name: addMemberName,
-        phone: addMemberPhone,
-      })
-
-      setAddMemberInitialPassword(created.initialPassword)
-      setPagination((currentPagination) => ({
-        ...currentPagination,
-        pageIndex: 0,
-      }))
-      setMembersReloadKey((currentKey) => currentKey + 1)
-    } catch (error) {
-      toast.error(
-        error instanceof AdminUserRequestError ? error.message : "添加成员失败"
-      )
-    } finally {
-      setIsAddingMember(false)
-    }
+  function handleMemberCreated() {
+    setPagination((currentPagination) => ({
+      ...currentPagination,
+      pageIndex: 0,
+    }))
+    setMembersReloadKey((currentKey) => currentKey + 1)
   }
 
   async function handleMemberStatusChange(
@@ -545,23 +538,6 @@ export default function MembersPage() {
     } finally {
       setUpdatingMemberId(null)
     }
-  }
-
-  function handleRequestMemberStatusChange(
-    member: Member,
-    status: Member["status"]
-  ) {
-    setMemberActionConfirmation({
-      action: status === "enabled" ? "enable" : "disable",
-      member,
-    })
-  }
-
-  function handleRequestResetMemberPassword(member: Member) {
-    setMemberActionConfirmation({
-      action: "reset_password",
-      member,
-    })
   }
 
   function handleConfirmMemberAction() {
@@ -653,91 +629,7 @@ export default function MembersPage() {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <Dialog onOpenChange={handleAddMemberOpenChange} open={addMemberOpen}>
-            <DialogTrigger render={<Button />}>
-              <PlusIcon data-icon="inline-start" />
-              添加成员
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>添加成员</DialogTitle>
-              </DialogHeader>
-              <form
-                className="flex flex-col gap-6"
-                onSubmit={handleAddMemberSubmit}
-              >
-                <FieldGroup className="gap-4">
-                  <Field>
-                    <FieldLabel htmlFor={addMemberEmailId}>邮箱</FieldLabel>
-                    <Input
-                      autoComplete="email"
-                      disabled={isAddingMember}
-                      id={addMemberEmailId}
-                      onChange={(event) =>
-                        setAddMemberEmail(event.target.value)
-                      }
-                      readOnly={isAddMemberComplete}
-                      required
-                      type="email"
-                      value={addMemberEmail}
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor={addMemberNameId}>名称</FieldLabel>
-                    <Input
-                      autoComplete="name"
-                      disabled={isAddingMember}
-                      id={addMemberNameId}
-                      onChange={(event) => setAddMemberName(event.target.value)}
-                      readOnly={isAddMemberComplete}
-                      required
-                      value={addMemberName}
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor={addMemberPhoneId}>手机号</FieldLabel>
-                    <Input
-                      autoComplete="tel"
-                      disabled={isAddingMember}
-                      id={addMemberPhoneId}
-                      onChange={(event) =>
-                        setAddMemberPhone(event.target.value)
-                      }
-                      readOnly={isAddMemberComplete}
-                      value={addMemberPhone}
-                    />
-                  </Field>
-                  {isAddMemberComplete && (
-                    <Field>
-                      <FieldLabel htmlFor={addMemberPasswordId}>
-                        初始化密码
-                      </FieldLabel>
-                      <Input
-                        id={addMemberPasswordId}
-                        readOnly
-                        value={addMemberInitialPassword}
-                      />
-                    </Field>
-                  )}
-                </FieldGroup>
-                <DialogFooter>
-                  {isAddMemberComplete ? (
-                    <Button
-                      onClick={() => handleAddMemberOpenChange(false)}
-                      type="button"
-                    >
-                      关闭
-                    </Button>
-                  ) : (
-                    <Button disabled={isAddingMember} type="submit">
-                      {isAddingMember && <Spinner data-icon="inline-start" />}
-                      提交
-                    </Button>
-                  )}
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
+          <AddMemberDialog onMemberCreated={handleMemberCreated} />
 
           <Dialog
             onOpenChange={handleResetPasswordOpenChange}
@@ -820,20 +712,14 @@ export default function MembersPage() {
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-lg border bg-background">
-        <Table>
+      <div className={getMembersTableContainerClassName()}>
+        <Table className={getMembersTableClassName()}>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
                   <TableHead
-                    className={
-                      header.column.id === "select"
-                        ? "w-10"
-                        : header.column.id === "actions"
-                          ? "w-24 pr-6"
-                          : undefined
-                    }
+                    className={getMemberColumnClassName(header.column.id)}
                     key={header.id}
                   >
                     {header.isPlaceholder
@@ -860,9 +746,7 @@ export default function MembersPage() {
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell
-                      className={
-                        cell.column.id === "actions" ? "w-24 pr-6" : undefined
-                      }
+                      className={getMemberColumnClassName(cell.column.id)}
                       key={cell.id}
                     >
                       {flexRender(
@@ -932,6 +816,143 @@ export default function MembersPage() {
   )
 }
 
+function AddMemberDialog({
+  onMemberCreated,
+}: {
+  onMemberCreated: () => void
+}) {
+  const addMemberEmailId = useId()
+  const addMemberNameId = useId()
+  const addMemberPasswordId = useId()
+  const addMemberPhoneId = useId()
+  const [addMemberEmail, setAddMemberEmail] = useState("")
+  const [addMemberInitialPassword, setAddMemberInitialPassword] = useState<
+    string | null
+  >(null)
+  const [addMemberName, setAddMemberName] = useState("")
+  const [addMemberOpen, setAddMemberOpen] = useState(false)
+  const [addMemberPhone, setAddMemberPhone] = useState("")
+  const [isAddingMember, setIsAddingMember] = useState(false)
+  const isAddMemberComplete = addMemberInitialPassword !== null
+
+  function resetAddMemberForm() {
+    setAddMemberEmail("")
+    setAddMemberInitialPassword(null)
+    setAddMemberName("")
+    setAddMemberPhone("")
+  }
+
+  function handleAddMemberOpenChange(open: boolean) {
+    if (open) {
+      resetAddMemberForm()
+    }
+
+    setAddMemberOpen(open)
+  }
+
+  async function handleAddMemberSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    setIsAddingMember(true)
+
+    try {
+      const created = await createAdminUser({
+        email: addMemberEmail,
+        name: addMemberName,
+        phone: addMemberPhone,
+      })
+
+      setAddMemberInitialPassword(created.initialPassword)
+      onMemberCreated()
+    } catch (error) {
+      toast.error(
+        error instanceof AdminUserRequestError ? error.message : "添加成员失败"
+      )
+    } finally {
+      setIsAddingMember(false)
+    }
+  }
+
+  return (
+    <Dialog onOpenChange={handleAddMemberOpenChange} open={addMemberOpen}>
+      <DialogTrigger render={<Button />}>
+        <PlusIcon data-icon="inline-start" />
+        添加成员
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>添加成员</DialogTitle>
+        </DialogHeader>
+        <form className="flex flex-col gap-6" onSubmit={handleAddMemberSubmit}>
+          <FieldGroup className="gap-4">
+            <Field>
+              <FieldLabel htmlFor={addMemberEmailId}>邮箱</FieldLabel>
+              <Input
+                autoComplete="email"
+                disabled={isAddingMember}
+                id={addMemberEmailId}
+                onChange={(event) => setAddMemberEmail(event.target.value)}
+                readOnly={isAddMemberComplete}
+                required
+                type="email"
+                value={addMemberEmail}
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor={addMemberNameId}>名称</FieldLabel>
+              <Input
+                autoComplete="name"
+                disabled={isAddingMember}
+                id={addMemberNameId}
+                onChange={(event) => setAddMemberName(event.target.value)}
+                readOnly={isAddMemberComplete}
+                required
+                value={addMemberName}
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor={addMemberPhoneId}>手机号</FieldLabel>
+              <Input
+                autoComplete="tel"
+                disabled={isAddingMember}
+                id={addMemberPhoneId}
+                onChange={(event) => setAddMemberPhone(event.target.value)}
+                readOnly={isAddMemberComplete}
+                value={addMemberPhone}
+              />
+            </Field>
+            {isAddMemberComplete && (
+              <Field>
+                <FieldLabel htmlFor={addMemberPasswordId}>初始化密码</FieldLabel>
+                <Input
+                  id={addMemberPasswordId}
+                  readOnly
+                  value={addMemberInitialPassword}
+                />
+              </Field>
+            )}
+          </FieldGroup>
+          <DialogFooter>
+            {isAddMemberComplete ? (
+              <Button
+                onClick={() => handleAddMemberOpenChange(false)}
+                type="button"
+              >
+                关闭
+              </Button>
+            ) : (
+              <Button disabled={isAddingMember} type="submit">
+                {isAddingMember && <Spinner data-icon="inline-start" />}
+                提交
+              </Button>
+            )}
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function MemberActions({
   isUpdating,
   member,
@@ -983,8 +1004,63 @@ function MemberActions({
   )
 }
 
+function MemberIdentity({ member }: { member: Member }) {
+  const displayName = member.name.trim() || member.email
+
+  return (
+    <div className="flex min-w-0 items-center gap-3">
+      <Avatar className={getMemberAvatarClassName()} size="sm">
+        {member.avatar ? (
+          <AvatarImage alt={`${displayName} 头像`} src={member.avatar} />
+        ) : null}
+        <AvatarFallback>{getMemberAvatarFallback(member)}</AvatarFallback>
+      </Avatar>
+      <div className="min-w-0">
+        <div className="truncate font-medium text-foreground">
+          {displayName}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function MemberOptionalText({ value }: { value: string }) {
+  const displayValue = getMemberOptionalDisplayValue(value)
+  const isMissing = value.trim() === ""
+
+  return (
+    <span className={cn(isMissing && "text-muted-foreground")}>
+      {displayValue}
+    </span>
+  )
+}
+
 function getColumnLabel(columnId: string) {
   return columnLabels[columnId] ?? columnId
+}
+
+export function getMemberColumnClassName(columnId: string) {
+  if (columnId === "select") {
+    return "w-10"
+  }
+
+  if (columnId === "actions") {
+    return "w-12"
+  }
+
+  return undefined
+}
+
+export function getMembersTableContainerClassName() {
+  return "overflow-hidden rounded-lg border bg-background"
+}
+
+export function getMembersTableClassName() {
+  return "[&_tr>*:first-child]:pl-4 [&_tr>*:last-child]:pr-4"
+}
+
+export function getMemberAvatarClassName() {
+  return "rounded-sm after:rounded-sm [&_[data-slot=avatar-fallback]]:rounded-sm [&_[data-slot=avatar-image]]:rounded-sm"
 }
 
 function getAdminUsersSorting(sorting: SortingState): {
@@ -1043,11 +1119,29 @@ function toMember(user: AdminUser): Member {
 }
 
 export function formatMemberPhone(phone: string) {
-  if (phone.startsWith("+86")) {
-    return phone.slice(3)
+  const trimmedPhone = phone.trim()
+
+  if (trimmedPhone.startsWith("+86")) {
+    return trimmedPhone.slice(3)
   }
 
-  return phone
+  return trimmedPhone
+}
+
+export function getMemberOptionalDisplayValue(value: string) {
+  const trimmedValue = value.trim()
+
+  return trimmedValue || "-"
+}
+
+export function getMemberAvatarFallback(
+  member: Pick<Member, "email" | "name" | "nickname">
+) {
+  const fallbackSource =
+    member.nickname.trim() || member.name.trim() || member.email.trim()
+  const [initial] = Array.from(fallbackSource)
+
+  return initial?.toUpperCase() ?? "?"
 }
 
 function formatJoinedAt(value: string) {

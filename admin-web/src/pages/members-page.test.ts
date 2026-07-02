@@ -1,8 +1,17 @@
 import { describe, expect, it } from "vitest"
 
+import membersPageSourceText from "./members-page.tsx?raw"
+
 import {
   formatMemberPhone,
+  getColumns,
+  getMemberAvatarFallback,
   getMemberActionConfirmation,
+  getMemberAvatarClassName,
+  getMemberColumnClassName,
+  getMemberOptionalDisplayValue,
+  getMembersTableContainerClassName,
+  getMembersTableClassName,
   getResetPasswordPendingDialogState,
 } from "@/pages/members-page"
 
@@ -39,6 +48,143 @@ describe("members page phone formatting", () => {
   })
 })
 
+describe("members page optional display values", () => {
+  it("shows a dash placeholder for missing values", () => {
+    expect(getMemberOptionalDisplayValue("")).toBe("-")
+    expect(getMemberOptionalDisplayValue("   ")).toBe("-")
+  })
+
+  it("keeps present values trimmed", () => {
+    expect(getMemberOptionalDisplayValue("  小爱  ")).toBe("小爱")
+  })
+})
+
+describe("members page avatar fallback", () => {
+  it("uses the nickname initial before name or email", () => {
+    expect(
+      getMemberAvatarFallback({
+        email: "alice@example.com",
+        name: "Alice",
+        nickname: "小爱",
+      })
+    ).toBe("小")
+  })
+
+  it("falls back to the name initial when nickname is missing", () => {
+    expect(
+      getMemberAvatarFallback({
+        email: "alice@example.com",
+        name: "Alice",
+        nickname: "",
+      })
+    ).toBe("A")
+  })
+
+  it("falls back to the email initial when nickname and name are missing", () => {
+    expect(
+      getMemberAvatarFallback({
+        email: "alice@example.com",
+        name: "",
+        nickname: "",
+      })
+    ).toBe("A")
+  })
+})
+
+describe("members page avatar styling", () => {
+  it("uses a rounded square avatar in the members table", () => {
+    expect(getMemberAvatarClassName()).toBe(
+      "rounded-sm after:rounded-sm [&_[data-slot=avatar-fallback]]:rounded-sm [&_[data-slot=avatar-image]]:rounded-sm"
+    )
+  })
+})
+
+describe("members page columns", () => {
+  it("puts name first and keeps nickname in a separate data column", () => {
+    const columns = getColumns({
+      onResetPassword: (member) => {
+        void member
+      },
+      onStatusChange: (member, status) => {
+        void member
+        void status
+      },
+      updatingMemberId: null,
+    })
+
+    expect(columns.map(getColumnId)).toEqual([
+      "select",
+      "name",
+      "nickname",
+      "email",
+      "phone",
+      "joinedAt",
+      "status",
+      "actions",
+    ])
+  })
+})
+
+describe("members page column widths", () => {
+  it("does not force a width for the status column", () => {
+    expect(getMemberColumnClassName("status")).toBeUndefined()
+  })
+
+  it("keeps the actions column aligned to the right", () => {
+    expect(getMemberColumnClassName("actions")).toBe("w-12")
+  })
+
+  it("does not force widths for regular text columns", () => {
+    expect(getMemberColumnClassName("name")).toBeUndefined()
+  })
+})
+
+describe("members page table spacing", () => {
+  it("keeps row dividers full-width while spacing edge cells", () => {
+    expect(getMembersTableContainerClassName()).not.toContain("px-")
+    expect(getMembersTableClassName()).toBe(
+      "[&_tr>*:first-child]:pl-4 [&_tr>*:last-child]:pr-4"
+    )
+    expect(getMemberColumnClassName("actions")).not.toContain("pr-")
+  })
+})
+
+describe("members page add member dialog isolation", () => {
+  it("keeps add member form state out of the members page component", () => {
+    const membersPageSource = getSourceBetween(
+      membersPageSourceText,
+      "export default function MembersPage()",
+      "function AddMemberDialog("
+    )
+
+    expect(membersPageSource).not.toContain("addMemberEmail")
+    expect(membersPageSource).not.toContain("addMemberInitialPassword")
+    expect(membersPageSource).not.toContain("addMemberName")
+    expect(membersPageSource).not.toContain("addMemberOpen")
+    expect(membersPageSource).not.toContain("addMemberPhone")
+    expect(membersPageSource).not.toContain("isAddingMember")
+  })
+})
+
+describe("members page table column stability", () => {
+  it("keeps table columns stable across table state changes", () => {
+    const membersPageSource = getSourceBetween(
+      membersPageSourceText,
+      "export default function MembersPage()",
+      "function AddMemberDialog("
+    )
+
+    expect(membersPageSource).toContain(
+      "const handleRequestMemberStatusChange = useCallback("
+    )
+    expect(membersPageSource).toContain(
+      "const handleRequestResetMemberPassword = useCallback("
+    )
+    expect(membersPageSource).toContain("const columns = useMemo(")
+    expect(membersPageSource).not.toContain("const columns = getColumns(")
+  })
+})
+
 describe("members page member action confirmation", () => {
   it("returns confirmation copy for enabling a member", () => {
     expect(getMemberActionConfirmation("enable")).toEqual({
@@ -64,3 +210,17 @@ describe("members page member action confirmation", () => {
     })
   })
 })
+
+function getColumnId(column: { accessorKey?: unknown; id?: string }) {
+  return String(column.id ?? column.accessorKey)
+}
+
+function getSourceBetween(source: string, startMarker: string, endMarker: string) {
+  const startIndex = source.indexOf(startMarker)
+  const endIndex = source.indexOf(endMarker)
+
+  expect(startIndex).toBeGreaterThanOrEqual(0)
+  expect(endIndex).toBeGreaterThan(startIndex)
+
+  return source.slice(startIndex, endIndex)
+}
