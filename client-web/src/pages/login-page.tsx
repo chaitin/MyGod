@@ -1,3 +1,4 @@
+import { MoveRight } from "lucide-react"
 import { useNavigate } from "react-router"
 
 import { LoginForm } from "@/components/login-form"
@@ -24,8 +25,9 @@ export function LoginPage() {
             <h1 className="text-left text-2xl font-medium">
               {appName} 智能协作平台
             </h1>
-            <p className="text-sm text-muted-foreground">
-              登录到{organizationName}的工作空间
+            <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              <MoveRight className="size-4" />
+              <span>登录到{organizationName}的工作空间</span>
             </p>
           </div>
           <LoginForm className="w-full" onLogin={handleLogin} />

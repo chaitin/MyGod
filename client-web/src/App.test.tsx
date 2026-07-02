@@ -290,8 +290,11 @@ describe("App", () => {
       .closest("[data-slot='card']")
 
     expect(loginSubtitle).toBeInTheDocument()
-    expect(loginTitle.nextElementSibling).toBe(loginSubtitle)
-    expect(loginSubtitle).toHaveClass("text-muted-foreground")
+    expect(loginTitle.nextElementSibling).toContainElement(loginSubtitle)
+    expect(loginTitle.nextElementSibling).toHaveClass("text-muted-foreground")
+    expect(
+      loginTitle.nextElementSibling?.querySelector(".lucide-move-right")
+    ).toBeInTheDocument()
     expect(loginCard).toBeInTheDocument()
     expect(loginCard?.querySelector("[data-slot='card-title']")).toBeNull()
     expect(loginCard).not.toHaveTextContent("登录到长亭科技的工作空间")
