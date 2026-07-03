@@ -10,13 +10,15 @@ import (
 )
 
 type contactUserResponse struct {
-	Avatar   string `json:"avatar" example:"/assets/avatars/builtin/07.webp"`
-	Email    string `json:"email" example:"user@example.com"`
-	ID       string `json:"id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
-	Name     string `json:"name" example:"张三"`
-	Nickname string `json:"nickname" example:"小张"`
-	Phone    string `json:"phone" example:"+8613812345678"`
-	Type     string `json:"type" example:"user"`
+	Avatar       string  `json:"avatar" example:"/assets/avatars/builtin/07.webp"`
+	Email        string  `json:"email" example:"user@example.com"`
+	ID           string  `json:"id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
+	LastOnlineAt *string `json:"last_online_at" example:"2026-07-03T01:00:00Z"`
+	Name         string  `json:"name" example:"张三"`
+	Nickname     string  `json:"nickname" example:"小张"`
+	Online       bool    `json:"online" example:"true"`
+	Phone        string  `json:"phone" example:"+8613812345678"`
+	Type         string  `json:"type" example:"user"`
 }
 
 type listContactUsersResponse struct {
@@ -48,8 +50,13 @@ func (s *Server) listContactUsers(c echo.Context) error {
 	}
 
 	contacts := make([]contactUserResponse, 0, len(users))
+	userIDs := make([]string, 0, len(users))
 	for _, user := range users {
-		contacts = append(contacts, newContactUserResponse(user))
+		userIDs = append(userIDs, user.ID)
+	}
+	onlineStatus := s.realtime.OnlineStatus(userIDs)
+	for _, user := range users {
+		contacts = append(contacts, newContactUserResponse(user, onlineStatus[user.ID]))
 	}
 
 	return success(c, http.StatusOK, listContactUsersResponse{
@@ -57,7 +64,7 @@ func (s *Server) listContactUsers(c echo.Context) error {
 	})
 }
 
-func newContactUserResponse(user store.User) contactUserResponse {
+func newContactUserResponse(user store.User, online bool) contactUserResponse {
 	phone := ""
 	if user.Phone != nil {
 		phone = *user.Phone
@@ -68,12 +75,14 @@ func newContactUserResponse(user store.User) contactUserResponse {
 	}
 
 	return contactUserResponse{
-		Avatar:   avatar,
-		Email:    user.Email,
-		ID:       user.ID,
-		Name:     user.Name,
-		Nickname: user.Nickname,
-		Phone:    phone,
-		Type:     "user",
+		Avatar:       avatar,
+		Email:        user.Email,
+		ID:           user.ID,
+		LastOnlineAt: formatOptionalTime(user.LastOnlineAt),
+		Name:         user.Name,
+		Nickname:     user.Nickname,
+		Online:       online,
+		Phone:        phone,
+		Type:         "user",
 	}
 }

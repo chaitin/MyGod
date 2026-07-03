@@ -22,17 +22,56 @@ definitions:
       id:
         example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
         type: string
+      last_online_at:
+        example: "2026-07-03T01:00:00Z"
+        type: string
       name:
         example: 张三
         type: string
       nickname:
         example: 小张
         type: string
+      online:
+        example: true
+        type: boolean
       phone:
         example: "+8613812345678"
         type: string
       type:
         example: user
+        type: string
+    type: object
+  httpserver.conversationListItemResponse:
+    properties:
+      avatar:
+        example: /assets/avatars/builtin/07.webp
+        type: string
+      created_at:
+        format: date-time
+        type: string
+      id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      last_message_at:
+        format: date-time
+        type: string
+      last_message_id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      last_message_seq:
+        example: 12
+        type: integer
+      last_message_summary:
+        example: 好的，我看一下
+        type: string
+      member_count:
+        example: 2
+        type: integer
+      name:
+        example: 张三
+        type: string
+      type:
+        example: direct
         type: string
     type: object
   httpserver.conversationMemberResponse:
@@ -59,6 +98,20 @@ definitions:
         example: member
         type: string
     type: object
+  httpserver.createDirectConversationRequest:
+    properties:
+      user_id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+    type: object
+  httpserver.createDirectConversationResponse:
+    properties:
+      conversation:
+        $ref: '#/definitions/httpserver.conversationListItemResponse'
+      created:
+        example: true
+        type: boolean
+    type: object
   httpserver.createGroupConversationRequest:
     properties:
       member_ids:
@@ -75,6 +128,19 @@ definitions:
     properties:
       conversation:
         $ref: '#/definitions/httpserver.groupConversationResponse'
+    type: object
+  httpserver.createMessageRequest:
+    properties:
+      body:
+        type: object
+      client_message_id:
+        example: 9c08f2dd-0af6-4e99-b486-2f0c841822be
+        type: string
+    type: object
+  httpserver.createMessageResponse:
+    properties:
+      message:
+        $ref: '#/definitions/httpserver.messageResponse'
     type: object
   httpserver.createUserRequest:
     properties:
@@ -156,12 +222,46 @@ definitions:
         example: 长亭科技
         type: string
     type: object
+  httpserver.listClientConversationsResponse:
+    properties:
+      conversations:
+        items:
+          $ref: '#/definitions/httpserver.conversationListItemResponse'
+        type: array
+    type: object
   httpserver.listContactUsersResponse:
     properties:
       contacts:
         items:
           $ref: '#/definitions/httpserver.contactUserResponse'
         type: array
+    type: object
+  httpserver.listConversationMessagesResponse:
+    properties:
+      messages:
+        items:
+          $ref: '#/definitions/httpserver.messageResponse'
+        type: array
+      page:
+        $ref: '#/definitions/httpserver.listMessagesPageResponse'
+    type: object
+  httpserver.listMessagesPageResponse:
+    properties:
+      has_more_after:
+        example: false
+        type: boolean
+      has_more_before:
+        example: true
+        type: boolean
+      limit:
+        example: 20
+        type: integer
+      newest_seq:
+        example: 120
+        type: integer
+      oldest_seq:
+        example: 101
+        type: integer
     type: object
   httpserver.listUsersResponse:
     properties:
@@ -192,6 +292,37 @@ definitions:
         type: string
       password:
         example: password
+        type: string
+    type: object
+  httpserver.messageResponse:
+    properties:
+      body:
+        type: object
+      client_message_id:
+        example: 9c08f2dd-0af6-4e99-b486-2f0c841822be
+        type: string
+      conversation_id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      created_at:
+        format: date-time
+        type: string
+      id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      sender:
+        $ref: '#/definitions/httpserver.messageSenderResponse'
+      seq:
+        example: 13
+        type: integer
+    type: object
+  httpserver.messageSenderResponse:
+    properties:
+      id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      type:
+        example: user
         type: string
     type: object
   httpserver.resetUserPasswordResponse:
@@ -251,12 +382,18 @@ definitions:
       id:
         example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
         type: string
+      last_online_at:
+        example: "2026-07-03T01:00:00Z"
+        type: string
       name:
         example: 张三
         type: string
       nickname:
         example: 小张
         type: string
+      online:
+        example: true
+        type: boolean
       phone:
         example: "+8613812345678"
         type: string
@@ -674,6 +811,196 @@ paths:
       summary: 列出通讯录用户
       tags:
       - 客户端通讯录
+  /api/client/conversations:
+    get:
+      description: 普通用户获取自己参与的最近 100 个会话，按照最后消息时间倒序排列。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httpserver.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/httpserver.listClientConversationsResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+      summary: 列出当前用户会话
+      tags:
+      - 客户端会话
+  /api/client/conversations/{conversation_id}/messages:
+    get:
+      description: 普通用户拉取自己参与的 active 会话消息。默认返回最近 20 条，支持 before_seq/after_seq 游标。
+      parameters:
+      - description: 会话 ID
+        in: path
+        name: conversation_id
+        required: true
+        type: string
+      - description: 拉取此 seq 之前的更早消息
+        in: query
+        name: before_seq
+        type: integer
+      - description: 拉取此 seq 之后的更新消息
+        in: query
+        name: after_seq
+        type: integer
+      - description: 返回数量，默认 20，最大 20
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httpserver.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/httpserver.listConversationMessagesResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+      summary: 拉取会话历史消息
+      tags:
+      - 客户端消息
+    post:
+      consumes:
+      - application/json
+      description: 普通用户向自己参与的会话发送消息。第一版只支持 text body，client_message_id 用于重试幂等。
+      parameters:
+      - description: 会话 ID
+        in: path
+        name: conversation_id
+        required: true
+        type: string
+      - description: 消息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/httpserver.createMessageRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httpserver.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/httpserver.createMessageResponse'
+              type: object
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/httpserver.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/httpserver.createMessageResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+      summary: 发送消息
+      tags:
+      - 客户端消息
+  /api/client/conversations/direct:
+    post:
+      consumes:
+      - application/json
+      description: 普通用户创建或打开和指定用户的一对一会话。重复调用会返回已有会话，不会创建重复私聊。
+      parameters:
+      - description: 一对一会话目标用户
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/httpserver.createDirectConversationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httpserver.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/httpserver.createDirectConversationResponse'
+              type: object
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/httpserver.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/httpserver.createDirectConversationResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+      summary: 创建或打开一对一会话
+      tags:
+      - 客户端会话
   /api/client/conversations/groups:
     post:
       consumes:

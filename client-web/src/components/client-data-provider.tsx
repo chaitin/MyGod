@@ -9,8 +9,11 @@ import { useNavigate } from "react-router"
 
 import {
   ClientDataRequestError,
+  createDirectConversation,
   getCurrentClientUser,
   listClientContacts,
+  listClientConversations,
+  type ClientConversation,
   type ClientUser,
   type ContactUser,
 } from "@/lib/client-data-api"
@@ -19,6 +22,7 @@ import {
   type ClientDataContextValue,
 } from "@/lib/client-data-context"
 import { Button } from "@/components/ui/button"
+import { ClientLoadingPage } from "@/components/client-loading-page"
 
 type BootstrapState = "loading" | "ready" | "error"
 
@@ -31,6 +35,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     useState<ClientDataRequestError | null>(null)
   const [bootstrapState, setBootstrapState] =
     useState<BootstrapState>("loading")
+  const [conversations, setConversations] = useState<ClientConversation[]>([])
   const [contacts, setContacts] = useState<ContactUser[]>([])
   const [contactsError, setContactsError] =
     useState<ClientDataRequestError | null>(null)
@@ -49,6 +54,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
           : new ClientDataRequestError(fallbackMessage)
 
       if (requestError.status === 401 || requestError.code === "unauthorized") {
+        setConversations([])
         setContacts([])
         setMe(null)
         navigate("/login", { replace: true })
@@ -95,18 +101,50 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     }
   }, [contacts.length, handleError])
 
+  const refreshConversations = useCallback(async () => {
+    try {
+      setConversations(await listClientConversations())
+    } catch (error) {
+      throw handleError(error, "加载会话列表失败")
+    }
+  }, [handleError])
+
+  const upsertConversation = useCallback((conversation: ClientConversation) => {
+    setConversations((currentConversations) => [
+      conversation,
+      ...currentConversations.filter(
+        (currentConversation) => currentConversation.id !== conversation.id
+      ),
+    ])
+  }, [])
+
+  const openDirectConversation = useCallback(
+    async (userId: string) => {
+      try {
+        const conversation = await createDirectConversation(userId)
+        upsertConversation(conversation)
+        return conversation
+      } catch (error) {
+        throw handleError(error, "创建一对一会话失败")
+      }
+    },
+    [handleError, upsertConversation]
+  )
+
   const bootstrap = useCallback(async () => {
     const minimumLoading = wait(minimumBootstrapLoadingMs)
 
     try {
-      const [nextMe, nextContacts] = await Promise.all([
+      const [nextMe, nextContacts, nextConversations] = await Promise.all([
         getCurrentClientUser(),
         listClientContacts(),
+        listClientConversations(),
       ])
 
       await minimumLoading
       setMe(nextMe)
       setContacts(nextContacts)
+      setConversations(nextConversations)
       setBootstrapState("ready")
     } catch (error) {
       const requestError = handleError(error, "加载工作区失败")
@@ -126,6 +164,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
   const retryBootstrap = useCallback(async () => {
     setBootstrapError(null)
     setBootstrapState("loading")
+    setConversations([])
     setContactsError(null)
     setContactsLoading(true)
     setContactsRefreshing(false)
@@ -184,6 +223,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     }
 
     return {
+      conversations,
       contacts,
       contactsError,
       contactsLoading,
@@ -192,10 +232,13 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
       meError,
       meLoading,
       meRefreshing,
+      openDirectConversation,
+      refreshConversations,
       refreshContacts,
       refreshMe,
     }
   }, [
+    conversations,
     contacts,
     contactsError,
     contactsLoading,
@@ -204,12 +247,14 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     meError,
     meLoading,
     meRefreshing,
+    openDirectConversation,
+    refreshConversations,
     refreshContacts,
     refreshMe,
   ])
 
   if (bootstrapState === "loading") {
-    return <ClientDataLoadingPage />
+    return <ClientLoadingPage />
   }
 
   if (bootstrapState === "error") {
@@ -222,7 +267,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
   }
 
   if (!value) {
-    return <ClientDataLoadingPage />
+    return <ClientLoadingPage />
   }
 
   return (
@@ -236,24 +281,6 @@ function wait(ms: number) {
   return new Promise<void>((resolve) => {
     window.setTimeout(resolve, ms)
   })
-}
-
-function ClientDataLoadingPage() {
-  return (
-    <div className="flex h-svh items-center justify-center bg-background text-foreground">
-      <div className="flex w-56 flex-col items-center gap-3">
-        <div className="text-sm text-muted-foreground">正在为你加载数据</div>
-        <div
-          aria-label="加载进度"
-          aria-valuetext="加载中"
-          className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
-          role="progressbar"
-        >
-          <div className="client-loading-progress-indicator h-full w-1/3 rounded-full bg-primary" />
-        </div>
-      </div>
-    </div>
-  )
 }
 
 function ClientDataErrorPage({

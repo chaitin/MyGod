@@ -1,6 +1,7 @@
 import {
   CircleCheckBig,
   CircleUserRound,
+  Loader2Icon,
   LogOut,
   MessageCircleMore,
   Moon,
@@ -193,7 +194,10 @@ function UserAvatarMenu({
               }}
               variant="destructive"
             >
-              {logoutPending ? "退出中..." : "退出登录"}
+              {logoutPending && (
+                <Loader2Icon aria-hidden="true" className="animate-spin" />
+              )}
+              退出登录
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

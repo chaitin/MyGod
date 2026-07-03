@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router"
 
 import { AppLayout } from "@/components/app-layout"
 import { ClientDataProvider } from "@/components/client-data-provider"
+import { ClientRealtimeProvider } from "@/components/client-realtime-provider"
 import { AppInfoProvider } from "@/components/app-info-provider"
 import { useAppInfo } from "@/lib/app-info-context"
 import { ChatPage } from "@/pages/chat-page"
@@ -26,7 +27,9 @@ export function App() {
         <Route
           element={
             <ClientDataProvider>
-              <AppLayout />
+              <ClientRealtimeProvider>
+                <AppLayout />
+              </ClientRealtimeProvider>
             </ClientDataProvider>
           }
         >

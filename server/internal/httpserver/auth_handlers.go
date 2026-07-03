@@ -38,14 +38,16 @@ type updateCurrentUserRequest struct {
 }
 
 type userResponse struct {
-	ID        string    `json:"id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
-	Avatar    string    `json:"avatar" example:"/assets/avatars/builtin/07.webp"`
-	Email     string    `json:"email" example:"user@example.com"`
-	Name      string    `json:"name" example:"张三"`
-	Nickname  string    `json:"nickname" example:"小张"`
-	Phone     string    `json:"phone" example:"+8613812345678"`
-	Status    string    `json:"status" example:"active"`
-	CreatedAt time.Time `json:"created_at" format:"date-time"`
+	ID           string    `json:"id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
+	Avatar       string    `json:"avatar" example:"/assets/avatars/builtin/07.webp"`
+	Email        string    `json:"email" example:"user@example.com"`
+	LastOnlineAt *string   `json:"last_online_at" example:"2026-07-03T01:00:00Z"`
+	Name         string    `json:"name" example:"张三"`
+	Nickname     string    `json:"nickname" example:"小张"`
+	Online       *bool     `json:"online,omitempty" example:"true"`
+	Phone        string    `json:"phone" example:"+8613812345678"`
+	Status       string    `json:"status" example:"active"`
+	CreatedAt    time.Time `json:"created_at" format:"date-time"`
 }
 
 type adminResponse struct {
@@ -184,8 +186,13 @@ func (s *Server) listUsers(c echo.Context) error {
 	}
 
 	responses := make([]userResponse, 0, len(users))
+	userIDs := make([]string, 0, len(users))
 	for _, user := range users {
-		responses = append(responses, newUserResponse(user))
+		userIDs = append(userIDs, user.ID)
+	}
+	onlineStatus := s.realtime.OnlineStatus(userIDs)
+	for _, user := range users {
+		responses = append(responses, newAdminUserResponse(user, onlineStatus[user.ID]))
 	}
 
 	return success(c, http.StatusOK, listUsersResponse{
@@ -274,7 +281,7 @@ func (s *Server) createUser(c echo.Context) error {
 	}
 
 	return success(c, http.StatusCreated, createUserResponse{
-		User:            newUserResponse(user),
+		User:            newAdminUserResponse(user, false),
 		InitialPassword: initialPassword,
 	})
 }
@@ -364,7 +371,7 @@ func (s *Server) resetUserPassword(c echo.Context) error {
 	}
 
 	return success(c, http.StatusOK, resetUserPasswordResponse{
-		User:        newUserResponse(user),
+		User:        newAdminUserResponse(user, s.realtime.IsOnline(user.ID)),
 		NewPassword: newPassword,
 	})
 }
@@ -675,15 +682,22 @@ func newUserResponse(user store.User) userResponse {
 	}
 
 	return userResponse{
-		ID:        user.ID,
-		Avatar:    avatar,
-		Email:     user.Email,
-		Name:      user.Name,
-		Nickname:  user.Nickname,
-		Phone:     phone,
-		Status:    user.Status,
-		CreatedAt: user.CreatedAt,
+		ID:           user.ID,
+		Avatar:       avatar,
+		Email:        user.Email,
+		LastOnlineAt: formatOptionalTime(user.LastOnlineAt),
+		Name:         user.Name,
+		Nickname:     user.Nickname,
+		Phone:        phone,
+		Status:       user.Status,
+		CreatedAt:    user.CreatedAt,
 	}
+}
+
+func newAdminUserResponse(user store.User, online bool) userResponse {
+	response := newUserResponse(user)
+	response.Online = &online
+	return response
 }
 
 func randomBuiltinAvatar() string {
@@ -726,9 +740,12 @@ func (s *Server) updateUserStatus(c echo.Context, status string) error {
 	}); err != nil {
 		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
 	}
+	if status == store.UserStatusDisabled {
+		s.realtime.CloseUser(user.ID)
+	}
 
 	return success(c, http.StatusOK, updateUserStatusResponse{
-		User: newUserResponse(user),
+		User: newAdminUserResponse(user, s.realtime.IsOnline(user.ID)),
 	})
 }
 

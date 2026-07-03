@@ -1,5 +1,8 @@
 import * as React from "react"
+import { useNavigate } from "react-router"
+import { toast } from "sonner"
 import {
+  Loader2Icon,
   Mail,
   MessageCircle,
   Phone,
@@ -29,8 +32,17 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 const CONTACT_DETAIL_PANEL_CLASS = "mt-30 w-full max-w-sm"
 
 export function ContactsPage() {
-  const { contacts, contactsRefreshing, refreshContacts } = useClientData()
+  const {
+    contacts,
+    contactsRefreshing,
+    me,
+    openDirectConversation,
+    refreshContacts,
+  } = useClientData()
+  const navigate = useNavigate()
   const [activeContactId, setActiveContactId] = React.useState("")
+  const [openingConversationContactId, setOpeningConversationContactId] =
+    React.useState("")
   const [keyword, setKeyword] = React.useState("")
   const filteredContacts = React.useMemo(() => {
     const normalizedKeyword = keyword.trim().toLowerCase()
@@ -51,6 +63,25 @@ export function ContactsPage() {
   }, [contacts, keyword])
   const activeContact =
     filteredContacts.find((contact) => contact.id === activeContactId) ?? null
+
+  async function startDirectConversation(contact: ContactUser) {
+    if (contact.id === me.id) {
+      return
+    }
+
+    setOpeningConversationContactId(contact.id)
+
+    try {
+      const conversation = await openDirectConversation(contact.id)
+      navigate(`/chat?conversation_id=${encodeURIComponent(conversation.id)}`)
+    } catch {
+      toast.error("无法发起私聊")
+    } finally {
+      setOpeningConversationContactId((currentContactId) =>
+        currentContactId === contact.id ? "" : currentContactId
+      )
+    }
+  }
 
   return (
     <>
@@ -93,9 +124,16 @@ export function ContactsPage() {
               <ContactListItem
                 key={contact.id}
                 contact={contact}
+                canStartConversation={contact.id !== me.id}
                 size="sm"
                 selected={contact.id === activeContact?.id}
                 onSelect={() => setActiveContactId(contact.id)}
+                onStartConversation={() =>
+                  void startDirectConversation(contact)
+                }
+                startingConversation={
+                  contact.id === openingConversationContactId
+                }
               />
             ))}
             {filteredContacts.length === 0 && (
@@ -109,11 +147,23 @@ export function ContactsPage() {
 
       <main className="flex min-w-0 flex-1 flex-col bg-background">
         <div
-          className="flex min-h-0 flex-1 items-start justify-center px-6"
+          className={cn(
+            "flex min-h-0 flex-1 items-start justify-center px-6",
+            activeContact ? "bg-background" : "bg-muted"
+          )}
           data-testid="contact-detail-shell"
         >
           {activeContact ? (
-            <ContactDetailPanel contact={activeContact} />
+            <ContactDetailPanel
+              contact={activeContact}
+              canStartConversation={activeContact.id !== me.id}
+              onStartConversation={() =>
+                void startDirectConversation(activeContact)
+              }
+              startingConversation={
+                activeContact.id === openingConversationContactId
+              }
+            />
           ) : (
             <ContactEmptyState />
           )}
@@ -123,7 +173,17 @@ export function ContactsPage() {
   )
 }
 
-function ContactDetailPanel({ contact }: { contact: ContactUser }) {
+function ContactDetailPanel({
+  canStartConversation,
+  contact,
+  onStartConversation,
+  startingConversation,
+}: {
+  canStartConversation: boolean
+  contact: ContactUser
+  onStartConversation: () => void
+  startingConversation: boolean
+}) {
   const displayName = getContactDisplayName(contact)
 
   return (
@@ -172,7 +232,15 @@ function ContactDetailPanel({ contact }: { contact: ContactUser }) {
             value={contact.phone ? formatContactPhone(contact.phone) : ""}
           />
         </div>
-        <Button className="w-full" type="button">
+        <Button
+          className="w-full"
+          disabled={startingConversation || !canStartConversation}
+          onClick={onStartConversation}
+          type="button"
+        >
+          {startingConversation && (
+            <Loader2Icon aria-hidden="true" className="animate-spin" />
+          )}
           发消息
         </Button>
       </div>
@@ -217,14 +285,20 @@ function ContactDetailRow({
 }
 
 function ContactListItem({
+  canStartConversation,
   contact,
   onSelect,
+  onStartConversation,
   selected,
+  startingConversation,
   size = "default",
 }: {
+  canStartConversation: boolean
   contact: ContactUser
   onSelect: () => void
+  onStartConversation: () => void
   selected: boolean
+  startingConversation: boolean
   size?: "default" | "sm"
 }) {
   const displayName = getContactDisplayName(contact)
@@ -243,6 +317,11 @@ function ContactListItem({
 
   function handleConversationClick(event: React.MouseEvent<HTMLButtonElement>) {
     event.stopPropagation()
+    if (!canStartConversation) {
+      return
+    }
+
+    onStartConversation()
   }
 
   return (
@@ -278,23 +357,38 @@ function ContactListItem({
         </Avatar>
       </ItemMedia>
       <ItemContent className="min-w-0">
-        <ItemTitle className="w-full truncate">{title}</ItemTitle>
+        <ItemTitle className="w-full truncate">
+          <span className="min-w-0 truncate">{title}</span>
+          <span
+            aria-label={contact.online ? "在线" : "离线"}
+            className={cn(
+              "size-1.5 shrink-0 rounded-full",
+              contact.online ? "bg-emerald-500" : "bg-muted-foreground/30"
+            )}
+          />
+        </ItemTitle>
       </ItemContent>
-      <ItemActions>
+      <ItemActions
+        className={cn(
+          "transition-opacity",
+          selected
+            ? "opacity-100"
+            : "pointer-events-none opacity-0 group-focus-within/contact-item:pointer-events-auto group-focus-within/contact-item:opacity-100 group-hover/contact-item:pointer-events-auto group-hover/contact-item:opacity-100"
+        )}
+      >
         <Button
           aria-label={`与 ${title} 对话`}
-          className={cn(
-            "transition-opacity",
-            selected
-              ? "opacity-100"
-              : "pointer-events-none opacity-0 group-focus-within/contact-item:pointer-events-auto group-focus-within/contact-item:opacity-100 group-hover/contact-item:pointer-events-auto group-hover/contact-item:opacity-100"
-          )}
+          disabled={startingConversation || !canStartConversation}
           onClick={handleConversationClick}
           size="icon-xs"
           type="button"
           variant="ghost"
         >
-          <MessageCircle />
+          {startingConversation ? (
+            <Loader2Icon aria-hidden="true" className="animate-spin" />
+          ) : (
+            <MessageCircle />
+          )}
         </Button>
       </ItemActions>
     </Item>

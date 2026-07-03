@@ -10,6 +10,7 @@ const user: ClientUser = {
   createdAt: "2026-07-01T00:00:00Z",
   email: "alice@example.com",
   id: "user-1",
+  lastOnlineAt: null,
   name: "Alice",
   nickname: "Al",
   phone: "+8613912345678",
@@ -27,6 +28,15 @@ class LoadedImage {
   removeEventListener() {}
 }
 
+function createDeferred<T = void>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve
+  })
+
+  return { promise, resolve }
+}
+
 describe("ProfileSettingsDialog", () => {
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -35,7 +45,8 @@ describe("ProfileSettingsDialog", () => {
   it("shows readonly profile fields and saves nickname changes inline", async () => {
     vi.stubGlobal("Image", LoadedImage)
     const userEventSetup = userEvent.setup()
-    const onNicknameSave = vi.fn().mockResolvedValue(undefined)
+    const nicknameSave = createDeferred()
+    const onNicknameSave = vi.fn(() => nicknameSave.promise)
     const onOpenChange = vi.fn()
 
     render(
@@ -106,7 +117,17 @@ describe("ProfileSettingsDialog", () => {
     await userEventSetup.click(submitNicknameButton)
 
     expect(onNicknameSave).toHaveBeenCalledWith("Alice A")
+    expect(
+      within(dialog).getByRole("button", { name: "提交" })
+    ).toBeDisabled()
+    expect(within(dialog).queryByText("提交中...")).not.toBeInTheDocument()
+    expect(
+      within(dialog)
+        .getByRole("button", { name: "提交" })
+        .querySelector(".animate-spin")
+    ).toBeInTheDocument()
     expect(onOpenChange).not.toHaveBeenCalled()
+    nicknameSave.resolve()
     await waitFor(() =>
       expect(
         within(dialog).queryByRole("button", { name: "提交" })
@@ -123,10 +144,17 @@ describe("ProfileSettingsDialog", () => {
   it("supports local avatar edits", async () => {
     vi.stubGlobal("Image", LoadedImage)
     const userEventSetup = userEvent.setup()
+    const avatarSave = createDeferred()
+    const onAvatarSave = vi.fn(() => avatarSave.promise)
     const onOpenChange = vi.fn()
 
     render(
-      <ProfileSettingsDialog open onOpenChange={onOpenChange} user={user} />
+      <ProfileSettingsDialog
+        open
+        onAvatarSave={onAvatarSave}
+        onOpenChange={onOpenChange}
+        user={user}
+      />
     )
 
     const dialog = screen.getByRole("dialog", { name: "设置" })
@@ -247,9 +275,21 @@ describe("ProfileSettingsDialog", () => {
       within(avatarDialog).getByRole("button", { name: "保存" })
     )
 
-    expect(
-      screen.queryByRole("dialog", { name: "选择头像" })
-    ).not.toBeInTheDocument()
+    const avatarSaveButton = within(avatarDialog).getByRole("button", {
+      name: "保存",
+    })
+
+    expect(onAvatarSave).toHaveBeenCalledWith("/assets/avatars/builtin/03.webp")
+    expect(avatarSaveButton).toBeDisabled()
+    expect(within(avatarDialog).queryByText("保存中...")).not.toBeInTheDocument()
+    expect(avatarSaveButton.querySelector(".animate-spin")).toBeInTheDocument()
+    avatarSave.resolve()
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "选择头像" })
+      ).not.toBeInTheDocument()
+    )
     expect(
       within(dialog).getByRole("img", { name: "Alice A" })
     ).toHaveAttribute("src", "/assets/avatars/builtin/03.webp")

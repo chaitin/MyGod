@@ -1,7 +1,24 @@
 import * as React from "react"
-import { Plus, Search, Send } from "lucide-react"
+import { useSearchParams } from "react-router"
+import { Plus, Search } from "lucide-react"
+import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
+import { useClientData } from "@/lib/client-data-context"
+import {
+  ClientDataRequestError,
+  listConversationMessages,
+  sendConversationTextMessage,
+  type ClientConversation,
+  type ClientMessage,
+  type ClientMessagePage,
+} from "@/lib/client-data-api"
+import { formatConversationLastMessageTime } from "@/lib/conversation-format"
+import { createClientMessageId } from "@/lib/message-id"
+import {
+  ConversationPanel,
+  type ConversationPanelMessage,
+} from "@/components/conversation-panel"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -14,7 +31,6 @@ import {
 import { Input } from "@/components/ui/input"
 import {
   Item,
-  ItemActions,
   ItemContent,
   ItemDescription,
   ItemGroup,
@@ -22,150 +38,229 @@ import {
   ItemTitle,
 } from "@/components/ui/item"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Textarea } from "@/components/ui/textarea"
 
-type ConversationKind = "assistant" | "user"
-type MessageRole = "me" | "other" | "assistant"
-
-type Conversation = {
-  id: string
-  kind: ConversationKind
-  name: string
-  description: string
-  avatar: string
-  image?: string
-  unread?: number
+type ConversationMessageState = {
+  error: string | null
+  loaded: boolean
+  loadingBefore: boolean
+  messages: ClientMessage[]
+  page: ClientMessagePage | null
+  sending: boolean
 }
 
-type ChatMessage = {
-  id: string
-  conversationId: string
-  role: MessageRole
-  author: string
-  content: string
-  time: string
-}
+const messagePageLimit = 20
+const emptyClientMessages: ClientMessage[] = []
 
-const conversations: Conversation[] = [
-  {
-    id: "assistant",
-    kind: "assistant",
-    name: "AI 助手",
-    description: "你的内置工作助理",
-    avatar: "AI",
-    unread: 1,
-  },
-  {
-    id: "wenlei",
-    kind: "user",
-    name: "Wenlei Zhu",
-    description: "产品负责人",
-    avatar: "W",
-  },
-  {
-    id: "yalan",
-    kind: "user",
-    name: "yalan Fu",
-    description: "运营协作",
-    avatar: "Y",
-  },
-]
+function getMessageTime(createdAt: string) {
+  const date = new Date(createdAt)
 
-const initialMessages: ChatMessage[] = [
-  {
-    id: "m1",
-    conversationId: "assistant",
-    role: "assistant",
-    author: "AI 助手",
-    content:
-      "你好，我是你的内置 AI 助手。你可以先把问题发给我，我会帮你整理思路、草拟回复或记录待办。",
-    time: "09:30",
-  },
-  {
-    id: "m2",
-    conversationId: "wenlei",
-    role: "other",
-    author: "Wenlei Zhu",
-    content: "登录页确认后，我们可以先把聊天主界面跑起来。",
-    time: "10:12",
-  },
-  {
-    id: "m3",
-    conversationId: "yalan",
-    role: "other",
-    author: "yalan Fu",
-    content: "我这边后面可以帮忙验证任务列表的交互。",
-    time: "10:28",
-  },
-]
+  if (Number.isNaN(date.getTime())) {
+    return ""
+  }
 
-function getMessageTime() {
   return new Intl.DateTimeFormat("zh-CN", {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
-  }).format(new Date())
+  }).format(date)
 }
 
 export function ChatPage() {
-  const [activeConversationId, setActiveConversationId] =
-    React.useState("assistant")
-  const [messages, setMessages] = React.useState(initialMessages)
+  const { conversations, me, refreshConversations } = useClientData()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [messageStates, setMessageStates] = React.useState<
+    Record<string, ConversationMessageState>
+  >({})
+  const loadingConversationIdsRef = React.useRef<Set<string>>(new Set())
   const [draft, setDraft] = React.useState("")
+  const requestedConversationId = searchParams.get("conversation_id") ?? ""
 
   const activeConversation = React.useMemo(
     () =>
-      conversations.find(
-        (conversation) => conversation.id === activeConversationId
-      ) ?? conversations[0],
-    [activeConversationId]
+      requestedConversationId
+        ? (conversations.find(
+            (conversation) => conversation.id === requestedConversationId
+          ) ?? null)
+        : null,
+    [conversations, requestedConversationId]
   )
 
+  const activeConversationId = activeConversation?.id ?? ""
+  const activeMessageState = activeConversationId
+    ? messageStates[activeConversationId]
+    : undefined
+  const activeLoaded = Boolean(activeMessageState?.loaded)
+  const activeClientMessages =
+    activeMessageState?.messages ?? emptyClientMessages
   const activeMessages = React.useMemo(
     () =>
-      messages.filter(
-        (message) => message.conversationId === activeConversation.id
-      ),
-    [activeConversation.id, messages]
+      activeConversation
+        ? activeClientMessages.map((message) =>
+            toConversationPanelMessage(message, activeConversation, me.id)
+          )
+        : [],
+    [activeClientMessages, activeConversation, me.id]
   )
 
-  function sendMessage() {
-    const content = draft.trim()
-    if (!content) {
+  const updateConversationMessageState = React.useCallback(
+    (
+      conversationId: string,
+      updater: (
+        state: ConversationMessageState
+      ) => ConversationMessageState
+    ) => {
+      setMessageStates((currentStates) => {
+        const previousState =
+          currentStates[conversationId] ?? createConversationMessageState()
+
+        return {
+          ...currentStates,
+          [conversationId]: updater(previousState),
+        }
+      })
+    },
+    []
+  )
+
+  React.useEffect(() => {
+    if (
+      !activeConversationId ||
+      activeLoaded ||
+      loadingConversationIdsRef.current.has(activeConversationId)
+    ) {
       return
     }
 
-    const time = getMessageTime()
-    const userMessage: ChatMessage = {
-      id: crypto.randomUUID(),
-      conversationId: activeConversation.id,
-      role: "me",
-      author: "我",
-      content,
-      time,
-    }
+    loadingConversationIdsRef.current.add(activeConversationId)
 
-    const nextMessages = [userMessage]
-
-    if (activeConversation.kind === "assistant") {
-      nextMessages.push({
-        id: crypto.randomUUID(),
-        conversationId: activeConversation.id,
-        role: "assistant",
-        author: "AI 助手",
-        content:
-          "收到，我会先作为你的内置助手处理这个请求。当前版本是前端原型，后续会接入真实模型、工具调用和权限策略。",
-        time,
+    void listConversationMessages(activeConversationId, {
+      limit: messagePageLimit,
+    })
+      .then((result) => {
+        updateConversationMessageState(activeConversationId, (state) => ({
+          ...state,
+          error: null,
+          loaded: true,
+          messages: mergeConversationMessages(state.messages, result.messages),
+          page: result.page,
+        }))
       })
+      .catch((error: unknown) => {
+        const message = getClientDataErrorMessage(error, "加载消息失败")
+        updateConversationMessageState(activeConversationId, (state) => ({
+          ...state,
+          error: message,
+          loaded: true,
+        }))
+        toast.error(message)
+      })
+      .finally(() => {
+        loadingConversationIdsRef.current.delete(activeConversationId)
+      })
+  }, [
+    activeConversationId,
+    activeLoaded,
+    updateConversationMessageState,
+  ])
+
+  const loadBeforeMessages = React.useCallback(() => {
+    if (!activeConversationId) {
+      return
     }
 
-    setMessages((currentMessages) => [...currentMessages, ...nextMessages])
-    setDraft("")
+    const state = messageStates[activeConversationId]
+    if (
+      !state?.page?.hasMoreBefore ||
+      !state.loaded ||
+      state.loadingBefore
+    ) {
+      return
+    }
+
+    const beforeSeq = state.page.oldestSeq
+    updateConversationMessageState(activeConversationId, (currentState) => ({
+      ...currentState,
+      error: null,
+      loadingBefore: true,
+    }))
+
+    void listConversationMessages(activeConversationId, {
+      beforeSeq,
+      limit: messagePageLimit,
+    })
+      .then((result) => {
+        updateConversationMessageState(activeConversationId, (currentState) => ({
+          ...currentState,
+          error: null,
+          loaded: true,
+          loadingBefore: false,
+          messages: mergeConversationMessages(
+            currentState.messages,
+            result.messages
+          ),
+          page: result.page,
+        }))
+      })
+      .catch((error: unknown) => {
+        const message = getClientDataErrorMessage(error, "加载更早消息失败")
+        updateConversationMessageState(activeConversationId, (currentState) => ({
+          ...currentState,
+          error: message,
+          loadingBefore: false,
+        }))
+        toast.error(message)
+      })
+  }, [activeConversationId, messageStates, updateConversationMessageState])
+
+  function sendMessage() {
+    const content = draft.trim()
+    if (!content || !activeConversationId || activeMessageState?.sending) {
+      return
+    }
+
+    const clientMessageId = createClientMessageId()
+    updateConversationMessageState(activeConversationId, (state) => ({
+      ...state,
+      sending: true,
+    }))
+
+    void sendConversationTextMessage(activeConversationId, {
+      clientMessageId,
+      content,
+    })
+      .then((message) => {
+        updateConversationMessageState(activeConversationId, (state) => {
+          const messages = mergeConversationMessages(state.messages, [message])
+
+          return {
+            ...state,
+            error: null,
+            loaded: true,
+            messages,
+            page: updatePageWithMessage(state.page, messages),
+          }
+        })
+        setDraft("")
+        void refreshConversations().catch(() => undefined)
+      })
+      .catch((error: unknown) => {
+        toast.error(getClientDataErrorMessage(error, "发送消息失败"))
+      })
+      .finally(() => {
+        updateConversationMessageState(activeConversationId, (state) => ({
+          ...state,
+          sending: false,
+        }))
+      })
+  }
+
+  function selectConversation(conversationId: string) {
+    setSearchParams({ conversation_id: conversationId }, { replace: true })
   }
 
   return (
     <>
-      <aside className="flex w-72 shrink-0 flex-col border-r bg-background">
+      <aside className="flex w-80 shrink-0 flex-col border-r bg-background">
         <div className="flex h-14 items-center justify-between px-4">
           <h1 className="text-base font-medium">消息</h1>
           <DropdownMenu>
@@ -193,8 +288,16 @@ export function ChatPage() {
         </div>
         <ScrollArea className="min-h-0 flex-1">
           <ItemGroup className="gap-1 px-2 pb-3 has-data-[size=sm]:gap-1">
+            {conversations.length === 0 && (
+              <div className="px-3 py-8 text-center text-sm text-muted-foreground">
+                暂无会话
+              </div>
+            )}
             {conversations.map((conversation) => {
-              const selected = conversation.id === activeConversation.id
+              const selected = conversation.id === activeConversation?.id
+              const lastMessageTime = formatConversationLastMessageTime(
+                conversation.lastMessageAt
+              )
 
               return (
                 <Item
@@ -211,43 +314,43 @@ export function ChatPage() {
                   <Button
                     className="h-auto justify-start whitespace-normal"
                     type="button"
-                    onClick={() => setActiveConversationId(conversation.id)}
+                    onClick={() => selectConversation(conversation.id)}
                     variant="ghost"
                   >
                     <ItemMedia>
-                      <Avatar className="size-9 rounded-sm bg-muted after:rounded-sm">
-                        {conversation.image && (
+                      <Avatar className="size-10 rounded-sm bg-muted after:rounded-sm">
+                        {conversation.avatar && (
                           <AvatarImage
                             alt={conversation.name}
                             className="rounded-sm"
-                            src={conversation.image}
+                            src={conversation.avatar}
                           />
                         )}
                         <AvatarFallback className="rounded-sm">
-                          {conversation.avatar}
+                          {getConversationInitial(conversation.name)}
                         </AvatarFallback>
                       </Avatar>
                     </ItemMedia>
                     <ItemContent className="min-w-0">
-                      <ItemTitle className="w-full">
-                        <span className="truncate">{conversation.name}</span>
-                        {conversation.kind === "assistant" && (
-                          <Badge variant="secondary" className="px-1.5">
-                            AI
-                          </Badge>
+                      <ItemTitle className="w-full min-w-0 justify-between gap-2">
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="truncate">{conversation.name}</span>
+                          {conversation.type === "group" && (
+                            <Badge variant="secondary" className="px-1.5">
+                              群
+                            </Badge>
+                          )}
+                        </span>
+                        {lastMessageTime && (
+                          <span className="shrink-0 pr-2 text-xs font-normal text-muted-foreground">
+                            {lastMessageTime}
+                          </span>
                         )}
                       </ItemTitle>
                       <ItemDescription className="truncate text-xs">
-                        {conversation.description}
+                        {getConversationListDescription(conversation)}
                       </ItemDescription>
                     </ItemContent>
-                    {conversation.unread ? (
-                      <ItemActions>
-                        <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground">
-                          {conversation.unread}
-                        </span>
-                      </ItemActions>
-                    ) : null}
                   </Button>
                 </Item>
               )
@@ -256,115 +359,125 @@ export function ChatPage() {
         </ScrollArea>
       </aside>
 
-      <main className="flex min-w-0 flex-1 flex-col bg-background">
-        <header className="flex h-14 shrink-0 items-center justify-between border-b px-5">
-          <div className="min-w-0">
-            <h2 className="truncate text-base font-medium">
-              {activeConversation.name}
-            </h2>
-            <p className="truncate text-xs text-muted-foreground">
-              {activeConversation.description}
-            </p>
-          </div>
-        </header>
-
-        <ScrollArea className="min-h-0 flex-1">
-          <div className="mx-auto flex w-full max-w-4xl flex-col gap-5 px-5 py-6">
-            {activeMessages.map((message) => (
-              <MessageBubble
-                key={message.id}
-                message={message}
-                conversation={activeConversation}
-              />
-            ))}
-          </div>
-        </ScrollArea>
-
-        <footer className="shrink-0 border-t p-4">
-          <div className="mx-auto flex w-full max-w-4xl items-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              aria-label="添加"
-              className="shrink-0"
-            >
-              <Plus className="size-4" />
-            </Button>
-            <Textarea
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault()
-                  sendMessage()
-                }
-              }}
-              placeholder="输入消息，Enter 发送"
-              className="max-h-40 min-h-10 resize-none"
-            />
-            <Button
-              type="button"
-              size="icon"
-              aria-label="发送消息"
-              className="shrink-0"
-              onClick={sendMessage}
-            >
-              <Send className="size-4" />
-            </Button>
-          </div>
-        </footer>
-      </main>
+      <ConversationPanel
+        conversation={activeConversation}
+        draft={draft}
+        historyError={activeMessageState?.error ?? null}
+        historyLoading={Boolean(activeConversation && !activeLoaded)}
+        historyLoadingBefore={Boolean(activeMessageState?.loadingBefore)}
+        messages={activeMessages}
+        onDraftChange={setDraft}
+        onLoadBeforeMessages={loadBeforeMessages}
+        onSendMessage={sendMessage}
+        sending={Boolean(activeMessageState?.sending)}
+      />
     </>
   )
 }
 
-function MessageBubble({
-  message,
-  conversation,
-}: {
-  message: ChatMessage
-  conversation: Conversation
-}) {
-  const fromMe = message.role === "me"
-  const assistant = message.role === "assistant"
-  const fallback = fromMe ? "我" : assistant ? "AI" : conversation.avatar
+function getConversationListDescription(conversation: ClientConversation) {
+  const summary = conversation.lastMessageSummary.trim()
 
-  return (
-    <div className={cn("flex gap-3", fromMe ? "justify-end" : "justify-start")}>
-      {!fromMe && (
-        <Avatar className="mt-1 size-8 rounded-sm bg-muted after:rounded-sm">
-          <AvatarFallback className="rounded-sm">{fallback}</AvatarFallback>
-        </Avatar>
-      )}
-      <div
-        className={cn(
-          "flex max-w-[min(70%,42rem)] flex-col gap-1",
-          fromMe && "items-end"
-        )}
-      >
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span>{message.author}</span>
-          <span>{message.time}</span>
-        </div>
-        <div
-          className={cn(
-            "rounded-lg px-3 py-2 text-sm leading-relaxed shadow-xs",
-            fromMe
-              ? "bg-primary text-primary-foreground"
-              : "bg-muted text-foreground"
-          )}
-        >
-          {message.content}
-        </div>
-      </div>
-      {fromMe && (
-        <Avatar className="mt-1 size-8 rounded-sm bg-muted after:rounded-sm">
-          <AvatarFallback className="rounded-sm bg-primary text-primary-foreground">
-            我
-          </AvatarFallback>
-        </Avatar>
-      )}
-    </div>
-  )
+  return summary || "暂无消息"
+}
+
+function getConversationInitial(name: string) {
+  return Array.from(name.trim())[0]?.toUpperCase() ?? "?"
+}
+
+function createConversationMessageState(): ConversationMessageState {
+  return {
+    error: null,
+    loaded: false,
+    loadingBefore: false,
+    messages: [],
+    page: null,
+    sending: false,
+  }
+}
+
+function mergeConversationMessages(
+  currentMessages: ClientMessage[],
+  nextMessages: ClientMessage[]
+) {
+  const messagesById = new Map<string, ClientMessage>()
+
+  for (const message of currentMessages) {
+    messagesById.set(message.id, message)
+  }
+  for (const message of nextMessages) {
+    messagesById.set(message.id, message)
+  }
+
+  return Array.from(messagesById.values()).sort((messageA, messageB) => {
+    if (messageA.seq !== messageB.seq) {
+      return messageA.seq - messageB.seq
+    }
+
+    return messageA.createdAt.localeCompare(messageB.createdAt)
+  })
+}
+
+function updatePageWithMessage(
+  page: ClientMessagePage | null,
+  messages: ClientMessage[]
+): ClientMessagePage {
+  const firstMessage = messages[0]
+  const lastMessage = messages[messages.length - 1]
+
+  return {
+    hasMoreAfter: false,
+    hasMoreBefore: page?.hasMoreBefore ?? false,
+    limit: page?.limit ?? messagePageLimit,
+    newestSeq: lastMessage?.seq ?? 0,
+    oldestSeq: firstMessage?.seq ?? 0,
+  }
+}
+
+function toConversationPanelMessage(
+  message: ClientMessage,
+  conversation: ClientConversation,
+  currentUserId: string
+): ConversationPanelMessage {
+  const fromMe = message.sender.type === "user" && message.sender.id === currentUserId
+
+  return {
+    author: getMessageAuthor(message, conversation, currentUserId),
+    content: message.body.content,
+    id: message.id,
+    role: fromMe ? "me" : "other",
+    time: getMessageTime(message.createdAt),
+  }
+}
+
+function getMessageAuthor(
+  message: ClientMessage,
+  conversation: ClientConversation,
+  currentUserId: string
+) {
+  if (message.sender.type === "user" && message.sender.id === currentUserId) {
+    return "我"
+  }
+
+  if (message.sender.type === "system") {
+    return "系统"
+  }
+
+  if (message.sender.type === "app") {
+    return conversation.name
+  }
+
+  if (conversation.type === "direct") {
+    return conversation.name
+  }
+
+  return "成员"
+}
+
+function getClientDataErrorMessage(error: unknown, fallbackMessage: string) {
+  if (error instanceof ClientDataRequestError) {
+    return error.message
+  }
+
+  return fallbackMessage
 }

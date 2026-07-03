@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react"
-import { Camera, X } from "lucide-react"
+import { Camera, Loader2Icon, X } from "lucide-react"
 
 import { AvatarPickerDialog } from "@/components/avatar-picker-dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -160,6 +160,9 @@ function ProfileSettingsDialogContent({
                   onClick={() => void handleNicknameSave()}
                   type="button"
                 >
+                  {nicknameSaving && (
+                    <Loader2Icon aria-hidden="true" className="animate-spin" />
+                  )}
                   提交
                 </Button>
               )}

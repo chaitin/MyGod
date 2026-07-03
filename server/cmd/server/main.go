@@ -28,6 +28,20 @@ func main() {
 		logger.Error("connect database", "error", err)
 		os.Exit(1)
 	}
+	if err := store.Ping(db); err != nil {
+		logger.Error("ping database", "error", err)
+		os.Exit(1)
+	}
+
+	migrationsDir, err := store.FindMigrationsDir()
+	if err != nil {
+		logger.Error("find migrations", "error", err)
+		os.Exit(1)
+	}
+	if err := store.RunPostgresMigrations(db, migrationsDir); err != nil {
+		logger.Error("migrate database", "error", err)
+		os.Exit(1)
+	}
 
 	router := httpserver.NewRouter(db, cfg)
 	logger.Info("server starting", "addr", cfg.Server.Addr)

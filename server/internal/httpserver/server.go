@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"app/internal/config"
+	"app/internal/realtime"
 
 	"github.com/labstack/echo/v4"
 	echoSwagger "github.com/swaggo/echo-swagger"
@@ -20,15 +21,22 @@ const (
 )
 
 type Server struct {
-	db  *gorm.DB
-	cfg config.Config
+	db       *gorm.DB
+	cfg      config.Config
+	realtime *realtime.ConnectionPool
 }
 
 func NewRouter(db *gorm.DB, cfg config.Config) *echo.Echo {
+	return NewRouterWithRealtimeOptions(db, cfg, realtime.Options{})
+}
+
+func NewRouterWithRealtimeOptions(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options) *echo.Echo {
 	server := &Server{
 		db:  db,
 		cfg: cfg,
 	}
+	realtimeOptions.RecordUserPong = server.recordUserPong
+	server.realtime = realtime.NewConnectionPool(realtimeOptions)
 
 	router := echo.New()
 	router.HideBanner = true
@@ -50,7 +58,12 @@ func NewRouter(db *gorm.DB, cfg config.Config) *echo.Echo {
 	client.GET("/me", server.getCurrentUser)
 	client.PATCH("/me", server.updateCurrentUser)
 	client.GET("/contacts/users", server.listContactUsers)
+	client.GET("/conversations", server.listClientConversations)
+	client.POST("/conversations/direct", server.createDirectConversation)
 	client.POST("/conversations/groups", server.createGroupConversation)
+	client.GET("/conversations/:conversation_id/messages", server.listConversationMessages)
+	client.POST("/conversations/:conversation_id/messages", server.createConversationMessage)
+	client.GET("/ws", server.clientWebSocket)
 
 	admin := router.Group("/api/admin", server.requireAdminSession)
 	admin.GET("/settings/info", server.getInfoSettings)

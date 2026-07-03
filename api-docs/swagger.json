@@ -665,6 +665,132 @@
                 }
             }
         },
+        "/api/client/conversations": {
+            "get": {
+                "description": "普通用户获取自己参与的最近 100 个会话，按照最后消息时间倒序排列。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端会话"
+                ],
+                "summary": "列出当前用户会话",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/httpserver.listClientConversationsResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/client/conversations/direct": {
+            "post": {
+                "description": "普通用户创建或打开和指定用户的一对一会话。重复调用会返回已有会话，不会创建重复私聊。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端会话"
+                ],
+                "summary": "创建或打开一对一会话",
+                "parameters": [
+                    {
+                        "description": "一对一会话目标用户",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.createDirectConversationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/httpserver.createDirectConversationResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/httpserver.createDirectConversationResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
         "/api/client/conversations/groups": {
             "post": {
                 "description": "普通用户创建群聊。当前登录用户会自动成为群主，member_ids 只需要传其他成员。",
@@ -716,6 +842,194 @@
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/client/conversations/{conversation_id}/messages": {
+            "get": {
+                "description": "普通用户拉取自己参与的 active 会话消息。默认返回最近 20 条，支持 before_seq/after_seq 游标。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端消息"
+                ],
+                "summary": "拉取会话历史消息",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "会话 ID",
+                        "name": "conversation_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "拉取此 seq 之前的更早消息",
+                        "name": "before_seq",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "拉取此 seq 之后的更新消息",
+                        "name": "after_seq",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "返回数量，默认 20，最大 20",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/httpserver.listConversationMessagesResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "普通用户向自己参与的会话发送消息。第一版只支持 text body，client_message_id 用于重试幂等。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端消息"
+                ],
+                "summary": "发送消息",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "会话 ID",
+                        "name": "conversation_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "消息",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.createMessageRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/httpserver.createMessageResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/httpserver.createMessageResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/httpserver.errorEnvelope"
                         }
@@ -907,6 +1221,10 @@
                     "type": "string",
                     "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
                 },
+                "last_online_at": {
+                    "type": "string",
+                    "example": "2026-07-03T01:00:00Z"
+                },
                 "name": {
                     "type": "string",
                     "example": "张三"
@@ -915,6 +1233,10 @@
                     "type": "string",
                     "example": "小张"
                 },
+                "online": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "phone": {
                     "type": "string",
                     "example": "+8613812345678"
@@ -922,6 +1244,51 @@
                 "type": {
                     "type": "string",
                     "example": "user"
+                }
+            }
+        },
+        "httpserver.conversationListItemResponse": {
+            "type": "object",
+            "properties": {
+                "avatar": {
+                    "type": "string",
+                    "example": "/assets/avatars/builtin/07.webp"
+                },
+                "created_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "last_message_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "last_message_id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "last_message_seq": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "last_message_summary": {
+                    "type": "string",
+                    "example": "好的，我看一下"
+                },
+                "member_count": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "name": {
+                    "type": "string",
+                    "example": "张三"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "direct"
                 }
             }
         },
@@ -958,6 +1325,27 @@
                 }
             }
         },
+        "httpserver.createDirectConversationRequest": {
+            "type": "object",
+            "properties": {
+                "user_id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                }
+            }
+        },
+        "httpserver.createDirectConversationResponse": {
+            "type": "object",
+            "properties": {
+                "conversation": {
+                    "$ref": "#/definitions/httpserver.conversationListItemResponse"
+                },
+                "created": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
         "httpserver.createGroupConversationRequest": {
             "type": "object",
             "properties": {
@@ -981,6 +1369,26 @@
             "properties": {
                 "conversation": {
                     "$ref": "#/definitions/httpserver.groupConversationResponse"
+                }
+            }
+        },
+        "httpserver.createMessageRequest": {
+            "type": "object",
+            "properties": {
+                "body": {
+                    "type": "object"
+                },
+                "client_message_id": {
+                    "type": "string",
+                    "example": "9c08f2dd-0af6-4e99-b486-2f0c841822be"
+                }
+            }
+        },
+        "httpserver.createMessageResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "$ref": "#/definitions/httpserver.messageResponse"
                 }
             }
         },
@@ -1100,6 +1508,17 @@
                 }
             }
         },
+        "httpserver.listClientConversationsResponse": {
+            "type": "object",
+            "properties": {
+                "conversations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/httpserver.conversationListItemResponse"
+                    }
+                }
+            }
+        },
         "httpserver.listContactUsersResponse": {
             "type": "object",
             "properties": {
@@ -1108,6 +1527,45 @@
                     "items": {
                         "$ref": "#/definitions/httpserver.contactUserResponse"
                     }
+                }
+            }
+        },
+        "httpserver.listConversationMessagesResponse": {
+            "type": "object",
+            "properties": {
+                "messages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/httpserver.messageResponse"
+                    }
+                },
+                "page": {
+                    "$ref": "#/definitions/httpserver.listMessagesPageResponse"
+                }
+            }
+        },
+        "httpserver.listMessagesPageResponse": {
+            "type": "object",
+            "properties": {
+                "has_more_after": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "has_more_before": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "limit": {
+                    "type": "integer",
+                    "example": 20
+                },
+                "newest_seq": {
+                    "type": "integer",
+                    "example": 120
+                },
+                "oldest_seq": {
+                    "type": "integer",
+                    "example": 101
                 }
             }
         },
@@ -1152,6 +1610,50 @@
                 "password": {
                     "type": "string",
                     "example": "password"
+                }
+            }
+        },
+        "httpserver.messageResponse": {
+            "type": "object",
+            "properties": {
+                "body": {
+                    "type": "object"
+                },
+                "client_message_id": {
+                    "type": "string",
+                    "example": "9c08f2dd-0af6-4e99-b486-2f0c841822be"
+                },
+                "conversation_id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "created_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "sender": {
+                    "$ref": "#/definitions/httpserver.messageSenderResponse"
+                },
+                "seq": {
+                    "type": "integer",
+                    "example": 13
+                }
+            }
+        },
+        "httpserver.messageSenderResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "user"
                 }
             }
         },
@@ -1238,6 +1740,10 @@
                     "type": "string",
                     "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
                 },
+                "last_online_at": {
+                    "type": "string",
+                    "example": "2026-07-03T01:00:00Z"
+                },
                 "name": {
                     "type": "string",
                     "example": "张三"
@@ -1245,6 +1751,10 @@
                 "nickname": {
                     "type": "string",
                     "example": "小张"
+                },
+                "online": {
+                    "type": "boolean",
+                    "example": true
                 },
                 "phone": {
                     "type": "string",

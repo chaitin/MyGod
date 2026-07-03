@@ -1,12 +1,14 @@
 import { createContext, useContext } from "react"
 
 import {
+  type ClientConversation,
   type ClientDataRequestError,
   type ClientUser,
   type ContactUser,
 } from "@/lib/client-data-api"
 
 export type ClientDataContextValue = {
+  conversations: ClientConversation[]
   contacts: ContactUser[]
   contactsError: ClientDataRequestError | null
   contactsLoading: boolean
@@ -15,6 +17,8 @@ export type ClientDataContextValue = {
   meError: ClientDataRequestError | null
   meLoading: boolean
   meRefreshing: boolean
+  openDirectConversation: (userId: string) => Promise<ClientConversation>
+  refreshConversations: () => Promise<void>
   refreshContacts: () => Promise<void>
   refreshMe: () => Promise<void>
 }

@@ -2,8 +2,12 @@ import { describe, expect, it, vi } from "vitest"
 
 import {
   ClientDataRequestError,
+  createDirectConversation,
   getCurrentClientUser,
   listClientContacts,
+  listClientConversations,
+  listConversationMessages,
+  sendConversationTextMessage,
   updateCurrentClientUser,
 } from "@/lib/client-data-api"
 
@@ -40,6 +44,7 @@ describe("client data API", () => {
       createdAt: "2026-07-01T12:34:56Z",
       email: "alice@example.com",
       id: "user-1",
+      lastOnlineAt: null,
       name: "Alice Zhang",
       nickname: "Al",
       phone: "+8613912345678",
@@ -62,8 +67,10 @@ describe("client data API", () => {
                 avatar: "/assets/avatars/builtin/03.webp",
                 email: "bob@example.com",
                 id: "user-2",
+                last_online_at: "2026-07-03T01:00:00Z",
                 name: "Bob Li",
                 nickname: "",
+                online: true,
                 phone: "+8613912345679",
                 type: "user",
               },
@@ -84,8 +91,10 @@ describe("client data API", () => {
         avatar: "/assets/avatars/builtin/03.webp",
         email: "bob@example.com",
         id: "user-2",
+        lastOnlineAt: "2026-07-03T01:00:00Z",
         name: "Bob Li",
         nickname: "",
+        online: true,
         phone: "+8613912345679",
         type: "user",
       },
@@ -94,6 +103,271 @@ describe("client data API", () => {
       credentials: "include",
       method: "GET",
     })
+  })
+
+  it("loads client conversations with credentials", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            conversations: [
+              {
+                avatar: "/assets/avatars/builtin/03.webp",
+                created_at: "2026-07-03T07:00:00Z",
+                id: "conversation-1",
+                last_message_at: "2026-07-03T08:00:00Z",
+                last_message_id: "message-1",
+                last_message_seq: 12,
+                last_message_summary: "好的，我看一下",
+                member_count: 2,
+                name: "Bob Li",
+                type: "direct",
+              },
+            ],
+          },
+        }),
+        {
+          headers: {
+            "content-type": "application/json",
+          },
+          status: 200,
+        }
+      )
+    )
+
+    await expect(listClientConversations(fetcher)).resolves.toEqual([
+      {
+        avatar: "/assets/avatars/builtin/03.webp",
+        createdAt: "2026-07-03T07:00:00Z",
+        id: "conversation-1",
+        lastMessageAt: "2026-07-03T08:00:00Z",
+        lastMessageId: "message-1",
+        lastMessageSeq: 12,
+        lastMessageSummary: "好的，我看一下",
+        memberCount: 2,
+        name: "Bob Li",
+        type: "direct",
+      },
+    ])
+    expect(fetcher).toHaveBeenCalledWith("/api/client/conversations", {
+      credentials: "include",
+      method: "GET",
+    })
+  })
+
+  it("creates or opens a direct conversation with credentials", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            conversation: {
+              avatar: "/assets/avatars/builtin/03.webp",
+              created_at: "2026-07-03T07:00:00Z",
+              id: "conversation-1",
+              last_message_at: null,
+              last_message_id: null,
+              last_message_seq: 0,
+              last_message_summary: "",
+              member_count: 2,
+              name: "Bob Li",
+              type: "direct",
+            },
+            created: true,
+          },
+        }),
+        {
+          headers: {
+            "content-type": "application/json",
+          },
+          status: 201,
+        }
+      )
+    )
+
+    await expect(createDirectConversation("user-2", fetcher)).resolves.toEqual({
+      avatar: "/assets/avatars/builtin/03.webp",
+      createdAt: "2026-07-03T07:00:00Z",
+      id: "conversation-1",
+      lastMessageAt: null,
+      lastMessageId: null,
+      lastMessageSeq: 0,
+      lastMessageSummary: "",
+      memberCount: 2,
+      name: "Bob Li",
+      type: "direct",
+    })
+    expect(fetcher).toHaveBeenCalledWith("/api/client/conversations/direct", {
+      body: JSON.stringify({
+        user_id: "user-2",
+      }),
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    })
+  })
+
+  it("loads conversation messages with pagination params", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            messages: [
+              {
+                id: "message-12",
+                conversation_id: "conversation-1",
+                seq: 12,
+                sender: {
+                  type: "user",
+                  id: "user-2",
+                },
+                body: {
+                  type: "text",
+                  content: "好的，我看一下",
+                },
+                client_message_id: "client-message-12",
+                created_at: "2026-07-03T08:00:00Z",
+              },
+            ],
+            page: {
+              limit: 20,
+              oldest_seq: 12,
+              newest_seq: 12,
+              has_more_before: true,
+              has_more_after: false,
+            },
+          },
+        }),
+        {
+          headers: {
+            "content-type": "application/json",
+          },
+          status: 200,
+        }
+      )
+    )
+
+    await expect(
+      listConversationMessages(
+        "conversation-1",
+        {
+          beforeSeq: 13,
+          limit: 20,
+        },
+        fetcher
+      )
+    ).resolves.toEqual({
+      messages: [
+        {
+          id: "message-12",
+          conversationId: "conversation-1",
+          seq: 12,
+          sender: {
+            type: "user",
+            id: "user-2",
+          },
+          body: {
+            type: "text",
+            content: "好的，我看一下",
+          },
+          clientMessageId: "client-message-12",
+          createdAt: "2026-07-03T08:00:00Z",
+        },
+      ],
+      page: {
+        limit: 20,
+        oldestSeq: 12,
+        newestSeq: 12,
+        hasMoreBefore: true,
+        hasMoreAfter: false,
+      },
+    })
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/client/conversations/conversation-1/messages?limit=20&before_seq=13",
+      {
+        credentials: "include",
+        method: "GET",
+      }
+    )
+  })
+
+  it("sends a text message with a client message id", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            message: {
+              id: "message-13",
+              conversation_id: "conversation-1",
+              seq: 13,
+              sender: {
+                type: "user",
+                id: "user-1",
+              },
+              body: {
+                type: "text",
+                content: "帮我总结今天的消息",
+              },
+              client_message_id: "client-message-13",
+              created_at: "2026-07-03T08:01:00Z",
+            },
+          },
+        }),
+        {
+          headers: {
+            "content-type": "application/json",
+          },
+          status: 201,
+        }
+      )
+    )
+
+    await expect(
+      sendConversationTextMessage(
+        "conversation-1",
+        {
+          clientMessageId: "client-message-13",
+          content: "帮我总结今天的消息",
+        },
+        fetcher
+      )
+    ).resolves.toEqual({
+      id: "message-13",
+      conversationId: "conversation-1",
+      seq: 13,
+      sender: {
+        type: "user",
+        id: "user-1",
+      },
+      body: {
+        type: "text",
+        content: "帮我总结今天的消息",
+      },
+      clientMessageId: "client-message-13",
+      createdAt: "2026-07-03T08:01:00Z",
+    })
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/client/conversations/conversation-1/messages",
+      {
+        body: JSON.stringify({
+          client_message_id: "client-message-13",
+          body: {
+            type: "text",
+            content: "帮我总结今天的消息",
+          },
+        }),
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      }
+    )
   })
 
   it("updates the current client user profile with partial fields", async () => {

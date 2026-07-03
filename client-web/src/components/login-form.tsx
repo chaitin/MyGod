@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react"
-import { EyeIcon, EyeOffIcon } from "lucide-react"
+import { EyeIcon, EyeOffIcon, Loader2Icon } from "lucide-react"
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
@@ -128,7 +128,10 @@ export function LoginForm({
               </div>
               <Field>
                 <Button disabled={pending} type="submit">
-                  {pending ? "登录中..." : "登录"}
+                  {pending && (
+                    <Loader2Icon aria-hidden="true" className="animate-spin" />
+                  )}
+                  登录
                 </Button>
               </Field>
             </FieldGroup>

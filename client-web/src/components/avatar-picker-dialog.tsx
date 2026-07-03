@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { X } from "lucide-react"
+import { Loader2Icon, X } from "lucide-react"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -122,7 +122,10 @@ function AvatarPickerDialogContent({
           onClick={() => void handleSave()}
           type="button"
         >
-          {saving ? "保存中..." : "保存"}
+          {saving && (
+            <Loader2Icon aria-hidden="true" className="animate-spin" />
+          )}
+          保存
         </Button>
       </div>
     </DialogContent>

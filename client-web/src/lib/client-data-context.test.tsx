@@ -51,8 +51,45 @@ function createContactsResponse(name = "Bob Li") {
   })
 }
 
+function createConversationsResponse(name = "Bob Li") {
+  return createSuccessResponse({
+    conversations: [
+      {
+        avatar: "/assets/avatars/builtin/03.webp",
+        created_at: "2026-07-03T07:00:00Z",
+        id: "conversation-1",
+        last_message_at: "2026-07-03T08:00:00Z",
+        last_message_id: "message-1",
+        last_message_seq: 12,
+        last_message_summary: "好的，我看一下",
+        member_count: 2,
+        name,
+        type: "direct",
+      },
+    ],
+  })
+}
+
+function createDirectConversationResponse() {
+  return createSuccessResponse({
+    conversation: {
+      avatar: "/assets/avatars/builtin/05.webp",
+      created_at: "2026-07-03T09:00:00Z",
+      id: "conversation-2",
+      last_message_at: null,
+      last_message_id: null,
+      last_message_seq: 0,
+      last_message_summary: "",
+      member_count: 2,
+      name: "Carol Wang",
+      type: "direct",
+    },
+    created: true,
+  })
+}
+
 function createClientDataFetchMock() {
-  return vi.fn(async (input: RequestInfo | URL) => {
+  return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input)
 
     if (path === "/api/client/me") {
@@ -61,6 +98,17 @@ function createClientDataFetchMock() {
 
     if (path === "/api/client/contacts/users") {
       return createContactsResponse()
+    }
+
+    if (path === "/api/client/conversations") {
+      return createConversationsResponse()
+    }
+
+    if (
+      path === "/api/client/conversations/direct" &&
+      init?.method === "POST"
+    ) {
+      return createDirectConversationResponse()
     }
 
     return new Response(null, { status: 404 })
@@ -93,16 +141,22 @@ function createClientDataErrorFetchMock() {
       )
     }
 
+    if (path === "/api/client/conversations") {
+      return createConversationsResponse()
+    }
+
     return new Response(null, { status: 404 })
   })
 }
 
 function DataProbe() {
   const {
+    conversations,
     contacts,
     contactsRefreshing,
     me,
     meRefreshing,
+    openDirectConversation,
     refreshContacts,
     refreshMe,
   } = useClientData()
@@ -111,6 +165,10 @@ function DataProbe() {
     <div>
       <span data-testid="me-name">{me.name}</span>
       <span data-testid="contact-count">{contacts.length}</span>
+      <span data-testid="conversation-count">{conversations.length}</span>
+      <span data-testid="first-conversation-name">
+        {conversations[0]?.name ?? ""}
+      </span>
       <span data-testid="me-refreshing">{String(meRefreshing)}</span>
       <span data-testid="contacts-refreshing">
         {String(contactsRefreshing)}
@@ -120,6 +178,12 @@ function DataProbe() {
       </button>
       <button type="button" onClick={() => void refreshContacts()}>
         refresh contacts
+      </button>
+      <button
+        type="button"
+        onClick={() => void openDirectConversation("user-3")}
+      >
+        open direct
       </button>
     </div>
   )
@@ -186,6 +250,7 @@ describe("ClientDataProvider", () => {
 
     expect(screen.getByTestId("me-name")).toHaveTextContent("Alice Zhang")
     expect(screen.getByTestId("contact-count")).toHaveTextContent("1")
+    expect(screen.getByTestId("conversation-count")).toHaveTextContent("1")
     expect(screen.queryByText("正在为你加载数据")).not.toBeInTheDocument()
   })
 
@@ -216,6 +281,45 @@ describe("ClientDataProvider", () => {
       credentials: "include",
       method: "GET",
     })
+    expect(fetcher).not.toHaveBeenCalledWith("/api/client/conversations", {
+      credentials: "include",
+      method: "GET",
+    })
+  })
+
+  it("opens a direct conversation and prepends it to conversations", async () => {
+    vi.useFakeTimers()
+    const fetcher = fetch as unknown as ReturnType<typeof vi.fn>
+    renderProvider()
+
+    await act(async () => {
+      await flushBootstrapPromises()
+      vi.advanceTimersByTime(2_000)
+      await flushBootstrapPromises()
+    })
+
+    expect(screen.getByTestId("conversation-count")).toHaveTextContent("1")
+    fetcher.mockClear()
+
+    await act(async () => {
+      screen.getByRole("button", { name: "open direct" }).click()
+      await flushBootstrapPromises()
+    })
+
+    expect(fetcher).toHaveBeenCalledWith("/api/client/conversations/direct", {
+      body: JSON.stringify({
+        user_id: "user-3",
+      }),
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    })
+    expect(screen.getByTestId("conversation-count")).toHaveTextContent("2")
+    expect(screen.getByTestId("first-conversation-name")).toHaveTextContent(
+      "Carol Wang"
+    )
   })
 
   it("uses the shared button component for bootstrap retry", async () => {

@@ -16,16 +16,13 @@ func OpenPostgres(dsn string) (*gorm.DB, error) {
 	return db, nil
 }
 
-func AutoMigrate(db *gorm.DB) error {
-	if err := db.AutoMigrate(
-		&User{},
-		&AdminSession{},
-		&UserSession{},
-		&Conversation{},
-		&ConversationMember{},
-		&AppSettings{},
-	); err != nil {
-		return fmt.Errorf("auto migrate: %w", err)
+func Ping(db *gorm.DB) error {
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fmt.Errorf("get sql database: %w", err)
+	}
+	if err := sqlDB.Ping(); err != nil {
+		return fmt.Errorf("ping database: %w", err)
 	}
 
 	return nil
