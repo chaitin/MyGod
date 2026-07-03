@@ -9,6 +9,7 @@ import {
   getMemberActionConfirmation,
   getMemberAvatarClassName,
   getMemberColumnClassName,
+  getMemberOnlineStatusText,
   getMemberOptionalDisplayValue,
   getMembersTableContainerClassName,
   getMembersTableClassName,
@@ -22,8 +23,10 @@ describe("members page reset password dialog state", () => {
       email: "alice@example.com",
       id: "user-1",
       joinedAt: "2026-07-01",
+      lastOnlineAt: "2026-07-03T01:45:00Z",
       name: "Alice",
       nickname: "",
+      online: true,
       phone: "",
       status: "enabled" as const,
     }
@@ -56,6 +59,46 @@ describe("members page optional display values", () => {
 
   it("keeps present values trimmed", () => {
     expect(getMemberOptionalDisplayValue("  小爱  ")).toBe("小爱")
+  })
+})
+
+describe("members page online status text", () => {
+  const now = new Date("2026-07-03T02:00:00Z")
+
+  it("shows current online text for online members", () => {
+    expect(
+      getMemberOnlineStatusText(
+        {
+          lastOnlineAt: "2026-07-03T01:45:00Z",
+          online: true,
+        },
+        now
+      )
+    ).toBe("当前在线")
+  })
+
+  it("shows relative last online text for offline members", () => {
+    expect(
+      getMemberOnlineStatusText(
+        {
+          lastOnlineAt: "2026-07-03T01:55:00Z",
+          online: false,
+        },
+        now
+      )
+    ).toBe("5分钟前在线")
+  })
+
+  it("shows a fallback when an offline member has no online record", () => {
+    expect(
+      getMemberOnlineStatusText(
+        {
+          lastOnlineAt: "",
+          online: false,
+        },
+        now
+      )
+    ).toBe("从未在线")
   })
 })
 
@@ -118,6 +161,7 @@ describe("members page columns", () => {
       "nickname",
       "email",
       "phone",
+      "onlineStatus",
       "joinedAt",
       "status",
       "actions",
@@ -215,7 +259,11 @@ function getColumnId(column: { accessorKey?: unknown; id?: string }) {
   return String(column.id ?? column.accessorKey)
 }
 
-function getSourceBetween(source: string, startMarker: string, endMarker: string) {
+function getSourceBetween(
+  source: string,
+  startMarker: string,
+  endMarker: string
+) {
   const startIndex = source.indexOf(startMarker)
   const endIndex = source.indexOf(endMarker)
 

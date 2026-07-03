@@ -23,8 +23,10 @@ type AdminUserResponse = {
   created_at?: string
   email?: string
   id?: string
+  last_online_at?: string | null
   name?: string
   nickname?: string
+  online?: boolean
   phone?: string
   status?: string
 }
@@ -57,8 +59,10 @@ export type AdminUser = {
   createdAt: string
   email: string
   id: string
+  lastOnlineAt: string
   name: string
   nickname: string
+  online: boolean
   phone: string
   status: "active" | "disabled"
 }
@@ -290,8 +294,10 @@ function normalizeAdminUser(user: AdminUserResponse): AdminUser {
     createdAt: user.created_at,
     email: user.email,
     id: user.id,
+    lastOnlineAt: user.last_online_at ?? "",
     name: user.name,
     nickname: user.nickname ?? "",
+    online: user.online ?? false,
     phone: user.phone ?? "",
     status: user.status === "disabled" ? "disabled" : "active",
   }

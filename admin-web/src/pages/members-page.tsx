@@ -102,8 +102,10 @@ type Member = {
   email: string
   id: string
   joinedAt: string
+  lastOnlineAt: string
   name: string
   nickname: string
+  online: boolean
   phone: string
   status: "disabled" | "enabled"
 }
@@ -145,6 +147,7 @@ const columnLabels: Record<string, string> = {
   joinedAt: "加入时间",
   name: "名称",
   nickname: "昵称",
+  onlineStatus: "在线状态",
   phone: "手机号",
   status: "状态",
 }
@@ -249,9 +252,7 @@ export function getColumns({
     {
       accessorKey: "nickname",
       header: "昵称",
-      cell: ({ row }) => (
-        <MemberOptionalText value={row.original.nickname} />
-      ),
+      cell: ({ row }) => <MemberOptionalText value={row.original.nickname} />,
     },
     {
       accessorKey: "email",
@@ -274,6 +275,12 @@ export function getColumns({
       cell: ({ row }) => (
         <MemberOptionalText value={formatMemberPhone(row.original.phone)} />
       ),
+    },
+    {
+      id: "onlineStatus",
+      enableSorting: false,
+      header: "在线状态",
+      cell: ({ row }) => <MemberOnlineStatus member={row.original} />,
     },
     {
       accessorKey: "joinedAt",
@@ -816,11 +823,7 @@ export default function MembersPage() {
   )
 }
 
-function AddMemberDialog({
-  onMemberCreated,
-}: {
-  onMemberCreated: () => void
-}) {
+function AddMemberDialog({ onMemberCreated }: { onMemberCreated: () => void }) {
   const addMemberEmailId = useId()
   const addMemberNameId = useId()
   const addMemberPasswordId = useId()
@@ -923,7 +926,9 @@ function AddMemberDialog({
             </Field>
             {isAddMemberComplete && (
               <Field>
-                <FieldLabel htmlFor={addMemberPasswordId}>初始化密码</FieldLabel>
+                <FieldLabel htmlFor={addMemberPasswordId}>
+                  初始化密码
+                </FieldLabel>
                 <Input
                   id={addMemberPasswordId}
                   readOnly
@@ -1035,6 +1040,25 @@ function MemberOptionalText({ value }: { value: string }) {
   )
 }
 
+function MemberOnlineStatus({
+  member,
+}: {
+  member: Pick<Member, "lastOnlineAt" | "online">
+}) {
+  return (
+    <span className="inline-flex items-center gap-2 whitespace-nowrap">
+      <span
+        aria-hidden="true"
+        className={cn(
+          "size-2 rounded-full",
+          member.online ? "bg-emerald-500" : "bg-muted-foreground/40"
+        )}
+      />
+      <span>{getMemberOnlineStatusText(member)}</span>
+    </span>
+  )
+}
+
 function getColumnLabel(columnId: string) {
   return columnLabels[columnId] ?? columnId
 }
@@ -1111,8 +1135,10 @@ function toMember(user: AdminUser): Member {
     email: user.email,
     id: user.id,
     joinedAt: formatJoinedAt(user.createdAt),
+    lastOnlineAt: user.lastOnlineAt,
     name: user.name,
     nickname: user.nickname,
+    online: user.online,
     phone: user.phone,
     status: user.status === "disabled" ? "disabled" : "enabled",
   }
@@ -1134,6 +1160,27 @@ export function getMemberOptionalDisplayValue(value: string) {
   return trimmedValue || "-"
 }
 
+export function getMemberOnlineStatusText(
+  member: Pick<Member, "lastOnlineAt" | "online">,
+  now = new Date()
+) {
+  if (member.online) {
+    return "当前在线"
+  }
+
+  const lastOnlineDistance = formatLastOnlineDistance(member.lastOnlineAt, now)
+
+  if (!lastOnlineDistance) {
+    return "从未在线"
+  }
+
+  if (lastOnlineDistance === "刚刚") {
+    return "刚刚在线"
+  }
+
+  return `${lastOnlineDistance}前在线`
+}
+
 export function getMemberAvatarFallback(
   member: Pick<Member, "email" | "name" | "nickname">
 ) {
@@ -1149,6 +1196,43 @@ function formatJoinedAt(value: string) {
 
   if (Number.isNaN(date.getTime())) {
     return value
+  }
+
+  return date.toISOString().slice(0, 10)
+}
+
+function formatLastOnlineDistance(value: string, now: Date) {
+  const trimmedValue = value.trim()
+
+  if (!trimmedValue) {
+    return ""
+  }
+
+  const date = new Date(trimmedValue)
+
+  if (Number.isNaN(date.getTime())) {
+    return trimmedValue
+  }
+
+  const diffMs = Math.max(0, now.getTime() - date.getTime())
+  const minuteMs = 60 * 1000
+  const hourMs = 60 * minuteMs
+  const dayMs = 24 * hourMs
+
+  if (diffMs < minuteMs) {
+    return "刚刚"
+  }
+
+  if (diffMs < hourMs) {
+    return `${Math.floor(diffMs / minuteMs)}分钟`
+  }
+
+  if (diffMs < dayMs) {
+    return `${Math.floor(diffMs / hourMs)}小时`
+  }
+
+  if (diffMs < 30 * dayMs) {
+    return `${Math.floor(diffMs / dayMs)}天`
   }
 
   return date.toISOString().slice(0, 10)
