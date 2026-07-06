@@ -528,7 +528,7 @@ function OIDCProviderDialog({
         }
       >
         <PlusIcon data-icon="inline-start" />
-        添加登录方式
+        添加
       </DialogTrigger>
       <DialogContent
         className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-2xl"

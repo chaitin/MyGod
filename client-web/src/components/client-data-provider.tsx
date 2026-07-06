@@ -269,7 +269,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
           updateConversationMessageState(conversationId, (currentState) => ({
             ...currentState,
             error: message,
-            loaded: true,
+            loaded: false,
             loading: false,
           }))
           toast.error(message)

@@ -8,6 +8,7 @@ import { ClientRealtimeProvider } from "@/components/client-realtime-provider"
 import { AppInfoProvider } from "@/components/app-info-provider"
 import { useAppInfo } from "@/lib/app-info-context"
 import { ChatPage } from "@/pages/chat-page"
+import { ConnectionsPage } from "@/pages/connections-page"
 import { ContactsPage } from "@/pages/contacts-page"
 import { LoginPage } from "@/pages/login-page"
 import { TasksPage } from "@/pages/tasks-page"
@@ -64,6 +65,14 @@ export function App() {
             element={
               <PageTitle title="任务">
                 <TasksPage />
+              </PageTitle>
+            }
+          />
+          <Route
+            path="/connections"
+            element={
+              <PageTitle title="连接">
+                <ConnectionsPage />
               </PageTitle>
             }
           />

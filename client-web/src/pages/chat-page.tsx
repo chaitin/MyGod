@@ -91,7 +91,12 @@ export function ChatPage() {
   const activeMessageState = activeConversationId
     ? getConversationMessageState(activeConversationId)
     : undefined
-  const activeLoaded = Boolean(activeMessageState?.loaded)
+  const historyLoading = Boolean(
+    activeConversation &&
+    activeMessageState &&
+    !activeMessageState.loaded &&
+    !activeMessageState.error
+  )
   const activeClientMessages =
     activeMessageState?.messages ?? emptyClientMessages
   const contactsById = React.useMemo(
@@ -285,7 +290,7 @@ export function ChatPage() {
         conversation={activeConversation}
         draft={draft}
         historyError={activeMessageState?.error ?? null}
-        historyLoading={Boolean(activeConversation && !activeLoaded)}
+        historyLoading={historyLoading}
         historyLoadingBefore={Boolean(activeMessageState?.loadingBefore)}
         messages={activeMessages}
         onDraftChange={setDraft}

@@ -142,9 +142,16 @@ describe("settings page layout", () => {
     expect(settingsPageSource).not.toContain('id="oidc-client-secret"')
   })
 
-  it("uses explicit add login method copy for the dialog trigger", () => {
-    expect(settingsPageSourceText).toContain("添加登录方式")
-    expect(settingsPageSourceText).not.toContain(">新增<")
+  it("uses short add copy for the dialog trigger", () => {
+    const triggerSource = getSourceBetween(
+      settingsPageSourceText,
+      "<DialogTrigger",
+      "</DialogTrigger>"
+    )
+
+    expect(triggerSource).toContain("添加")
+    expect(triggerSource).not.toContain("添加登录方式")
+    expect(triggerSource).not.toContain("新增")
   })
 
   it("keeps generated fields and enable state out of the provider dialog", () => {

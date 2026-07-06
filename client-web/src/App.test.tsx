@@ -894,6 +894,7 @@ describe("App", () => {
     )
     expect(screen.getByRole("link", { name: "通讯录" })).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "任务" })).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "连接" })).toBeInTheDocument()
     expect(
       await screen.findByRole("heading", { name: "消息" })
     ).toBeInTheDocument()
@@ -1440,7 +1441,7 @@ describe("App", () => {
     expect(screen.getByRole("checkbox", { name: "记住账号密码" })).toBeChecked()
   }, 10_000)
 
-  it("聊天、通讯录和任务是独立路由页面", async () => {
+  it("聊天、通讯录、任务和连接是独立路由页面", async () => {
     const user = userEvent.setup()
 
     renderApp("/chat")
@@ -1455,7 +1456,7 @@ describe("App", () => {
       "bg-primary",
       "text-primary-foreground"
     )
-    for (const label of ["聊天", "通讯录", "任务"]) {
+    for (const label of ["聊天", "通讯录", "任务", "连接"]) {
       const navLink = screen.getByRole("link", { name: label })
 
       expect(navLink).toHaveClass("rounded-full")
@@ -1470,6 +1471,9 @@ describe("App", () => {
     expect(
       screen.getByRole("link", { name: "任务" }).querySelector("svg")
     ).toHaveClass("lucide-circle-check-big")
+    expect(
+      screen.getByRole("link", { name: "连接" }).querySelector("svg")
+    ).toHaveClass("lucide-cable")
     expect(
       screen.getByRole("link", { name: "聊天" }).querySelector("svg")
     ).toHaveAttribute("stroke-width", "2.5")
@@ -1733,6 +1737,22 @@ describe("App", () => {
       "bg-primary",
       "text-primary-foreground"
     )
+
+    await user.click(screen.getByRole("link", { name: "连接" }))
+    expect(screen.getByTestId("location")).toHaveTextContent("/connections")
+    expect(document.title).toBe("连接 - 星环协作")
+    expect(screen.getByText("待完善")).toBeInTheDocument()
+    expect(screen.getByText("待完善").closest("main")).toHaveClass("bg-muted")
+    expect(screen.getByRole("link", { name: "连接" })).toHaveClass(
+      "bg-primary",
+      "text-primary-foreground"
+    )
+    expect(
+      screen.getByRole("link", { name: "连接" }).querySelector("svg")
+    ).toHaveAttribute("stroke-width", "2.5")
+    expect(
+      screen.getByRole("link", { name: "任务" }).querySelector("svg")
+    ).toHaveAttribute("stroke-width", "2")
 
     await user.click(screen.getByRole("link", { name: "聊天" }))
     expect(screen.getByTestId("location")).toHaveTextContent("/chat")

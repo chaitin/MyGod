@@ -357,8 +357,7 @@ function ContactListItem({
         </Avatar>
       </ItemMedia>
       <ItemContent className="min-w-0">
-        <ItemTitle className="w-full truncate">
-          <span className="min-w-0 truncate">{title}</span>
+        <ItemTitle className="w-full min-w-0 truncate">
           <span
             aria-label={contact.online ? "在线" : "离线"}
             className={cn(
@@ -366,6 +365,7 @@ function ContactListItem({
               contact.online ? "bg-emerald-500" : "bg-muted-foreground/30"
             )}
           />
+          <span className="min-w-0 truncate">{title}</span>
         </ItemTitle>
       </ItemContent>
       <ItemActions
