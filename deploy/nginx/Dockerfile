@@ -1,4 +1,4 @@
-FROM node:24-alpine AS client-build
+FROM node:24-bookworm-slim AS client-build
 
 WORKDIR /src/client-web
 
@@ -10,7 +10,7 @@ RUN pnpm install --frozen-lockfile
 COPY client-web/ ./
 RUN pnpm build
 
-FROM node:24-alpine AS admin-build
+FROM node:24-bookworm-slim AS admin-build
 
 WORKDIR /src/admin-web
 
