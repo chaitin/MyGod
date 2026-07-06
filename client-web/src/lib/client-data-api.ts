@@ -75,6 +75,10 @@ type CreateDirectConversationResponse = {
   created?: boolean
 }
 
+type CreateGroupConversationResponse = {
+  conversation?: ConversationResponse
+}
+
 type MessageSenderResponse = {
   id?: string
   type?: string
@@ -195,6 +199,11 @@ export type ListConversationMessagesOptions = {
 export type SendConversationTextMessageInput = {
   clientMessageId: string
   content: string
+}
+
+export type CreateGroupConversationInput = {
+  memberIds: string[]
+  name: string
 }
 
 export class ClientDataRequestError extends Error {
@@ -337,6 +346,38 @@ export async function createDirectConversation(
   const conversation = (
     payload as
       ClientDataSuccessEnvelope<CreateDirectConversationResponse> | undefined
+  )?.data?.conversation
+
+  return normalizeConversation(conversation)
+}
+
+export async function createGroupConversation(
+  input: CreateGroupConversationInput,
+  fetcher: ClientDataFetch = fetch
+) {
+  const response = await fetcher("/api/client/conversations/groups", {
+    body: JSON.stringify({
+      member_ids: input.memberIds,
+      name: input.name,
+    }),
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  })
+  const payload = await readJson<
+    | ClientDataErrorEnvelope
+    | ClientDataSuccessEnvelope<CreateGroupConversationResponse>
+  >(response)
+
+  if (!response.ok || payload?.success === false) {
+    throw createRequestError(payload, response, "创建群聊失败")
+  }
+
+  const conversation = (
+    payload as
+      ClientDataSuccessEnvelope<CreateGroupConversationResponse> | undefined
   )?.data?.conversation
 
   return normalizeConversation(conversation)

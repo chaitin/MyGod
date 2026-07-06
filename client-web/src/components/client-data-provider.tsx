@@ -10,6 +10,7 @@ import { useNavigate } from "react-router"
 import {
   ClientDataRequestError,
   createDirectConversation,
+  createGroupConversation as createGroupConversationRequest,
   getCurrentClientUser,
   listClientContacts,
   listClientConversations,
@@ -165,6 +166,22 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     [handleError, upsertConversation]
   )
 
+  const createGroupConversation = useCallback(
+    async (name: string, memberIds: string[]) => {
+      try {
+        const conversation = await createGroupConversationRequest({
+          memberIds,
+          name,
+        })
+        upsertConversation(conversation)
+        return conversation
+      } catch (error) {
+        throw handleError(error, "创建群聊失败")
+      }
+    },
+    [handleError, upsertConversation]
+  )
+
   const bootstrap = useCallback(async () => {
     const minimumLoading = wait(minimumBootstrapLoadingMs)
 
@@ -262,6 +279,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
       contactsError,
       contactsLoading,
       contactsRefreshing,
+      createGroupConversation,
       me,
       meError,
       meLoading,
@@ -278,6 +296,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     contactsError,
     contactsLoading,
     contactsRefreshing,
+    createGroupConversation,
     me,
     meError,
     meLoading,

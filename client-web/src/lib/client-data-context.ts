@@ -18,6 +18,10 @@ export type ClientDataContextValue = {
   meError: ClientDataRequestError | null
   meLoading: boolean
   meRefreshing: boolean
+  createGroupConversation: (
+    name: string,
+    memberIds: string[]
+  ) => Promise<ClientConversation>
   openDirectConversation: (userId: string) => Promise<ClientConversation>
   refreshConversations: () => Promise<void>
   refreshContacts: () => Promise<void>

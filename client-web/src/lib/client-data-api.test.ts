@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest"
 import {
   ClientDataRequestError,
   createDirectConversation,
+  createGroupConversation,
   getCurrentClientUser,
   listClientContacts,
   listClientConversations,
@@ -201,6 +202,86 @@ describe("client data API", () => {
     expect(fetcher).toHaveBeenCalledWith("/api/client/conversations/direct", {
       body: JSON.stringify({
         user_id: "user-2",
+      }),
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    })
+  })
+
+  it("creates a group conversation with credentials", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            conversation: {
+              created_at: "2026-07-03T09:30:00Z",
+              created_by_user_id: "user-1",
+              id: "conversation-group-1",
+              member_count: 2,
+              members: [
+                {
+                  avatar: "/assets/avatars/builtin/17.webp",
+                  email: "alice@example.com",
+                  id: "user-1",
+                  name: "Alice",
+                  nickname: "Al",
+                  phone: "+8613912345678",
+                  role: "owner",
+                },
+                {
+                  avatar: "/assets/avatars/builtin/03.webp",
+                  email: "bob@example.com",
+                  id: "user-2",
+                  name: "Bob Li",
+                  nickname: "",
+                  phone: "+8613912345679",
+                  role: "member",
+                },
+              ],
+              name: "新品讨论组",
+              posting_policy: "open",
+              status: "active",
+              type: "group",
+            },
+          },
+        }),
+        {
+          headers: {
+            "content-type": "application/json",
+          },
+          status: 201,
+        }
+      )
+    )
+
+    await expect(
+      createGroupConversation(
+        {
+          memberIds: ["user-2"],
+          name: "新品讨论组",
+        },
+        fetcher
+      )
+    ).resolves.toEqual({
+      avatar: "",
+      createdAt: "2026-07-03T09:30:00Z",
+      id: "conversation-group-1",
+      lastMessageAt: null,
+      lastMessageId: null,
+      lastMessageSeq: 0,
+      lastMessageSummary: "",
+      memberCount: 2,
+      name: "新品讨论组",
+      type: "group",
+    })
+    expect(fetcher).toHaveBeenCalledWith("/api/client/conversations/groups", {
+      body: JSON.stringify({
+        member_ids: ["user-2"],
+        name: "新品讨论组",
       }),
       credentials: "include",
       headers: {

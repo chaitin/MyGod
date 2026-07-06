@@ -274,6 +274,25 @@ function ConversationPanelComposer({
   onSendMessage: () => void
   sending: boolean
 }) {
+  function handleComposerKeyDown(
+    event: React.KeyboardEvent<HTMLTextAreaElement>
+  ) {
+    if (event.key !== "Enter") {
+      return
+    }
+
+    if (event.shiftKey || event.ctrlKey) {
+      event.preventDefault()
+      insertTextareaText(event.currentTarget, "\n", onDraftChange)
+      return
+    }
+
+    event.preventDefault()
+    if (!sending) {
+      onSendMessage()
+    }
+  }
+
   return (
     <footer
       className="shrink-0 border-t p-4"
@@ -287,6 +306,7 @@ function ConversationPanelComposer({
           <Textarea
             value={draft}
             onChange={(event) => onDraftChange(event.target.value)}
+            onKeyDown={handleComposerKeyDown}
             placeholder="输入消息"
             className="max-h-48 min-h-24 resize-none"
           />
@@ -345,6 +365,24 @@ function ConversationPanelComposer({
       </div>
     </footer>
   )
+}
+
+function insertTextareaText(
+  textarea: HTMLTextAreaElement,
+  text: string,
+  onChange: (value: string) => void
+) {
+  const selectionStart = textarea.selectionStart
+  const selectionEnd = textarea.selectionEnd
+  const nextValue =
+    textarea.value.slice(0, selectionStart) +
+    text +
+    textarea.value.slice(selectionEnd)
+  const nextCursor = selectionStart + text.length
+
+  textarea.value = nextValue
+  textarea.setSelectionRange(nextCursor, nextCursor)
+  onChange(nextValue)
 }
 
 function ConversationPanelEmptyState() {

@@ -89,6 +89,41 @@ function createDirectConversationResponse() {
   })
 }
 
+function createGroupConversationResponse() {
+  return createSuccessResponse({
+    conversation: {
+      created_at: "2026-07-03T09:30:00Z",
+      created_by_user_id: "user-1",
+      id: "conversation-3",
+      member_count: 2,
+      members: [
+        {
+          avatar: "/assets/avatars/builtin/17.webp",
+          email: "alice@example.com",
+          id: "user-1",
+          name: "Alice Zhang",
+          nickname: "Al",
+          phone: "+8613912345678",
+          role: "owner",
+        },
+        {
+          avatar: "/assets/avatars/builtin/03.webp",
+          email: "bob@example.com",
+          id: "user-2",
+          name: "Bob Li",
+          nickname: "",
+          phone: "+8613912345679",
+          role: "member",
+        },
+      ],
+      name: "新品讨论组",
+      posting_policy: "open",
+      status: "active",
+      type: "group",
+    },
+  })
+}
+
 function createClientMessage({
   content,
   seq,
@@ -136,6 +171,13 @@ function createClientDataFetchMock() {
       return createDirectConversationResponse()
     }
 
+    if (
+      path === "/api/client/conversations/groups" &&
+      init?.method === "POST"
+    ) {
+      return createGroupConversationResponse()
+    }
+
     return new Response(null, { status: 404 })
   })
 }
@@ -179,6 +221,7 @@ function DataProbe() {
     conversations,
     contacts,
     contactsRefreshing,
+    createGroupConversation,
     me,
     meRefreshing,
     openDirectConversation,
@@ -216,6 +259,14 @@ function DataProbe() {
         onClick={() => void openDirectConversation("user-3")}
       >
         open direct
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          void createGroupConversation("新品讨论组", ["user-2"])
+        }
+      >
+        create group
       </button>
       <button
         type="button"
@@ -371,6 +422,42 @@ describe("ClientDataProvider", () => {
     expect(screen.getByTestId("conversation-count")).toHaveTextContent("2")
     expect(screen.getByTestId("first-conversation-name")).toHaveTextContent(
       "Carol Wang"
+    )
+  })
+
+  it("creates a group conversation and prepends it to conversations", async () => {
+    vi.useFakeTimers()
+    const fetcher = fetch as unknown as ReturnType<typeof vi.fn>
+    renderProvider()
+
+    await act(async () => {
+      await flushBootstrapPromises()
+      vi.advanceTimersByTime(2_000)
+      await flushBootstrapPromises()
+    })
+
+    expect(screen.getByTestId("conversation-count")).toHaveTextContent("1")
+    fetcher.mockClear()
+
+    await act(async () => {
+      screen.getByRole("button", { name: "create group" }).click()
+      await flushBootstrapPromises()
+    })
+
+    expect(fetcher).toHaveBeenCalledWith("/api/client/conversations/groups", {
+      body: JSON.stringify({
+        member_ids: ["user-2"],
+        name: "新品讨论组",
+      }),
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    })
+    expect(screen.getByTestId("conversation-count")).toHaveTextContent("2")
+    expect(screen.getByTestId("first-conversation-name")).toHaveTextContent(
+      "新品讨论组"
     )
   })
 

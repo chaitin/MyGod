@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/sonner"
+import { formatConversationLastMessageTime } from "@/lib/conversation-format"
 
 import App from "./App"
 
@@ -58,6 +59,58 @@ function createDirectConversationResponse() {
         "content-type": "application/json",
       },
       status: 200,
+    }
+  )
+}
+
+function createGroupConversationResponse({
+  id = "conversation-new-group",
+  name = "新品讨论组",
+}: {
+  id?: string
+  name?: string
+} = {}) {
+  return new Response(
+    JSON.stringify({
+      success: true,
+      data: {
+        conversation: {
+          created_at: "2026-07-03T09:30:00Z",
+          created_by_user_id: "user-1",
+          id,
+          member_count: 2,
+          members: [
+            {
+              avatar: "/assets/avatars/builtin/17.webp",
+              email: "alice@example.com",
+              id: "user-1",
+              name: "Alice",
+              nickname: "Al",
+              phone: "+8613912345678",
+              role: "owner",
+            },
+            {
+              avatar: "/assets/avatars/builtin/03.webp",
+              email: "bob@example.com",
+              id: "user-2",
+              name: "Bob Li",
+              nickname: "",
+              phone: "+8613912345679",
+              role: "member",
+            },
+          ],
+          name,
+          posting_policy: "open",
+          status: "active",
+          type: "group",
+        },
+      },
+    }),
+    {
+      headers: {
+        "content-type": "application/json",
+      },
+      status: 201,
     }
   )
 }
@@ -214,6 +267,7 @@ function createClientFetchMock({
   currentUserAvatar = "/assets/avatars/builtin/17.webp",
   currentUserNickname = "Al",
   directConversationResponse,
+  groupConversationResponse,
   logoutResponse,
   loginStatus = 200,
   logoutStatus = 200,
@@ -223,6 +277,7 @@ function createClientFetchMock({
   currentUserAvatar?: string
   currentUserNickname?: string
   directConversationResponse?: Promise<Response>
+  groupConversationResponse?: Promise<Response>
   logoutResponse?: Promise<Response>
   loginStatus?: 200 | 401
   logoutStatus?: 200 | 500
@@ -568,6 +623,17 @@ function createClientFetchMock({
       )
     }
 
+    if (
+      path === "/api/client/conversations/groups" &&
+      init?.method === "POST"
+    ) {
+      if (groupConversationResponse) {
+        return groupConversationResponse
+      }
+
+      return createGroupConversationResponse()
+    }
+
     return new Response(
       JSON.stringify({
         success: false,
@@ -798,6 +864,12 @@ describe("App", () => {
 
     expect(createGroupChatItem).toBeInTheDocument()
     await user.click(createGroupChatItem)
+    const createGroupDialog = await screen.findByRole("dialog", {
+      name: "发起群聊",
+    })
+    await user.click(within(createGroupDialog).getByRole("button", {
+      name: "Close",
+    }))
     const bobConversationItem = screen.getByRole("button", {
       name: /Bob Li/,
     })
@@ -805,7 +877,9 @@ describe("App", () => {
     expect(bobConversationItem).toHaveAttribute("data-slot", "item")
     expect(bobConversationItem).toHaveAttribute("data-size", "sm")
     expect(bobConversationItem).not.toHaveClass("bg-primary/10")
-    const bobConversationTime = within(bobConversationItem).getByText("16:00")
+    const bobConversationTime = within(bobConversationItem).getByText(
+      formatConversationLastMessageTime("2026-07-03T08:00:00Z")
+    )
     expect(bobConversationTime).toBeInTheDocument()
     expect(bobConversationTime).toHaveClass("pr-2")
     expect(
@@ -1777,6 +1851,84 @@ describe("App", () => {
     )
   }, 10_000)
 
+  it("可以从消息页发起群聊并跳转到新群聊", async () => {
+    const user = userEvent.setup()
+    let resolveGroupConversation!: (response: Response) => void
+    const groupConversationResponse = new Promise<Response>((resolve) => {
+      resolveGroupConversation = resolve
+    })
+    const fetcher = createClientFetchMock({ groupConversationResponse })
+    vi.stubGlobal("fetch", fetcher)
+
+    renderApp("/chat")
+
+    await openLatestAppWebSocket()
+    const createAgentButton = await screen.findByRole("button", {
+      name: "新建 Agent",
+    })
+    await user.click(createAgentButton)
+    await user.click(
+      await screen.findByRole("menuitem", { name: "发起群聊" })
+    )
+
+    const dialog = await screen.findByRole("dialog", { name: "发起群聊" })
+    const createButton = within(dialog).getByRole("button", { name: "创建" })
+
+    expect(createButton).toBeDisabled()
+
+    const bobCheckbox = within(dialog).getByRole("checkbox", {
+      name: "Bob Li",
+    })
+
+    expect(bobCheckbox).toHaveAttribute("data-slot", "checkbox")
+
+    await user.type(within(dialog).getByLabelText("群聊名称"), "新品讨论组")
+    const bobMemberItem = within(dialog)
+      .getByText("Bob Li")
+      .closest("[data-slot='item']")
+
+    expect(bobMemberItem).toBeInTheDocument()
+    await user.click(bobMemberItem!)
+
+    expect(createButton).not.toBeDisabled()
+    expect(bobCheckbox).toBeChecked()
+    await user.click(createButton)
+
+    expect(createButton).toBeDisabled()
+    expect(createButton.querySelector(".animate-spin")).toBeInTheDocument()
+
+    const createGroupCall = fetcher.mock.calls.find(([input, init]) => {
+      return (
+        String(input) === "/api/client/conversations/groups" &&
+        init?.method === "POST"
+      )
+    })
+    expect(createGroupCall).toBeDefined()
+    expect(JSON.parse(String(createGroupCall?.[1]?.body ?? "{}"))).toEqual({
+      member_ids: ["user-2"],
+      name: "新品讨论组",
+    })
+
+    resolveGroupConversation(
+      createGroupConversationResponse({
+        id: "conversation-new-group",
+        name: "新品讨论组",
+      })
+    )
+
+    await waitFor(() =>
+      expect(screen.getByTestId("location-search")).toHaveTextContent(
+        "?conversation_id=conversation-new-group"
+      )
+    )
+    expect(
+      screen.queryByRole("dialog", { name: "发起群聊" })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByRole("button", { name: /新品讨论组/ })
+    ).toBeInTheDocument()
+  }, 10_000)
+
   it("聊天页会根据 conversation_id 参数选中会话", async () => {
     renderApp("/chat?conversation_id=conversation-team")
 
@@ -1914,6 +2066,88 @@ describe("App", () => {
     ).toBeInTheDocument()
     expect(editor).toHaveValue("")
     await waitFor(() => expect(sendButton).not.toBeDisabled())
+  }, 10_000)
+
+  it("在聊天输入框按回车发送消息", async () => {
+    const user = userEvent.setup()
+    let resolveSendMessage!: (response: Response) => void
+    const sendMessageResponse = new Promise<Response>((resolve) => {
+      resolveSendMessage = resolve
+    })
+    const fetcher = createClientFetchMock({ sendMessageResponse })
+    vi.stubGlobal("fetch", fetcher)
+
+    renderApp("/chat?conversation_id=conversation-bob")
+
+    await openLatestAppWebSocket()
+    await screen.findByText("好的，我看一下", undefined, { timeout: 4_000 })
+    const editor = screen.getByPlaceholderText("输入消息") as HTMLTextAreaElement
+
+    await user.type(editor, "回车发送这条消息")
+    await user.keyboard("{Enter}")
+
+    const sendCall = fetcher.mock.calls.find(([input, init]) => {
+      return (
+        String(input) ===
+          "/api/client/conversations/conversation-bob/messages" &&
+        init?.method === "POST"
+      )
+    })
+    expect(sendCall).toBeDefined()
+
+    const requestBody = JSON.parse(String(sendCall?.[1]?.body ?? "{}")) as {
+      body?: {
+        content?: string
+        type?: string
+      }
+      client_message_id?: string
+    }
+
+    expect(requestBody.body).toEqual({
+      type: "text",
+      content: "回车发送这条消息",
+    })
+
+    resolveSendMessage(
+      createSendMessageResponse({
+        clientMessageId: requestBody.client_message_id,
+        content: "回车发送这条消息",
+      })
+    )
+
+    expect(
+      await screen.findByText("回车发送这条消息")
+    ).toBeInTheDocument()
+    expect(editor).toHaveValue("")
+  }, 10_000)
+
+  it("在聊天输入框按 Shift+Enter 或 Ctrl+Enter 时保留换行", async () => {
+    const user = userEvent.setup()
+    const fetcher = createClientFetchMock()
+    vi.stubGlobal("fetch", fetcher)
+
+    renderApp("/chat?conversation_id=conversation-bob")
+
+    await openLatestAppWebSocket()
+    await screen.findByText("好的，我看一下", undefined, { timeout: 4_000 })
+    const editor = screen.getByPlaceholderText("输入消息") as HTMLTextAreaElement
+
+    await user.type(editor, "第一行")
+    await user.keyboard("{Shift>}{Enter}{/Shift}")
+    await user.type(editor, "第二行")
+    await user.keyboard("{Control>}{Enter}{/Control}")
+    await user.type(editor, "第三行")
+
+    expect(editor).toHaveValue("第一行\n第二行\n第三行")
+    expect(
+      fetcher.mock.calls.some(([input, init]) => {
+        return (
+          String(input) ===
+            "/api/client/conversations/conversation-bob/messages" &&
+          init?.method === "POST"
+        )
+      })
+    ).toBe(false)
   }, 10_000)
 
   it("收到当前会话的新消息推送时插入聊天记录并去重", async () => {

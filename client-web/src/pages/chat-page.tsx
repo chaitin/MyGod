@@ -1,6 +1,6 @@
 import * as React from "react"
 import { useSearchParams } from "react-router"
-import { Plus, Search } from "lucide-react"
+import { Loader2Icon, Plus, Search } from "lucide-react"
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
@@ -26,6 +26,16 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,12 +45,14 @@ import {
 import { Input } from "@/components/ui/input"
 import {
   Item,
+  ItemActions,
   ItemContent,
   ItemDescription,
   ItemGroup,
   ItemMedia,
   ItemTitle,
 } from "@/components/ui/item"
+import { Label } from "@/components/ui/label"
 import { ScrollArea } from "@/components/ui/scroll-area"
 
 type ConversationMessageState = {
@@ -73,6 +85,7 @@ export function ChatPage() {
   const {
     contacts,
     conversations,
+    createGroupConversation,
     me,
     refreshConversations,
     updateConversationLastMessage,
@@ -86,6 +99,8 @@ export function ChatPage() {
   const previousRealtimeReadyRef = React.useRef(realtimeReady)
   const syncingAfterConversationIdsRef = React.useRef<Set<string>>(new Set())
   const [draft, setDraft] = React.useState("")
+  const [createGroupDialogOpen, setCreateGroupDialogOpen] =
+    React.useState(false)
   const requestedConversationId = searchParams.get("conversation_id") ?? ""
 
   const activeConversation = React.useMemo(
@@ -382,6 +397,11 @@ export function ChatPage() {
     setSearchParams({ conversation_id: conversationId }, { replace: true })
   }
 
+  async function startGroupConversation(name: string, memberIds: string[]) {
+    const conversation = await createGroupConversation(name, memberIds)
+    setSearchParams({ conversation_id: conversation.id })
+  }
+
   return (
     <>
       <aside className="flex w-80 shrink-0 flex-col border-r bg-background">
@@ -400,7 +420,9 @@ export function ChatPage() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-32">
-              <DropdownMenuItem>发起群聊</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setCreateGroupDialogOpen(true)}>
+                发起群聊
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -495,10 +517,250 @@ export function ChatPage() {
         onSendMessage={sendMessage}
         sending={Boolean(activeMessageState?.sending)}
       />
+      <CreateGroupConversationDialog
+        contacts={contacts}
+        currentUserId={me.id}
+        open={createGroupDialogOpen}
+        onCreate={startGroupConversation}
+        onOpenChange={setCreateGroupDialogOpen}
+      />
     </>
   )
 }
 
+function CreateGroupConversationDialog({
+  contacts,
+  currentUserId,
+  onCreate,
+  onOpenChange,
+  open,
+}: {
+  contacts: ContactUser[]
+  currentUserId: string
+  onCreate: (name: string, memberIds: string[]) => Promise<void>
+  onOpenChange: (open: boolean) => void
+  open: boolean
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="gap-5 sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="text-base">发起群聊</DialogTitle>
+          <DialogDescription className="sr-only">
+            输入群聊名称并选择联系人创建群聊
+          </DialogDescription>
+        </DialogHeader>
+        <CreateGroupConversationForm
+          contacts={contacts}
+          currentUserId={currentUserId}
+          onCreate={onCreate}
+          onOpenChange={onOpenChange}
+        />
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function CreateGroupConversationForm({
+  contacts,
+  currentUserId,
+  onCreate,
+  onOpenChange,
+}: {
+  contacts: ContactUser[]
+  currentUserId: string
+  onCreate: (name: string, memberIds: string[]) => Promise<void>
+  onOpenChange: (open: boolean) => void
+}) {
+  const [creating, setCreating] = React.useState(false)
+  const [keyword, setKeyword] = React.useState("")
+  const [name, setName] = React.useState("")
+  const [selectedMemberIds, setSelectedMemberIds] = React.useState<Set<string>>(
+    () => new Set()
+  )
+  const selectedCount = selectedMemberIds.size
+  const trimmedName = name.trim()
+  const canCreate = Boolean(trimmedName) && selectedCount > 0 && !creating
+  const filteredContacts = React.useMemo(() => {
+    const normalizedKeyword = keyword.trim().toLowerCase()
+
+    return contacts.filter((contact) => {
+      if (contact.id === currentUserId) {
+        return false
+      }
+      if (!normalizedKeyword) {
+        return true
+      }
+
+      return [
+        contact.email,
+        contact.name,
+        contact.nickname,
+        contact.phone,
+      ].some((value) => value.toLowerCase().includes(normalizedKeyword))
+    })
+  }, [contacts, currentUserId, keyword])
+
+  function toggleMember(contactId: string, checked: boolean | string) {
+    setSelectedMemberIds((currentIds) => {
+      const nextChecked = Boolean(checked)
+      const currentChecked = currentIds.has(contactId)
+
+      if (currentChecked === nextChecked) {
+        return currentIds
+      }
+
+      const nextIds = new Set(currentIds)
+
+      if (nextChecked) {
+        nextIds.add(contactId)
+      } else {
+        nextIds.delete(contactId)
+      }
+
+      return nextIds
+    })
+  }
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (!canCreate) {
+      return
+    }
+
+    setCreating(true)
+
+    try {
+      await onCreate(trimmedName, Array.from(selectedMemberIds))
+      onOpenChange(false)
+    } catch {
+      toast.error("创建群聊失败")
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  return (
+    <form className="grid gap-4" onSubmit={handleSubmit}>
+      <div className="grid gap-2">
+        <Label htmlFor="create-group-name">群聊名称</Label>
+        <Input
+          id="create-group-name"
+          onChange={(event) => setName(event.target.value)}
+          placeholder="输入群聊名称"
+          value={name}
+        />
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor="create-group-member-search">选择成员</Label>
+        <div className="relative">
+          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            className="pl-8"
+            id="create-group-member-search"
+            onChange={(event) => setKeyword(event.target.value)}
+            placeholder="搜索联系人"
+            type="search"
+            value={keyword}
+          />
+        </div>
+      </div>
+      <div className="h-64 overflow-y-auto rounded-md border">
+        <ItemGroup
+          aria-label="群聊成员"
+          className="gap-1 p-2 has-data-[size=sm]:gap-1"
+          role="group"
+        >
+          {filteredContacts.map((contact) => {
+            const displayName = getContactDisplayName(contact)
+
+            return (
+              <CreateGroupMemberItem
+                checked={selectedMemberIds.has(contact.id)}
+                contact={contact}
+                displayName={displayName}
+                key={contact.id}
+                onCheckedChange={(checked) => toggleMember(contact.id, checked)}
+              />
+            )
+          })}
+          {filteredContacts.length === 0 && (
+            <div className="px-3 py-8 text-center text-sm text-muted-foreground">
+              没有匹配的联系人
+            </div>
+          )}
+        </ItemGroup>
+      </div>
+      <DialogFooter>
+        <DialogClose asChild>
+          <Button disabled={creating} type="button" variant="outline">
+            取消
+          </Button>
+        </DialogClose>
+        <Button disabled={!canCreate} type="submit">
+          {creating && (
+            <Loader2Icon aria-hidden="true" className="animate-spin" />
+          )}
+          创建
+        </Button>
+      </DialogFooter>
+    </form>
+  )
+}
+
+function CreateGroupMemberItem({
+  checked,
+  contact,
+  displayName,
+  onCheckedChange,
+}: {
+  checked: boolean
+  contact: ContactUser
+  displayName: string
+  onCheckedChange: (checked: boolean | string) => void
+}) {
+  const checkboxId = `create-group-member-${contact.id}`
+
+  return (
+    <Item
+      asChild
+      className={cn(
+        "cursor-pointer px-2 py-1.5",
+        checked ? "bg-primary/10" : "hover:bg-muted"
+      )}
+      size="sm"
+    >
+      <Label htmlFor={checkboxId}>
+        <ItemMedia>
+          <Avatar className="rounded-sm bg-muted after:rounded-sm" data-size="sm">
+            {contact.avatar && (
+              <AvatarImage
+                alt={displayName}
+                className="rounded-sm"
+                src={contact.avatar}
+              />
+            )}
+            <AvatarFallback className="rounded-sm">
+              {getConversationInitial(displayName)}
+            </AvatarFallback>
+          </Avatar>
+        </ItemMedia>
+        <ItemContent className="min-w-0">
+          <ItemTitle className="truncate">{displayName}</ItemTitle>
+        </ItemContent>
+        <ItemActions>
+          <Checkbox
+            aria-label={displayName}
+            checked={checked}
+            id={checkboxId}
+            onCheckedChange={onCheckedChange}
+          />
+        </ItemActions>
+      </Label>
+    </Item>
+  )
+}
 function getConversationListDescription(conversation: ClientConversation) {
   const summary = conversation.lastMessageSummary.trim()
 
@@ -507,6 +769,12 @@ function getConversationListDescription(conversation: ClientConversation) {
 
 function getConversationInitial(name: string) {
   return Array.from(name.trim())[0]?.toUpperCase() ?? "?"
+}
+
+function getContactDisplayName(contact: { name: string; nickname: string }) {
+  const nickname = contact.nickname.trim()
+
+  return nickname || contact.name.trim()
 }
 
 function createConversationMessageState(): ConversationMessageState {
