@@ -22,6 +22,7 @@ admin:
 	}
 
 	t.Setenv("CONFIG", path)
+	setRequiredPublicHostnames(t)
 
 	cfg, err := Load()
 	if err != nil {
@@ -39,6 +40,86 @@ admin:
 	}
 	if cfg.Storage.Provider != "" {
 		t.Fatalf("Storage.Provider = %q, want empty", cfg.Storage.Provider)
+	}
+}
+
+func TestLoadReadsPublicHostnamesFromEnvironment(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := []byte(`
+database:
+  dsn: "postgres://app:app@localhost:5432/app?sslmode=disable"
+admin:
+  password: "secret-admin-password"
+`)
+
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("CONFIG", path)
+	t.Setenv("CLIENT_HOSTNAME", "client.example.com")
+	t.Setenv("ADMIN_HOSTNAME", "admin.example.com")
+	t.Setenv("ASSETS_HOSTNAME", "assets.example.com")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.Server.ClientHostname != "client.example.com" {
+		t.Fatalf("Server.ClientHostname = %q, want client.example.com", cfg.Server.ClientHostname)
+	}
+	if cfg.Server.AdminHostname != "admin.example.com" {
+		t.Fatalf("Server.AdminHostname = %q, want admin.example.com", cfg.Server.AdminHostname)
+	}
+	if cfg.Storage.AssetsHostname != "assets.example.com" {
+		t.Fatalf("Storage.AssetsHostname = %q, want assets.example.com", cfg.Storage.AssetsHostname)
+	}
+}
+
+func TestLoadRejectsMissingPublicHostnames(t *testing.T) {
+	for _, input := range []struct {
+		name       string
+		missingEnv string
+	}{
+		{name: "client", missingEnv: "CLIENT_HOSTNAME"},
+		{name: "admin", missingEnv: "ADMIN_HOSTNAME"},
+		{name: "assets", missingEnv: "ASSETS_HOSTNAME"},
+	} {
+		t.Run(input.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "config.yaml")
+			content := []byte(`
+database:
+  dsn: "postgres://app:app@localhost:5432/app?sslmode=disable"
+admin:
+  password: "secret-admin-password"
+`)
+
+			if err := os.WriteFile(path, content, 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			t.Setenv("CONFIG", path)
+			if input.missingEnv != "CLIENT_HOSTNAME" {
+				t.Setenv("CLIENT_HOSTNAME", "client.example.com")
+			}
+			if input.missingEnv != "ADMIN_HOSTNAME" {
+				t.Setenv("ADMIN_HOSTNAME", "admin.example.com")
+			}
+			if input.missingEnv != "ASSETS_HOSTNAME" {
+				t.Setenv("ASSETS_HOSTNAME", "assets.example.com")
+			}
+
+			_, err := Load()
+			if err == nil {
+				t.Fatalf("Load() error = nil, want missing %s error", input.missingEnv)
+			}
+			if !strings.Contains(err.Error(), input.missingEnv) {
+				t.Fatalf("Load() error = %q, want %s", err.Error(), input.missingEnv)
+			}
+		})
 	}
 }
 
@@ -67,7 +148,7 @@ storage:
 	}
 
 	t.Setenv("CONFIG", path)
-	t.Setenv("ASSETS_HOSTNAME", "assets.example.com")
+	setRequiredPublicHostnames(t)
 
 	cfg, err := Load()
 	if err != nil {
@@ -122,7 +203,7 @@ storage:
 	}
 
 	t.Setenv("CONFIG", path)
-	t.Setenv("ASSETS_HOSTNAME", "assets.example.com")
+	setRequiredPublicHostnames(t)
 	t.Setenv("RUSTFS_ACCESS_KEY", "env-access-key")
 	t.Setenv("RUSTFS_SECRET_KEY", "env-secret-key")
 
@@ -163,6 +244,8 @@ storage:
 	}
 
 	t.Setenv("CONFIG", path)
+	t.Setenv("CLIENT_HOSTNAME", "client.example.com")
+	t.Setenv("ADMIN_HOSTNAME", "admin.example.com")
 
 	_, err := Load()
 	if err == nil {
@@ -173,10 +256,19 @@ storage:
 	}
 }
 
-func TestLoadRejectsInvalidAssetsHostname(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	content := []byte(`
+func TestLoadRejectsInvalidPublicHostnames(t *testing.T) {
+	for _, input := range []struct {
+		name       string
+		invalidEnv string
+	}{
+		{name: "client", invalidEnv: "CLIENT_HOSTNAME"},
+		{name: "admin", invalidEnv: "ADMIN_HOSTNAME"},
+		{name: "assets", invalidEnv: "ASSETS_HOSTNAME"},
+	} {
+		t.Run(input.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "config.yaml")
+			content := []byte(`
 database:
   dsn: "postgres://app:app@localhost:5432/app?sslmode=disable"
 admin:
@@ -192,19 +284,24 @@ storage:
     temporary: "mygod-temporary"
 `)
 
-	if err := os.WriteFile(path, content, 0o600); err != nil {
-		t.Fatal(err)
-	}
+			if err := os.WriteFile(path, content, 0o600); err != nil {
+				t.Fatal(err)
+			}
 
-	t.Setenv("CONFIG", path)
-	t.Setenv("ASSETS_HOSTNAME", "https://assets.example.com")
+			t.Setenv("CONFIG", path)
+			t.Setenv("CLIENT_HOSTNAME", "client.example.com")
+			t.Setenv("ADMIN_HOSTNAME", "admin.example.com")
+			t.Setenv("ASSETS_HOSTNAME", "assets.example.com")
+			t.Setenv(input.invalidEnv, "https://"+strings.ToLower(input.name)+".example.com")
 
-	_, err := Load()
-	if err == nil {
-		t.Fatal("Load() error = nil, want invalid assets hostname error")
-	}
-	if !strings.Contains(err.Error(), "ASSETS_HOSTNAME") {
-		t.Fatalf("Load() error = %q, want ASSETS_HOSTNAME", err.Error())
+			_, err := Load()
+			if err == nil {
+				t.Fatalf("Load() error = nil, want invalid %s error", input.invalidEnv)
+			}
+			if !strings.Contains(err.Error(), input.invalidEnv) {
+				t.Fatalf("Load() error = %q, want %s", err.Error(), input.invalidEnv)
+			}
+		})
 	}
 }
 
@@ -223,6 +320,7 @@ admin:
 	}
 
 	t.Setenv("CONFIG", path)
+	setRequiredPublicHostnames(t)
 
 	_, err := Load()
 	if err == nil {
@@ -248,6 +346,7 @@ admin:
 	}
 
 	t.Setenv("CONFIG", path)
+	setRequiredPublicHostnames(t)
 
 	_, err := Load()
 	if err == nil {
@@ -280,6 +379,7 @@ storage:
 	}
 
 	t.Setenv("CONFIG", path)
+	setRequiredPublicHostnames(t)
 
 	_, err := Load()
 	if err == nil {
@@ -311,6 +411,7 @@ storage:
 	}
 
 	t.Setenv("CONFIG", path)
+	setRequiredPublicHostnames(t)
 	t.Setenv("RUSTFS_ACCESS_KEY", "")
 	t.Setenv("RUSTFS_SECRET_KEY", "")
 	t.Setenv("AWS_ACCESS_KEY_ID", "")
@@ -323,4 +424,12 @@ storage:
 	if !strings.Contains(err.Error(), "storage.access_key_id") {
 		t.Fatalf("Load() error = %q, want storage.access_key_id", err.Error())
 	}
+}
+
+func setRequiredPublicHostnames(t *testing.T) {
+	t.Helper()
+
+	t.Setenv("CLIENT_HOSTNAME", "client.example.com")
+	t.Setenv("ADMIN_HOSTNAME", "admin.example.com")
+	t.Setenv("ASSETS_HOSTNAME", "assets.example.com")
 }

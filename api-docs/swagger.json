@@ -3823,6 +3823,9 @@
         "httpserver.thirdPartyProviderResponse": {
             "type": "object",
             "properties": {
+                "callback_url": {
+                    "type": "string"
+                },
                 "client_id": {
                     "type": "string"
                 },

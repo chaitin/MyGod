@@ -54,7 +54,7 @@ export function MessageAttachment({ file }: MessageAttachmentProps) {
 
   return (
     <div className="flex w-72 max-w-full items-center gap-3">
-      <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-background/70 text-muted-foreground">
+      <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-foreground/50 text-muted-foreground">
         <AttachmentFileIcon fileName={file.name} />
       </div>
       <div className="min-w-0 flex-1">
@@ -68,6 +68,7 @@ export function MessageAttachment({ file }: MessageAttachmentProps) {
       <Button
         aria-disabled={downloading}
         aria-label={`下载 ${file.name}`}
+        className="bg-background/20 hover:bg-background/20 data-[state=open]:bg-background/20"
         onClick={handleDownload}
         size="icon-sm"
         title="下载"

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import settingsPageSourceText from "./settings-page.tsx?raw"
 import {
   createDefaultOIDCProviderForm,
+  getThirdPartyCallbackURL,
   getOIDCProviderTextClassName,
   getSettingsCardClassName,
   getSettingsPageLayoutClassName,
@@ -139,6 +140,20 @@ describe("settings page third-party provider form", () => {
       "text-muted-foreground"
     )
   })
+
+  it("uses the server-provided callback URL", () => {
+    expect(
+      getThirdPartyCallbackURL(
+        createProvider({
+          id: "provider-1",
+          name: "企业 SSO",
+          sortOrder: 1,
+        })
+      )
+    ).toBe(
+      "https://client.example.com/api/client/auth/third-party/provider-1/callback"
+    )
+  })
 })
 
 describe("settings page layout", () => {
@@ -220,6 +235,7 @@ function createProvider({
   return {
     clientId: "client-id",
     clientSecret: "client-secret",
+    callbackUrl: `https://client.example.com/api/client/auth/third-party/${id}/callback`,
     config: {
       authorize_url: "https://sso.example.com/authorize",
       email_field: "email",

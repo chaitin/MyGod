@@ -24,6 +24,7 @@ type InfoSettingsResponse = {
 }
 
 type ThirdPartyLoginProviderResponse = {
+  callback_url?: string
   client_id?: string
   client_secret?: string
   config?: Record<string, unknown>
@@ -50,6 +51,7 @@ export type ThirdPartyLoginProviderType =
   | "wecom"
 
 export type ThirdPartyLoginProvider = {
+  callbackUrl: string
   clientId: string
   clientSecret: string
   config: Record<string, string>
@@ -384,6 +386,7 @@ function normalizeThirdPartyLoginProvider(
     !provider?.id ||
     !provider.name ||
     !provider.key ||
+    !provider.callback_url ||
     !provider.type ||
     typeof provider.enabled !== "boolean" ||
     !provider.client_id ||
@@ -395,6 +398,7 @@ function normalizeThirdPartyLoginProvider(
   }
 
   return {
+    callbackUrl: provider.callback_url,
     clientId: provider.client_id,
     clientSecret: provider.client_secret,
     config: normalizeStringRecord(provider.config ?? {}),

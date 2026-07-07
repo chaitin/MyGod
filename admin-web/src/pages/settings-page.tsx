@@ -583,7 +583,7 @@ function ThirdPartyCallbackURLDialog({
   onOpenChange: (open: boolean) => void
   provider: ThirdPartyLoginProvider | null
 }) {
-  const callbackURL = provider ? getThirdPartyCallbackURL(provider.key) : ""
+  const callbackURL = provider ? getThirdPartyCallbackURL(provider) : ""
 
   return (
     <Dialog onOpenChange={onOpenChange} open={provider !== null}>
@@ -968,10 +968,10 @@ export function getThirdPartyProviderTextClassName(enabled: boolean) {
   return enabled ? "min-w-0" : "min-w-0 text-muted-foreground"
 }
 
-export function getThirdPartyCallbackURL(providerKey: string) {
-  return `<MyGod访问地址>/api/client/auth/third-party/${encodeURIComponent(
-    providerKey
-  )}/callback`
+export function getThirdPartyCallbackURL(
+  provider: Pick<ThirdPartyLoginProvider, "callbackUrl">
+) {
+  return provider.callbackUrl
 }
 
 export function createDefaultThirdPartyProviderForm(

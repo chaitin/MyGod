@@ -16,7 +16,9 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Addr string `yaml:"addr"`
+	Addr           string `yaml:"addr"`
+	ClientHostname string `yaml:"-"`
+	AdminHostname  string `yaml:"-"`
 }
 
 type DatabaseConfig struct {
@@ -77,11 +79,43 @@ func Load() (Config, error) {
 	if strings.TrimSpace(cfg.Admin.Password) == "" {
 		return Config{}, fmt.Errorf("admin.password is required")
 	}
+	if err := normalizePublicHostnames(&cfg); err != nil {
+		return Config{}, err
+	}
 	if err := normalizeStorageConfig(&cfg.Storage); err != nil {
 		return Config{}, err
 	}
 
 	return cfg, nil
+}
+
+func normalizePublicHostnames(cfg *Config) error {
+	cfg.Server.ClientHostname = strings.TrimSpace(firstNonEmptyEnv("CLIENT_HOSTNAME"))
+	cfg.Server.AdminHostname = strings.TrimSpace(firstNonEmptyEnv("ADMIN_HOSTNAME"))
+	cfg.Storage.AssetsHostname = strings.TrimSpace(firstNonEmptyEnv("ASSETS_HOSTNAME"))
+
+	if err := validateHostnameEnv("CLIENT_HOSTNAME", cfg.Server.ClientHostname); err != nil {
+		return err
+	}
+	if err := validateHostnameEnv("ADMIN_HOSTNAME", cfg.Server.AdminHostname); err != nil {
+		return err
+	}
+	if err := validateHostnameEnv("ASSETS_HOSTNAME", cfg.Storage.AssetsHostname); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func validateHostnameEnv(name string, value string) error {
+	if value == "" {
+		return fmt.Errorf("%s is required", name)
+	}
+	if strings.Contains(value, "://") || strings.Contains(value, "/") {
+		return fmt.Errorf("%s must be a hostname without scheme or path", name)
+	}
+
+	return nil
 }
 
 func normalizeStorageConfig(cfg *StorageConfig) error {
@@ -97,7 +131,6 @@ func normalizeStorageConfig(cfg *StorageConfig) error {
 	cfg.Region = strings.TrimSpace(cfg.Region)
 	cfg.AccessKeyID = strings.TrimSpace(cfg.AccessKeyID)
 	cfg.SecretAccessKey = strings.TrimSpace(cfg.SecretAccessKey)
-	cfg.AssetsHostname = strings.TrimSpace(firstNonEmptyEnv("ASSETS_HOSTNAME"))
 	cfg.Buckets.Public = strings.TrimSpace(cfg.Buckets.Public)
 	cfg.Buckets.Private = strings.TrimSpace(cfg.Buckets.Private)
 	cfg.Buckets.Temporary = strings.TrimSpace(cfg.Buckets.Temporary)
@@ -125,12 +158,6 @@ func normalizeStorageConfig(cfg *StorageConfig) error {
 	}
 	if cfg.Buckets.Temporary == "" {
 		return fmt.Errorf("storage.buckets.temporary is required")
-	}
-	if cfg.AssetsHostname == "" {
-		return fmt.Errorf("ASSETS_HOSTNAME is required")
-	}
-	if strings.Contains(cfg.AssetsHostname, "://") || strings.Contains(cfg.AssetsHostname, "/") {
-		return fmt.Errorf("ASSETS_HOSTNAME must be a hostname without scheme or path")
 	}
 	if cfg.Lifecycle.TemporaryExpireDays <= 0 {
 		cfg.Lifecycle.TemporaryExpireDays = 180

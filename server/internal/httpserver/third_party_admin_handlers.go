@@ -35,6 +35,7 @@ type thirdPartyProviderResponse struct {
 	ID           string         `json:"id"`
 	Name         string         `json:"name"`
 	Key          string         `json:"key"`
+	CallbackURL  string         `json:"callback_url"`
 	Type         string         `json:"type"`
 	Enabled      bool           `json:"enabled"`
 	ClientID     string         `json:"client_id"`
@@ -70,7 +71,7 @@ func (s *Server) listThirdPartyProviders(c echo.Context) error {
 
 	responses := make([]thirdPartyProviderResponse, 0, len(providers))
 	for _, provider := range providers {
-		response, err := newThirdPartyProviderResponse(provider)
+		response, err := s.newThirdPartyProviderResponse(provider)
 		if err != nil {
 			return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
 		}
@@ -128,7 +129,7 @@ func (s *Server) createThirdPartyProvider(c echo.Context) error {
 		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
 	}
 
-	response, err := newThirdPartyProviderResponse(provider)
+	response, err := s.newThirdPartyProviderResponse(provider)
 	if err != nil {
 		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
 	}
@@ -194,7 +195,7 @@ func (s *Server) updateThirdPartyProvider(c echo.Context) error {
 	if err := s.db.First(&provider, "id = ?", id).Error; err != nil {
 		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
 	}
-	response, err := newThirdPartyProviderResponse(provider)
+	response, err := s.newThirdPartyProviderResponse(provider)
 	if err != nil {
 		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
 	}
@@ -303,7 +304,7 @@ func (s *Server) moveThirdPartyProvider(c echo.Context) error {
 			}
 			providers[currentIndex].SortOrder = sortOrder
 
-			response, err := newThirdPartyProviderResponse(providers[currentIndex])
+			response, err := s.newThirdPartyProviderResponse(providers[currentIndex])
 			if err != nil {
 				return err
 			}
@@ -375,7 +376,7 @@ func (s *Server) updateThirdPartyProviderEnabled(c echo.Context, enabled bool) e
 	}
 	provider.Enabled = enabled
 
-	response, err := newThirdPartyProviderResponse(provider)
+	response, err := s.newThirdPartyProviderResponse(provider)
 	if err != nil {
 		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
 	}
@@ -427,7 +428,7 @@ func newThirdPartyProviderFromRequest(req thirdPartyProviderRequest) (store.Thir
 	}, nil
 }
 
-func newThirdPartyProviderResponse(provider store.ThirdPartyLoginProvider) (thirdPartyProviderResponse, error) {
+func (s *Server) newThirdPartyProviderResponse(provider store.ThirdPartyLoginProvider) (thirdPartyProviderResponse, error) {
 	scopes, err := parseThirdPartyScopes(provider.Scopes)
 	if err != nil {
 		return thirdPartyProviderResponse{}, err
@@ -441,6 +442,7 @@ func newThirdPartyProviderResponse(provider store.ThirdPartyLoginProvider) (thir
 		ID:           provider.ID,
 		Name:         provider.Name,
 		Key:          provider.Key,
+		CallbackURL:  thirdPartyCallbackURLForHostname(s.cfg.Server.ClientHostname, provider.Key),
 		Type:         provider.Type,
 		Enabled:      provider.Enabled,
 		ClientID:     provider.ClientID,
@@ -449,6 +451,10 @@ func newThirdPartyProviderResponse(provider store.ThirdPartyLoginProvider) (thir
 		Config:       config,
 		SortOrder:    provider.SortOrder,
 	}, nil
+}
+
+func thirdPartyCallbackURLForHostname(hostname string, providerKey string) string {
+	return "https://" + strings.TrimSpace(hostname) + "/api/client/auth/third-party/" + url.PathEscape(providerKey) + "/callback"
 }
 
 func normalizeThirdPartyProviderType(providerType string) (string, error) {

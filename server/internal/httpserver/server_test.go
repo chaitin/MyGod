@@ -43,7 +43,11 @@ func newTestRouterWithRealtimeOptions(t *testing.T, options realtime.Options) (*
 	}
 
 	router := NewRouterWithRealtimeOptions(db, config.Config{
-		Server:   config.ServerConfig{Addr: ":20080"},
+		Server: config.ServerConfig{
+			Addr:           ":20080",
+			ClientHostname: "client.example.test",
+			AdminHostname:  "admin.example.test",
+		},
 		Database: config.DatabaseConfig{DSN: "sqlite-test"},
 		Admin:    config.AdminConfig{Password: "admin-secret"},
 	}, options)
@@ -3299,6 +3303,9 @@ func TestAdminCanManageThirdPartyLoginProviders(t *testing.T) {
 	if createdProvider["client_secret"] != "client-secret" {
 		t.Fatalf("created client_secret = %#v, want client-secret", createdProvider["client_secret"])
 	}
+	if createdProvider["callback_url"] != "https://client.example.test/api/client/auth/third-party/sso/callback" {
+		t.Fatalf("created callback_url = %#v, want client callback url", createdProvider["callback_url"])
+	}
 	if createdProvider["type"] != "oidc" {
 		t.Fatalf("created type = %#v, want oidc", createdProvider["type"])
 	}
@@ -3328,6 +3335,9 @@ func TestAdminCanManageThirdPartyLoginProviders(t *testing.T) {
 	listedProvider := providers[0].(map[string]any)
 	if listedProvider["client_secret"] != "client-secret" {
 		t.Fatalf("listed client_secret = %#v, want client-secret", listedProvider["client_secret"])
+	}
+	if listedProvider["callback_url"] != "https://client.example.test/api/client/auth/third-party/sso/callback" {
+		t.Fatalf("listed callback_url = %#v, want client callback url", listedProvider["callback_url"])
 	}
 
 	updateResp, updateBody := putJSON(t, server, "/api/admin/third-party/providers/"+providerID, map[string]any{

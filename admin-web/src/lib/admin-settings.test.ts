@@ -135,6 +135,8 @@ describe("admin settings", () => {
                 id: "provider-1",
                 name: "企业 SSO",
                 key: "company-sso",
+                callback_url:
+                  "https://client.example.com/api/client/auth/third-party/company-sso/callback",
                 enabled: true,
                 client_id: "client-id",
                 client_secret: "client-secret",
@@ -172,6 +174,8 @@ describe("admin settings", () => {
         id: "provider-1",
         name: "企业 SSO",
         key: "company-sso",
+        callbackUrl:
+          "https://client.example.com/api/client/auth/third-party/company-sso/callback",
         enabled: true,
         clientId: "client-id",
         clientSecret: "client-secret",
@@ -202,6 +206,8 @@ describe("admin settings", () => {
       id: "provider-1",
       name: "企业 SSO",
       key: "company-sso",
+      callback_url:
+        "https://client.example.com/api/client/auth/third-party/company-sso/callback",
       enabled: true,
       client_id: "client-id",
       client_secret: "client-secret",
@@ -332,6 +338,8 @@ describe("admin settings", () => {
       id: "provider-1",
       name: "企业 SSO",
       key: "company-sso",
+      callback_url:
+        "https://client.example.com/api/client/auth/third-party/company-sso/callback",
       enabled: true,
       client_id: "client-id",
       client_secret: "client-secret",
@@ -397,6 +405,8 @@ describe("admin settings", () => {
                 id: "provider-2",
                 name: "Beta",
                 key: "beta",
+                callback_url:
+                  "https://client.example.com/api/client/auth/third-party/beta/callback",
                 enabled: true,
                 client_id: "beta-client",
                 client_secret: "beta-secret",

@@ -40,6 +40,8 @@ services:
         condition: service_started
     environment:
       CONFIG: /app/config/config.yaml
+      CLIENT_HOSTNAME: ${CLIENT_HOSTNAME:-client.localhost}
+      ADMIN_HOSTNAME: ${ADMIN_HOSTNAME:-admin.localhost}
       ASSETS_HOSTNAME: ${ASSETS_HOSTNAME:-assets.localhost}
       RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-mygod}
       RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-change-me}
