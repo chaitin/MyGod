@@ -22,10 +22,12 @@ import {
   ExpressionPicker,
   type ExpressionItem,
 } from "@/components/expression-picker"
+import { MessageAttachment } from "@/components/message-attachment"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { MessageActionMenu } from "@/components/message-action-menu"
+import { SendFileMessageDialog } from "@/components/send-file-message-dialog"
 import { UserProfilePopover } from "@/components/user-profile-popover"
 import {
   Empty,
@@ -60,6 +62,7 @@ type ConversationPanelProps = {
   historyLoadingBefore: boolean
   messages: ConversationPanelMessage[]
   onDraftChange: (draft: string) => void
+  onSendFile: (file: File) => Promise<ClientMessage | null>
   onLoadBeforeMessages: () => void
   onSendMessage: () => void
   sending: boolean
@@ -73,6 +76,7 @@ export function ConversationPanel({
   historyLoadingBefore,
   messages,
   onDraftChange,
+  onSendFile,
   onLoadBeforeMessages,
   onSendMessage,
   sending,
@@ -97,8 +101,10 @@ export function ConversationPanel({
             onLoadBeforeMessages={onLoadBeforeMessages}
           />
           <ConversationPanelComposer
+            conversationName={conversation.name}
             draft={draft}
             onDraftChange={onDraftChange}
+            onSendFile={onSendFile}
             onSendMessage={onSendMessage}
             sending={sending}
           />
@@ -327,18 +333,25 @@ function ConversationPanelHistory({
 }
 
 function ConversationPanelComposer({
+  conversationName,
   draft,
   onDraftChange,
+  onSendFile,
   onSendMessage,
   sending,
 }: {
+  conversationName: string
   draft: string
   onDraftChange: (draft: string) => void
+  onSendFile: (file: File) => Promise<ClientMessage | null>
   onSendMessage: () => void
   sending: boolean
 }) {
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null)
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null)
   const [expressionPickerOpen, setExpressionPickerOpen] = React.useState(false)
+  const [fileDialogOpen, setFileDialogOpen] = React.useState(false)
+  const [selectedFile, setSelectedFile] = React.useState<File | null>(null)
 
   function handleComposerKeyDown(
     event: React.KeyboardEvent<HTMLTextAreaElement>
@@ -375,11 +388,59 @@ function ConversationPanelComposer({
     })
   }
 
+  function handleFileButtonClick() {
+    fileInputRef.current?.click()
+  }
+
+  function handleFileInputChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null
+
+    event.target.value = ""
+
+    if (!file) {
+      return
+    }
+
+    setSelectedFile(file)
+    setFileDialogOpen(true)
+  }
+
+  function handleFileDialogOpenChange(open: boolean) {
+    if (sending) {
+      return
+    }
+
+    setFileDialogOpen(open)
+
+    if (!open) {
+      setSelectedFile(null)
+    }
+  }
+
+  async function handleFileSendConfirm() {
+    if (!selectedFile || sending) {
+      return
+    }
+
+    const message = await onSendFile(selectedFile)
+
+    if (message) {
+      setFileDialogOpen(false)
+      setSelectedFile(null)
+    }
+  }
+
   return (
     <footer
       className="shrink-0 border-t p-4"
       data-testid="conversation-panel-composer"
     >
+      <input
+        ref={fileInputRef}
+        className="hidden"
+        onChange={handleFileInputChange}
+        type="file"
+      />
       <div
         className="flex w-full flex-col gap-2"
         data-testid="conversation-panel-composer-content"
@@ -420,7 +481,8 @@ function ConversationPanelComposer({
             </Popover>
             <Button
               aria-label="上传文件"
-              disabled
+              disabled={sending}
+              onClick={handleFileButtonClick}
               size="icon-sm"
               title="上传文件"
               type="button"
@@ -455,6 +517,14 @@ function ConversationPanelComposer({
           </Button>
         </div>
       </div>
+      <SendFileMessageDialog
+        conversationName={conversationName}
+        file={selectedFile}
+        onConfirm={() => void handleFileSendConfirm()}
+        onOpenChange={handleFileDialogOpenChange}
+        open={fileDialogOpen}
+        sending={sending}
+      />
     </footer>
   )
 }
@@ -590,6 +660,8 @@ function MessageBodyRenderer({
   body: ConversationPanelMessage["body"]
 }) {
   switch (body.type) {
+    case "file":
+      return <MessageAttachment file={body} />
     case "text":
       return <TextMessageBody content={body.content} />
     case "system_event":

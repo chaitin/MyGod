@@ -116,6 +116,13 @@ type TextMessageBodyResponse = {
   type?: "text"
 }
 
+type FileMessageBodyResponse = {
+  file_id?: string
+  name?: string
+  size_bytes?: number
+  type?: "file"
+}
+
 type SystemEventUserRefResponse = {
   display_name?: string
   id?: string
@@ -136,6 +143,7 @@ type GroupAvatarUpdatedSystemEventBodyResponse = {
 
 type MessageBodyResponse =
   | TextMessageBodyResponse
+  | FileMessageBodyResponse
   | GroupMembersInvitedSystemEventBodyResponse
   | GroupAvatarUpdatedSystemEventBodyResponse
 
@@ -174,6 +182,16 @@ type MarkConversationReadResponse = {
 
 type MessageCreatedEventPayloadResponse = {
   message?: MessageResponse
+}
+
+type TemporaryFileReadURLResponse = {
+  expires_at?: string
+  file_id?: string
+  url?: string
+}
+
+type ReadTemporaryFileURLsResponse = {
+  urls?: TemporaryFileReadURLResponse[]
 }
 
 export type ClientUser = {
@@ -237,6 +255,13 @@ export type ClientTextMessageBody = {
   type: "text"
 }
 
+export type ClientFileMessageBody = {
+  fileId: string
+  name: string
+  sizeBytes: number
+  type: "file"
+}
+
 export type ClientSystemEventUserRef = {
   displayName: string
   id: string
@@ -257,6 +282,7 @@ export type ClientGroupAvatarUpdatedSystemEventBody = {
 
 export type ClientMessageBody =
   | ClientTextMessageBody
+  | ClientFileMessageBody
   | ClientGroupMembersInvitedSystemEventBody
   | ClientGroupAvatarUpdatedSystemEventBody
 
@@ -292,6 +318,17 @@ export type ListConversationMessagesOptions = {
 export type SendConversationTextMessageInput = {
   clientMessageId: string
   content: string
+}
+
+export type SendConversationFileMessageInput = {
+  clientMessageId: string
+  file: File
+}
+
+export type TemporaryFileReadURL = {
+  expiresAt: string
+  fileId: string
+  url: string
 }
 
 export type MarkConversationReadOptions = {
@@ -696,6 +733,73 @@ export async function sendConversationTextMessage(
   return normalizeMessage(message)
 }
 
+export async function sendConversationFileMessage(
+  conversationId: string,
+  input: SendConversationFileMessageInput,
+  fetcher: ClientDataFetch = fetch
+) {
+  const formData = new FormData()
+  formData.set("client_message_id", input.clientMessageId)
+  formData.set("file", input.file)
+
+  const response = await fetcher(
+    `/api/client/conversations/${encodeURIComponent(conversationId)}/messages/files`,
+    {
+      body: formData,
+      credentials: "include",
+      method: "POST",
+    }
+  )
+  const payload = await readJson<
+    ClientDataErrorEnvelope | ClientDataSuccessEnvelope<CreateMessageResponse>
+  >(response)
+
+  if (!response.ok || payload?.success === false) {
+    throw createRequestError(payload, response, "发送文件失败")
+  }
+
+  const message = (
+    payload as ClientDataSuccessEnvelope<CreateMessageResponse> | undefined
+  )?.data?.message
+
+  return normalizeMessage(message)
+}
+
+export async function readTemporaryFileURLs(
+  fileIds: string[],
+  fetcher: ClientDataFetch = fetch
+): Promise<TemporaryFileReadURL[]> {
+  const response = await fetcher("/api/client/temporary-files/read-urls", {
+    body: JSON.stringify({
+      file_ids: fileIds,
+    }),
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  })
+  const payload = await readJson<
+    | ClientDataErrorEnvelope
+    | ClientDataSuccessEnvelope<ReadTemporaryFileURLsResponse>
+  >(response)
+
+  if (!response.ok || payload?.success === false) {
+    throw createRequestError(payload, response, "获取文件下载地址失败")
+  }
+
+  const urls = (
+    payload as
+      ClientDataSuccessEnvelope<ReadTemporaryFileURLsResponse> | undefined
+  )?.data?.urls
+
+  if (!Array.isArray(urls)) {
+    throw new ClientDataRequestError("文件下载地址响应格式不正确")
+  }
+
+  return urls.map(normalizeTemporaryFileReadURL)
+}
+
 export async function markConversationRead(
   conversationId: string,
   options: MarkConversationReadOptions = {},
@@ -750,6 +854,10 @@ export function normalizeMessageCreatedEventPayload(
 export function formatClientMessageBodySummary(body: ClientMessageBody) {
   if (body.type === "text") {
     return body.content
+  }
+
+  if (body.type === "file") {
+    return `[文件] ${body.name}`
   }
 
   if (body.event === "group_avatar_updated") {
@@ -940,6 +1048,21 @@ function normalizeMessageBody(
     }
   }
 
+  if (
+    body?.type === "file" &&
+    typeof body.file_id === "string" &&
+    typeof body.name === "string" &&
+    typeof body.size_bytes === "number" &&
+    body.size_bytes >= 0
+  ) {
+    return {
+      fileId: body.file_id,
+      name: body.name,
+      sizeBytes: body.size_bytes,
+      type: "file",
+    }
+  }
+
   if (body?.type === "system_event") {
     return normalizeSystemEventMessageBody(body)
   }
@@ -994,6 +1117,20 @@ function normalizeSystemEventUserRef(
   return {
     displayName: userRef.display_name,
     id: userRef.id,
+  }
+}
+
+function normalizeTemporaryFileReadURL(
+  item: TemporaryFileReadURLResponse
+): TemporaryFileReadURL {
+  if (!item.file_id || !item.url || !item.expires_at) {
+    throw new ClientDataRequestError("文件下载地址响应格式不正确")
+  }
+
+  return {
+    expiresAt: item.expires_at,
+    fileId: item.file_id,
+    url: item.url,
   }
 }
 

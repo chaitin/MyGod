@@ -64,6 +64,10 @@ export type ClientDataContextValue = {
     conversationId: string,
     content: string
   ) => Promise<ClientMessage | null>
+  sendConversationFile: (
+    conversationId: string,
+    file: File
+  ) => Promise<ClientMessage | null>
   syncLoadedConversationMessages: () => void
   updateConversationLastMessage: (message: ClientMessage) => void
   updateGroupConversationAvatar: (

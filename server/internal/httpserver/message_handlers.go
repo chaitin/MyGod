@@ -279,12 +279,9 @@ func normalizeOptionalPositiveInt64(rawValue string, fieldName string) (*int64, 
 }
 
 func normalizeCreateMessageRequest(req createMessageRequest) (string, json.RawMessage, string, error) {
-	clientMessageID := strings.TrimSpace(req.ClientMessageID)
-	if clientMessageID == "" {
-		return "", nil, "", errors.New("客户端消息 ID 不能为空")
-	}
-	if len([]rune(clientMessageID)) > maxClientMessageIDLength {
-		return "", nil, "", errors.New("客户端消息 ID 不能超过 128 个字符")
+	clientMessageID, err := normalizeClientMessageID(req.ClientMessageID)
+	if err != nil {
+		return "", nil, "", err
 	}
 
 	handler, err := findMessageBodyHandler(req.Body)

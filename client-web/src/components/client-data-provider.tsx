@@ -14,6 +14,7 @@ import {
   listClientConversations,
   listConversationMessages,
   markConversationRead as markConversationReadRequest,
+  sendConversationFileMessage,
   sendConversationTextMessage,
   uploadGroupConversationAvatar as uploadGroupConversationAvatarRequest,
   type ClientConversation,
@@ -512,6 +513,39 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     [mergeIncomingConversationMessage, updateConversationMessageState]
   )
 
+  const sendConversationFile = useCallback(
+    async (conversationId: string, file: File) => {
+      const state = conversationMessageStatesRef.current[conversationId]
+      if (!conversationId || state?.sending) {
+        return null
+      }
+
+      const clientMessageId = createClientMessageId()
+      updateConversationMessageState(conversationId, (currentState) => ({
+        ...currentState,
+        sending: true,
+      }))
+
+      try {
+        const message = await sendConversationFileMessage(conversationId, {
+          clientMessageId,
+          file,
+        })
+        mergeIncomingConversationMessage(message, { markLoaded: true })
+        return message
+      } catch (error: unknown) {
+        toast.error(getClientDataErrorMessage(error, "发送文件失败"))
+        return null
+      } finally {
+        updateConversationMessageState(conversationId, (currentState) => ({
+          ...currentState,
+          sending: false,
+        }))
+      }
+    },
+    [mergeIncomingConversationMessage, updateConversationMessageState]
+  )
+
   const getConversationMessageState = useCallback(
     (conversationId: string) => {
       return (
@@ -736,6 +770,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     refreshConversations,
     refreshContacts,
     refreshMe,
+    sendConversationFile,
     sendConversationText,
     syncLoadedConversationMessages,
     updateConversationLastMessage,

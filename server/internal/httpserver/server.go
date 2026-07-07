@@ -82,6 +82,7 @@ func NewRouterWithRealtimeAndLLMHealthChecker(db *gorm.DB, cfg config.Config, re
 	client.POST("/conversations/:conversation_id/read", server.markConversationRead)
 	client.GET("/conversations/:conversation_id/messages", server.listConversationMessages)
 	client.POST("/conversations/:conversation_id/messages", server.createConversationMessage)
+	client.POST("/conversations/:conversation_id/messages/files", server.createConversationFileMessage)
 	client.GET("/ws", server.clientWebSocket)
 
 	admin := router.Group("/api/admin", server.requireAdminSession)
