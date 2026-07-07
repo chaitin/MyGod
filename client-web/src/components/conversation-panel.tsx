@@ -12,6 +12,10 @@ import {
 import { cn } from "@/lib/utils"
 import type { ClientConversation, ClientMessage } from "@/lib/client-data-api"
 import { ConversationInfoDrawer } from "@/components/conversation-info-drawer"
+import {
+  ExpressionPicker,
+  type ExpressionItem,
+} from "@/components/expression-picker"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { MessageActionMenu } from "@/components/message-action-menu"
@@ -23,6 +27,11 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
 
@@ -302,6 +311,9 @@ function ConversationPanelComposer({
   onSendMessage: () => void
   sending: boolean
 }) {
+  const textareaRef = React.useRef<HTMLTextAreaElement | null>(null)
+  const [expressionPickerOpen, setExpressionPickerOpen] = React.useState(false)
+
   function handleComposerKeyDown(
     event: React.KeyboardEvent<HTMLTextAreaElement>
   ) {
@@ -321,6 +333,22 @@ function ConversationPanelComposer({
     }
   }
 
+  function handleExpressionSelect(item: ExpressionItem) {
+    const textarea = textareaRef.current
+
+    if (!textarea) {
+      onDraftChange(draft + item.value)
+      setExpressionPickerOpen(false)
+      return
+    }
+
+    insertTextareaText(textarea, item.value, onDraftChange)
+    setExpressionPickerOpen(false)
+    window.requestAnimationFrame(() => {
+      textarea.focus()
+    })
+  }
+
   return (
     <footer
       className="shrink-0 border-t p-4"
@@ -332,6 +360,7 @@ function ConversationPanelComposer({
       >
         <div data-testid="conversation-panel-editor-row">
           <Textarea
+            ref={textareaRef}
             value={draft}
             onChange={(event) => onDraftChange(event.target.value)}
             onKeyDown={handleComposerKeyDown}
@@ -344,16 +373,25 @@ function ConversationPanelComposer({
           data-testid="conversation-panel-toolbar-row"
         >
           <div className="flex items-center gap-1">
-            <Button
-              aria-label="选择表情"
-              disabled
-              size="icon-sm"
-              title="选择表情"
-              type="button"
-              variant="ghost"
+            <Popover
+              open={expressionPickerOpen}
+              onOpenChange={setExpressionPickerOpen}
             >
-              <Smile className="size-4" />
-            </Button>
+              <PopoverTrigger asChild>
+                <Button
+                  aria-label="选择表情"
+                  size="icon-sm"
+                  title="选择表情"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Smile className="size-4" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-auto p-3" side="top">
+                <ExpressionPicker onSelect={handleExpressionSelect} />
+              </PopoverContent>
+            </Popover>
             <Button
               aria-label="上传文件"
               disabled
