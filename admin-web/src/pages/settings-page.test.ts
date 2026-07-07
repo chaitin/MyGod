@@ -38,6 +38,8 @@ describe("settings page third-party provider form", () => {
       oidcProviderToForm({
         clientId: "client-id",
         clientSecret: "client-secret",
+        callbackUrl:
+          "https://client.example.com/api/client/auth/third-party/company-sso/callback",
         config: {
           avatar_field: "avatar_url",
           authorize_url: "https://sso.example.com/authorize",

@@ -71,7 +71,7 @@ export type UpdateInfoSettingsInput = {
 
 export type ThirdPartyLoginProviderInput = Omit<
   ThirdPartyLoginProvider,
-  "enabled" | "id" | "key" | "sortOrder"
+  "callbackUrl" | "enabled" | "id" | "key" | "sortOrder"
 >
 export type ThirdPartyLoginProviderMoveDirection = "down" | "up"
 

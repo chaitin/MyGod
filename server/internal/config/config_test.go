@@ -258,12 +258,13 @@ storage:
 
 func TestLoadRejectsInvalidPublicHostnames(t *testing.T) {
 	for _, input := range []struct {
-		name       string
-		invalidEnv string
+		name         string
+		invalidEnv   string
+		invalidValue string
 	}{
-		{name: "client", invalidEnv: "CLIENT_HOSTNAME"},
-		{name: "admin", invalidEnv: "ADMIN_HOSTNAME"},
-		{name: "assets", invalidEnv: "ASSETS_HOSTNAME"},
+		{name: "client scheme", invalidEnv: "CLIENT_HOSTNAME", invalidValue: "https://client.example.com"},
+		{name: "admin query", invalidEnv: "ADMIN_HOSTNAME", invalidValue: "admin.example.com?tenant=1"},
+		{name: "assets fragment", invalidEnv: "ASSETS_HOSTNAME", invalidValue: "assets.example.com#public"},
 	} {
 		t.Run(input.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -292,7 +293,7 @@ storage:
 			t.Setenv("CLIENT_HOSTNAME", "client.example.com")
 			t.Setenv("ADMIN_HOSTNAME", "admin.example.com")
 			t.Setenv("ASSETS_HOSTNAME", "assets.example.com")
-			t.Setenv(input.invalidEnv, "https://"+strings.ToLower(input.name)+".example.com")
+			t.Setenv(input.invalidEnv, input.invalidValue)
 
 			_, err := Load()
 			if err == nil {

@@ -111,7 +111,7 @@ func validateHostnameEnv(name string, value string) error {
 	if value == "" {
 		return fmt.Errorf("%s is required", name)
 	}
-	if strings.Contains(value, "://") || strings.Contains(value, "/") {
+	if strings.Contains(value, "://") || strings.ContainsAny(value, "/?#") {
 		return fmt.Errorf("%s must be a hostname without scheme or path", name)
 	}
 
