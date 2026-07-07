@@ -2306,6 +2306,9 @@ func TestThirdPartyLoginReusesExternalAccountWhenEmailIsMissing(t *testing.T) {
 func TestDingTalkLoginUsesUserAccessTokenHeaderForUserInfo(t *testing.T) {
 	var tokenCalled bool
 	var userinfoCalled bool
+	var appTokenCalled bool
+	var useridByUnionIDCalled bool
+	var userdetailCalled bool
 	dingTalkServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v1.0/oauth2/userAccessToken":
@@ -2344,13 +2347,71 @@ func TestDingTalkLoginUsesUserAccessTokenHeaderForUserInfo(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{
-				"unionId": "ding-union-id",
-				"openId": "ding-open-id",
-				"email": "Ding.User@example.com",
-				"mobile": "13900000000",
-				"nick": "Ding User",
-				"avatarUrl": "https://example.com/ding.webp"
-			}`))
+					"unionId": "ding-union-id",
+					"openId": "ding-open-id",
+					"email": "Ding.User@example.com",
+					"mobile": "13900000000",
+					"nick": "Ding Nick",
+					"avatarUrl": "https://example.com/ding.webp"
+				}`))
+		case "/v1.0/oauth2/accessToken":
+			appTokenCalled = true
+			if r.Method != http.MethodPost {
+				t.Fatalf("app token method = %q, want POST", r.Method)
+			}
+			if !strings.Contains(r.Header.Get("Content-Type"), "application/json") {
+				t.Fatalf("app token content-type = %q, want json", r.Header.Get("Content-Type"))
+			}
+			var payload map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode app token payload: %v", err)
+			}
+			if payload["appKey"] != "ding-client-id" {
+				t.Fatalf("appKey = %q, want ding-client-id", payload["appKey"])
+			}
+			if payload["appSecret"] != "ding-client-secret" {
+				t.Fatalf("appSecret = %q, want ding-client-secret", payload["appSecret"])
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"accessToken":"dingtalk-app-token","expireIn":7200}`))
+		case "/user/getUseridByUnionid":
+			useridByUnionIDCalled = true
+			if r.Method != http.MethodGet {
+				t.Fatalf("userid method = %q, want GET", r.Method)
+			}
+			if r.URL.Query().Get("access_token") != "dingtalk-app-token" {
+				t.Fatalf("userid access_token = %q, want dingtalk-app-token", r.URL.Query().Get("access_token"))
+			}
+			if r.URL.Query().Get("unionid") != "ding-union-id" {
+				t.Fatalf("unionid = %q, want ding-union-id", r.URL.Query().Get("unionid"))
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"errcode":0,"errmsg":"ok","userid":"ding-user-id"}`))
+		case "/topapi/v2/user/get":
+			userdetailCalled = true
+			if r.Method != http.MethodPost {
+				t.Fatalf("userdetail method = %q, want POST", r.Method)
+			}
+			if r.URL.Query().Get("access_token") != "dingtalk-app-token" {
+				t.Fatalf("userdetail access_token = %q, want dingtalk-app-token", r.URL.Query().Get("access_token"))
+			}
+			var payload map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode userdetail payload: %v", err)
+			}
+			if payload["userid"] != "ding-user-id" {
+				t.Fatalf("userdetail userid = %q, want ding-user-id", payload["userid"])
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+					"errcode": 0,
+					"errmsg": "ok",
+					"result": {
+						"userid": "ding-user-id",
+						"unionid": "ding-union-id",
+						"name": "Ding Real Name"
+					}
+				}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -2368,15 +2429,18 @@ func TestDingTalkLoginUsesUserAccessTokenHeaderForUserInfo(t *testing.T) {
 		ClientSecret: "ding-client-secret",
 		Scopes:       json.RawMessage(`["openid"]`),
 		Config: thirdPartyProviderConfig(t, map[string]any{
-			"authorize_url":     dingTalkServer.URL + "/oauth2/auth",
-			"token_url":         dingTalkServer.URL + "/v1.0/oauth2/userAccessToken",
-			"userinfo_url":      dingTalkServer.URL + "/v1.0/contact/users/me",
-			"external_id_field": "unionId",
-			"email_field":       "email",
-			"phone_field":       "mobile",
-			"name_field":        "nick",
-			"nickname_field":    "nick",
-			"avatar_field":      "avatarUrl",
+			"authorize_url":         dingTalkServer.URL + "/oauth2/auth",
+			"token_url":             dingTalkServer.URL + "/v1.0/oauth2/userAccessToken",
+			"userinfo_url":          dingTalkServer.URL + "/v1.0/contact/users/me",
+			"app_token_url":         dingTalkServer.URL + "/v1.0/oauth2/accessToken",
+			"userid_by_unionid_url": dingTalkServer.URL + "/user/getUseridByUnionid",
+			"userdetail_url":        dingTalkServer.URL + "/topapi/v2/user/get",
+			"external_id_field":     "unionId",
+			"email_field":           "email",
+			"phone_field":           "mobile",
+			"name_field":            "nick",
+			"nickname_field":        "nick",
+			"avatar_field":          "avatarUrl",
 		}),
 	})
 	noRedirectClient := server.Client()
@@ -2423,6 +2487,15 @@ func TestDingTalkLoginUsesUserAccessTokenHeaderForUserInfo(t *testing.T) {
 	if !userinfoCalled {
 		t.Fatal("dingtalk userinfo endpoint was not called")
 	}
+	if !appTokenCalled {
+		t.Fatal("dingtalk app token endpoint was not called")
+	}
+	if !useridByUnionIDCalled {
+		t.Fatal("dingtalk userid by unionid endpoint was not called")
+	}
+	if !userdetailCalled {
+		t.Fatal("dingtalk userdetail endpoint was not called")
+	}
 
 	var account store.ThirdPartyAccount
 	if err := db.First(&account, "provider_id = ? AND external_user_id = ?", provider.ID, "ding-union-id").Error; err != nil {
@@ -2435,14 +2508,85 @@ func TestDingTalkLoginUsesUserAccessTokenHeaderForUserInfo(t *testing.T) {
 	if user.Email != "ding.user@example.com" {
 		t.Fatalf("user email = %q, want ding.user@example.com", user.Email)
 	}
-	if user.Name != "Ding User" {
-		t.Fatalf("user name = %q, want Ding User", user.Name)
+	if user.Name != "Ding Real Name" {
+		t.Fatalf("user name = %q, want Ding Real Name", user.Name)
+	}
+	if user.Nickname != "Ding Nick" {
+		t.Fatalf("user nickname = %q, want Ding Nick", user.Nickname)
 	}
 	if user.Phone == nil || *user.Phone != "+8613900000000" {
 		t.Fatalf("user phone = %#v, want +8613900000000", user.Phone)
 	}
 	if user.Avatar != "https://example.com/ding.webp" {
 		t.Fatalf("user avatar = %q, want dingtalk avatar", user.Avatar)
+	}
+}
+
+func TestDingTalkLoginUpdatesExistingBoundUserName(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+	now := time.Date(2026, 7, 7, 10, 0, 0, 0, time.UTC)
+	provider := insertTestThirdPartyLoginProvider(t, db, store.ThirdPartyLoginProvider{
+		Name:         "钉钉",
+		Key:          "dingtalk",
+		Type:         store.ThirdPartyLoginProviderTypeDingTalk,
+		Enabled:      true,
+		ClientID:     "ding-client-id",
+		ClientSecret: "ding-client-secret",
+		Scopes:       json.RawMessage(`["openid"]`),
+		Config: thirdPartyProviderConfig(t, map[string]any{
+			"authorize_url":     "https://login.example.com/oauth2/auth",
+			"token_url":         "https://api.example.com/v1.0/oauth2/userAccessToken",
+			"userinfo_url":      "https://api.example.com/v1.0/contact/users/me",
+			"external_id_field": "unionId",
+			"email_field":       "email",
+			"phone_field":       "mobile",
+			"name_field":        "nick",
+			"nickname_field":    "nick",
+			"avatar_field":      "avatarUrl",
+		}),
+	})
+	user := insertTestUser(t, db, "ding.user@example.com", "Ding Nick", store.UserStatusActive, now)
+	if err := db.Model(&user).Update("nickname", "Ding Nick").Error; err != nil {
+		t.Fatalf("set existing nickname: %v", err)
+	}
+	account := store.ThirdPartyAccount{
+		ID:             uuid.NewString(),
+		ProviderID:     provider.ID,
+		ExternalUserID: "ding-union-id",
+		UserID:         user.ID,
+		Profile:        json.RawMessage(`{"unionId":"ding-union-id","nick":"Ding Nick"}`),
+	}
+	if err := db.Create(&account).Error; err != nil {
+		t.Fatalf("create existing dingtalk account: %v", err)
+	}
+
+	resolvedUser, err := (&Server{db: db}).findOrCreateThirdPartyUser(provider, externalUserProfile{
+		ExternalUserID: "ding-union-id",
+		Email:          "Ding.User@example.com",
+		Name:           "Ding Real Name",
+		Nickname:       "Ding Nick",
+		Raw:            json.RawMessage(`{"unionId":"ding-union-id","nick":"Ding Nick","name":"Ding Real Name"}`),
+	})
+	if err != nil {
+		t.Fatalf("find or create dingtalk user: %v", err)
+	}
+	if resolvedUser.ID != user.ID {
+		t.Fatalf("resolved user id = %q, want %q", resolvedUser.ID, user.ID)
+	}
+	if resolvedUser.Name != "Ding Real Name" {
+		t.Fatalf("resolved user name = %q, want Ding Real Name", resolvedUser.Name)
+	}
+
+	var storedUser store.User
+	if err := db.First(&storedUser, "id = ?", user.ID).Error; err != nil {
+		t.Fatalf("find stored user: %v", err)
+	}
+	if storedUser.Name != "Ding Real Name" {
+		t.Fatalf("stored user name = %q, want Ding Real Name", storedUser.Name)
+	}
+	if storedUser.Nickname != "Ding Nick" {
+		t.Fatalf("stored user nickname = %q, want Ding Nick", storedUser.Nickname)
 	}
 }
 

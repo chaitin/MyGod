@@ -530,7 +530,7 @@ func normalizeThirdPartyProviderConfig(providerType string, rawConfig map[string
 		}
 	}
 
-	for _, key := range []string{"authorize_url", "token_url", "userinfo_url", "emails_url", "userdetail_url"} {
+	for _, key := range []string{"authorize_url", "token_url", "userinfo_url", "emails_url", "app_token_url", "userid_by_unionid_url", "userdetail_url"} {
 		value := stringConfigValue(config, key)
 		if value == "" {
 			continue
@@ -590,15 +590,18 @@ func defaultThirdPartyProviderConfig(providerType string) map[string]any {
 	switch providerType {
 	case store.ThirdPartyLoginProviderTypeDingTalk:
 		return map[string]any{
-			"authorize_url":     "https://login.dingtalk.com/oauth2/auth?prompt=consent",
-			"token_url":         "https://api.dingtalk.com/v1.0/oauth2/userAccessToken",
-			"userinfo_url":      "https://api.dingtalk.com/v1.0/contact/users/me",
-			"external_id_field": "unionId",
-			"email_field":       "email",
-			"phone_field":       "mobile",
-			"name_field":        "nick",
-			"nickname_field":    "nick",
-			"avatar_field":      "avatarUrl",
+			"authorize_url":         "https://login.dingtalk.com/oauth2/auth?prompt=consent",
+			"token_url":             "https://api.dingtalk.com/v1.0/oauth2/userAccessToken",
+			"userinfo_url":          "https://api.dingtalk.com/v1.0/contact/users/me",
+			"app_token_url":         "https://api.dingtalk.com/v1.0/oauth2/accessToken",
+			"userid_by_unionid_url": "https://oapi.dingtalk.com/user/getUseridByUnionid",
+			"userdetail_url":        "https://oapi.dingtalk.com/topapi/v2/user/get",
+			"external_id_field":     "unionId",
+			"email_field":           "email",
+			"phone_field":           "mobile",
+			"name_field":            "name",
+			"nickname_field":        "nick",
+			"avatar_field":          "avatarUrl",
 		}
 	case store.ThirdPartyLoginProviderTypeWeCom:
 		return map[string]any{
@@ -663,6 +666,10 @@ func thirdPartyConfigURLMessage(key string) string {
 		return "用户信息 URL 格式错误"
 	case "emails_url":
 		return "邮箱 API URL 格式错误"
+	case "app_token_url":
+		return "应用 Access Token URL 格式错误"
+	case "userid_by_unionid_url":
+		return "UnionID 查询 UserID URL 格式错误"
 	case "userdetail_url":
 		return "用户详情 URL 格式错误"
 	default:

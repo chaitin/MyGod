@@ -30,6 +30,9 @@ const (
 	thirdPartyHTTPTimeout          = 10 * time.Second
 	thirdPartyLoginStateCookieName = "third_party_login_state"
 	thirdPartyLoginStateTTL        = 10 * time.Minute
+	dingTalkAppTokenURL            = "https://api.dingtalk.com/v1.0/oauth2/accessToken"
+	dingTalkUserIDByUnionIDURL     = "https://oapi.dingtalk.com/user/getUseridByUnionid"
+	dingTalkUserDetailURL          = "https://oapi.dingtalk.com/topapi/v2/user/get"
 )
 
 type thirdPartyTokenResponse struct {
@@ -423,8 +426,149 @@ func fetchDingTalkUserProfile(ctx context.Context, provider store.ThirdPartyLogi
 	if err != nil {
 		return externalUserProfile{}, err
 	}
+	organizationClaims, err := fetchDingTalkOrganizationUserClaims(ctx, provider, config, claims)
+	if err == nil && len(organizationClaims) > 0 {
+		claims = mergeThirdPartyClaims(claims, organizationClaims)
+	}
 
-	return profileFromClaims(provider, claims)
+	profile, err := profileFromClaims(provider, claims)
+	if err != nil {
+		return externalUserProfile{}, err
+	}
+	if organizationName := stringFieldFromClaims(organizationClaims, "name"); organizationName != "" {
+		profile.Name = organizationName
+	}
+	if profile.Nickname == "" {
+		profile.Nickname = stringFieldFromClaims(claims, "nick")
+	}
+
+	return profile, nil
+}
+
+func fetchDingTalkOrganizationUserClaims(ctx context.Context, provider store.ThirdPartyLoginProvider, config map[string]any, userClaims map[string]any) (map[string]any, error) {
+	unionID := firstNonEmptyStringField(userClaims, "unionId", "unionid")
+	userID := firstNonEmptyStringField(userClaims, "userid", "userId")
+	if unionID == "" && userID == "" {
+		return nil, errors.New("dingtalk user id is empty")
+	}
+
+	appAccessToken, err := exchangeDingTalkAppToken(ctx, provider, firstNonEmptyString(stringConfigValue(config, "app_token_url"), dingTalkAppTokenURL))
+	if err != nil {
+		return nil, err
+	}
+	if userID == "" {
+		userID, err = fetchDingTalkUserIDByUnionID(
+			ctx,
+			firstNonEmptyString(stringConfigValue(config, "userid_by_unionid_url"), dingTalkUserIDByUnionIDURL),
+			appAccessToken,
+			unionID,
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return fetchDingTalkUserDetailClaims(
+		ctx,
+		firstNonEmptyString(stringConfigValue(config, "userdetail_url"), dingTalkUserDetailURL),
+		appAccessToken,
+		userID,
+	)
+}
+
+func exchangeDingTalkAppToken(ctx context.Context, provider store.ThirdPartyLoginProvider, endpoint string) (string, error) {
+	payload, err := json.Marshal(map[string]string{
+		"appKey":    provider.ClientID,
+		"appSecret": provider.ClientSecret,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	requestContext, cancel := context.WithTimeout(ctx, thirdPartyHTTPTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(requestContext, http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	return exchangeThirdPartyToken(req)
+}
+
+func fetchDingTalkUserIDByUnionID(ctx context.Context, endpoint string, appAccessToken string, unionID string) (string, error) {
+	userIDURL, err := url.Parse(endpoint)
+	if err != nil {
+		return "", err
+	}
+	query := userIDURL.Query()
+	query.Set("access_token", appAccessToken)
+	query.Set("unionid", unionID)
+	userIDURL.RawQuery = query.Encode()
+
+	requestContext, cancel := context.WithTimeout(ctx, thirdPartyHTTPTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(requestContext, http.MethodGet, userIDURL.String(), nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "application/json")
+
+	claims, err := doJSONMapRequest(req)
+	if err != nil {
+		return "", err
+	}
+	if errCode := int64FieldFromClaims(claims, "errcode"); errCode != 0 {
+		return "", fmt.Errorf("dingtalk userid error %d", errCode)
+	}
+	userID := firstNonEmptyStringField(claims, "userid", "userId")
+	if userID == "" {
+		return "", errors.New("dingtalk userid is empty")
+	}
+
+	return userID, nil
+}
+
+func fetchDingTalkUserDetailClaims(ctx context.Context, endpoint string, appAccessToken string, userID string) (map[string]any, error) {
+	userDetailURL, err := url.Parse(endpoint)
+	if err != nil {
+		return nil, err
+	}
+	query := userDetailURL.Query()
+	query.Set("access_token", appAccessToken)
+	userDetailURL.RawQuery = query.Encode()
+
+	payload, err := json.Marshal(map[string]string{
+		"userid":   userID,
+		"language": "zh_CN",
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	requestContext, cancel := context.WithTimeout(ctx, thirdPartyHTTPTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(requestContext, http.MethodPost, userDetailURL.String(), bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	claims, err := doJSONMapRequest(req)
+	if err != nil {
+		return nil, err
+	}
+	if errCode := int64FieldFromClaims(claims, "errcode"); errCode != 0 {
+		return nil, fmt.Errorf("dingtalk userdetail error %d", errCode)
+	}
+	result, ok := claims["result"].(map[string]any)
+	if ok && len(result) > 0 {
+		return result, nil
+	}
+
+	return claims, nil
 }
 
 func fetchWeComUserProfile(ctx context.Context, provider store.ThirdPartyLoginProvider, code string) (externalUserProfile, error) {
@@ -810,7 +954,11 @@ func (s *Server) findOrCreateThirdPartyUser(provider store.ThirdPartyLoginProvid
 			if updateErr := tx.Model(&account).Update("profile", profile.Raw).Error; updateErr != nil {
 				return updateErr
 			}
-			resultUser = account.User
+			updatedUser, updateErr := refreshThirdPartyBoundUserFromProfile(tx, provider, account.User, profile)
+			if updateErr != nil {
+				return updateErr
+			}
+			resultUser = updatedUser
 			return nil
 		}
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -842,6 +990,22 @@ func (s *Server) findOrCreateThirdPartyUser(provider store.ThirdPartyLoginProvid
 	}
 
 	return resultUser, nil
+}
+
+func refreshThirdPartyBoundUserFromProfile(tx *gorm.DB, provider store.ThirdPartyLoginProvider, user store.User, profile externalUserProfile) (store.User, error) {
+	if provider.Type != store.ThirdPartyLoginProviderTypeDingTalk {
+		return user, nil
+	}
+	name := strings.TrimSpace(profile.Name)
+	if name == "" || name == strings.TrimSpace(user.Name) {
+		return user, nil
+	}
+	if err := tx.Model(&store.User{}).Where("id = ?", user.ID).Update("name", name).Error; err != nil {
+		return store.User{}, err
+	}
+	user.Name = name
+
+	return user, nil
 }
 
 func (s *Server) findOrCreateThirdPartyBoundUser(tx *gorm.DB, provider store.ThirdPartyLoginProvider, profile externalUserProfile) (store.User, error) {
