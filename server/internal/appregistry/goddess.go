@@ -16,7 +16,7 @@ import (
 const (
 	GoddessAppID          = "00000000-0000-0000-0000-000000000001"
 	GoddessDefaultName    = "女菩萨"
-	GoddessDefaultAvatar  = "/logo.png"
+	GoddessDefaultAvatar  = "/assets/apps/goddess.webp"
 	GoddessDefaultSummary = "专属 AI 助理"
 )
 
