@@ -325,6 +325,7 @@ type ConversationMessagesHandler = (
 type ConversationsHandler = () => Promise<Response> | Response
 
 function createClientFetchMock({
+  authenticated = false,
   conversationsHandler,
   conversationMessagesHandler,
   currentUserAvatar = "/assets/avatars/builtin/17.webp",
@@ -337,6 +338,7 @@ function createClientFetchMock({
   logoutStatus = 200,
   sendMessageResponse,
 }: {
+  authenticated?: boolean
   conversationsHandler?: ConversationsHandler
   conversationMessagesHandler?: ConversationMessagesHandler
   currentUserAvatar?: string
@@ -361,6 +363,7 @@ function createClientFetchMock({
           success: true,
           data: {
             app_name: "星环协作",
+            authenticated,
             organization_name: "长亭科技",
             third_party_providers: thirdPartyProviders,
           },
@@ -856,6 +859,18 @@ describe("App", () => {
     await waitFor(() => expect(document.title).toBe("登录 - 星环协作"))
   })
 
+  it("访问登录页时如果已经登录则进入初始化页", async () => {
+    vi.stubGlobal("fetch", createClientFetchMock({ authenticated: true }))
+
+    renderApp("/login")
+
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent("/init")
+    )
+    expect(screen.getByText("正在为你加载数据")).toBeInTheDocument()
+    await waitFor(() => expect(document.title).toBe("正在加载 - 星环协作"))
+  })
+
   it("在登录页展示第三方登录方式并跳转到统一初始化入口", async () => {
     vi.stubGlobal(
       "fetch",
@@ -1071,9 +1086,9 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "发送消息" })).toHaveTextContent(
       "发送"
     )
-    expect(screen.getByRole("button", { name: "选择表情" })).toBeDisabled()
-    expect(screen.getByRole("button", { name: "上传文件" })).toBeDisabled()
-    expect(screen.getByRole("button", { name: "插入图片" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "选择表情" })).toBeEnabled()
+    expect(screen.getByRole("button", { name: "上传文件" })).toBeEnabled()
+    expect(screen.getByRole("button", { name: "插入图片" })).toBeEnabled()
     expect(screen.getByPlaceholderText("输入消息")).toBeEnabled()
 
     await user.type(
@@ -2485,7 +2500,9 @@ describe("App", () => {
     const teamConversationButton = screen.getByRole("button", {
       name: /产品讨论组/,
     })
-    expect(within(teamConversationButton).queryByText("2")).not.toBeInTheDocument()
+    expect(
+      within(teamConversationButton).queryByText("2")
+    ).not.toBeInTheDocument()
 
     firstSocket.failClose()
     const secondSocket = await openLatestAppWebSocket(1, { ready: false })
@@ -2498,9 +2515,9 @@ describe("App", () => {
 
     await waitFor(() =>
       expect(
-        within(
-          screen.getByRole("button", { name: /产品讨论组/ })
-        ).getByText("2")
+        within(screen.getByRole("button", { name: /产品讨论组/ })).getByText(
+          "2"
+        )
       ).toBeInTheDocument()
     )
     expect(conversationListRequests).toBeGreaterThanOrEqual(2)

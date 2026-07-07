@@ -6,6 +6,7 @@ import { ClientConversationRealtimeSync } from "@/components/client-conversation
 import { ClientDataProvider } from "@/components/client-data-provider"
 import { ClientMessageNotificationSync } from "@/components/client-message-notification-sync"
 import { ClientRealtimeProvider } from "@/components/client-realtime-provider"
+import { GlobalBeforeUnloadGuard } from "@/components/global-before-unload-guard"
 import { AppInfoProvider } from "@/components/app-info-provider"
 import { useAppInfo } from "@/lib/app-info-context"
 import { ChatPage } from "@/pages/chat-page"
@@ -17,6 +18,7 @@ import { TasksPage } from "@/pages/tasks-page"
 export function App() {
   return (
     <AppInfoProvider>
+      <GlobalBeforeUnloadGuard />
       <Routes>
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route
@@ -41,7 +43,7 @@ export function App() {
           <Route
             path="/init"
             element={
-              <PageTitle title="加载">
+              <PageTitle title="正在加载">
                 <InitPage />
               </PageTitle>
             }

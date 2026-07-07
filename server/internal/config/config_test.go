@@ -61,6 +61,7 @@ admin:
 	t.Setenv("CLIENT_HOSTNAME", "client.example.com")
 	t.Setenv("ADMIN_HOSTNAME", "admin.example.com")
 	t.Setenv("ASSETS_HOSTNAME", "assets.example.com")
+	t.Setenv("GODDESS_APP_SECRET", "env-goddess-secret")
 
 	cfg, err := Load()
 	if err != nil {
@@ -75,6 +76,68 @@ admin:
 	}
 	if cfg.Storage.AssetsHostname != "assets.example.com" {
 		t.Fatalf("Storage.AssetsHostname = %q, want assets.example.com", cfg.Storage.AssetsHostname)
+	}
+	if cfg.Apps.GoddessSecret != "env-goddess-secret" {
+		t.Fatalf("Apps.GoddessSecret = %q, want env-goddess-secret", cfg.Apps.GoddessSecret)
+	}
+}
+
+func TestLoadReadsGoddessSecretFromConfigFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := []byte(`
+database:
+  dsn: "postgres://app:app@localhost:5432/app?sslmode=disable"
+admin:
+  password: "secret-admin-password"
+apps:
+  goddess_secret: "file-goddess-secret"
+`)
+
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("CONFIG", path)
+	t.Setenv("CLIENT_HOSTNAME", "client.example.com")
+	t.Setenv("ADMIN_HOSTNAME", "admin.example.com")
+	t.Setenv("ASSETS_HOSTNAME", "assets.example.com")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.Apps.GoddessSecret != "file-goddess-secret" {
+		t.Fatalf("Apps.GoddessSecret = %q, want file-goddess-secret", cfg.Apps.GoddessSecret)
+	}
+}
+
+func TestLoadRejectsMissingGoddessSecret(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := []byte(`
+database:
+  dsn: "postgres://app:app@localhost:5432/app?sslmode=disable"
+admin:
+  password: "secret-admin-password"
+`)
+
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("CONFIG", path)
+	t.Setenv("CLIENT_HOSTNAME", "client.example.com")
+	t.Setenv("ADMIN_HOSTNAME", "admin.example.com")
+	t.Setenv("ASSETS_HOSTNAME", "assets.example.com")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() error = nil, want missing goddess secret error")
+	}
+	if !strings.Contains(err.Error(), "apps.goddess_secret") {
+		t.Fatalf("Load() error = %q, want apps.goddess_secret", err.Error())
 	}
 }
 
@@ -246,6 +309,7 @@ storage:
 	t.Setenv("CONFIG", path)
 	t.Setenv("CLIENT_HOSTNAME", "client.example.com")
 	t.Setenv("ADMIN_HOSTNAME", "admin.example.com")
+	t.Setenv("GODDESS_APP_SECRET", "test-goddess-secret")
 
 	_, err := Load()
 	if err == nil {
@@ -293,6 +357,7 @@ storage:
 			t.Setenv("CLIENT_HOSTNAME", "client.example.com")
 			t.Setenv("ADMIN_HOSTNAME", "admin.example.com")
 			t.Setenv("ASSETS_HOSTNAME", "assets.example.com")
+			t.Setenv("GODDESS_APP_SECRET", "test-goddess-secret")
 			t.Setenv(input.invalidEnv, input.invalidValue)
 
 			_, err := Load()
@@ -433,4 +498,5 @@ func setRequiredPublicHostnames(t *testing.T) {
 	t.Setenv("CLIENT_HOSTNAME", "client.example.com")
 	t.Setenv("ADMIN_HOSTNAME", "admin.example.com")
 	t.Setenv("ASSETS_HOSTNAME", "assets.example.com")
+	t.Setenv("GODDESS_APP_SECRET", "test-goddess-secret")
 }

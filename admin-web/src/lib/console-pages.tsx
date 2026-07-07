@@ -1,4 +1,9 @@
-import { BotIcon, SettingsIcon, UsersRoundIcon } from "lucide-react"
+import {
+  AppWindowIcon,
+  BotIcon,
+  SettingsIcon,
+  UsersRoundIcon,
+} from "lucide-react"
 
 type ConsoleChildPage = {
   path: string
@@ -17,6 +22,11 @@ export const consolePages: ConsolePage[] = [
     path: "/members",
     title: "成员管理",
     icon: <UsersRoundIcon />,
+  },
+  {
+    path: "/apps",
+    title: "应用管理",
+    icon: <AppWindowIcon />,
   },
   {
     path: "/settings",

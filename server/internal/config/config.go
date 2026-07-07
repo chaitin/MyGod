@@ -13,6 +13,7 @@ type Config struct {
 	Database DatabaseConfig `yaml:"database"`
 	Admin    AdminConfig    `yaml:"admin"`
 	Storage  StorageConfig  `yaml:"storage"`
+	Apps     AppsConfig     `yaml:"apps"`
 }
 
 type ServerConfig struct {
@@ -27,6 +28,10 @@ type DatabaseConfig struct {
 
 type AdminConfig struct {
 	Password string `yaml:"password"`
+}
+
+type AppsConfig struct {
+	GoddessSecret string `yaml:"goddess_secret"`
 }
 
 type StorageConfig struct {
@@ -82,6 +87,9 @@ func Load() (Config, error) {
 	if err := normalizePublicHostnames(&cfg); err != nil {
 		return Config{}, err
 	}
+	if err := normalizeAppsConfig(&cfg.Apps); err != nil {
+		return Config{}, err
+	}
 	if err := normalizeStorageConfig(&cfg.Storage); err != nil {
 		return Config{}, err
 	}
@@ -113,6 +121,18 @@ func validateHostnameEnv(name string, value string) error {
 	}
 	if strings.Contains(value, "://") || strings.ContainsAny(value, "/?#") {
 		return fmt.Errorf("%s must be a hostname without scheme or path", name)
+	}
+
+	return nil
+}
+
+func normalizeAppsConfig(cfg *AppsConfig) error {
+	if value := firstNonEmptyEnv("GODDESS_APP_SECRET"); value != "" {
+		cfg.GoddessSecret = value
+	}
+	cfg.GoddessSecret = strings.TrimSpace(cfg.GoddessSecret)
+	if cfg.GoddessSecret == "" {
+		return fmt.Errorf("apps.goddess_secret is required")
 	}
 
 	return nil

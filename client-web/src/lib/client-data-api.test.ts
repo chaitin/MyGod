@@ -146,9 +146,11 @@ describe("client data API", () => {
         lastMessageId: "message-1",
         lastMessageSeq: 12,
         lastMessageSummary: "好的，我看一下",
+        lastReadSeq: 0,
         memberCount: 2,
         name: "Bob Li",
         type: "direct",
+        unreadCount: 0,
       },
     ])
     expect(fetcher).toHaveBeenCalledWith("/api/client/conversations", {
@@ -195,9 +197,11 @@ describe("client data API", () => {
       lastMessageId: null,
       lastMessageSeq: 0,
       lastMessageSummary: "",
+      lastReadSeq: 0,
       memberCount: 2,
       name: "Bob Li",
       type: "direct",
+      unreadCount: 0,
     })
     expect(fetcher).toHaveBeenCalledWith("/api/client/conversations/direct", {
       body: JSON.stringify({
@@ -274,6 +278,7 @@ describe("client data API", () => {
       lastMessageId: null,
       lastMessageSeq: 0,
       lastMessageSummary: "",
+      lastReadSeq: 0,
       memberCount: 2,
       members: [
         {
@@ -299,6 +304,7 @@ describe("client data API", () => {
       ],
       name: "新品讨论组",
       type: "group",
+      unreadCount: 0,
     })
     expect(fetcher).toHaveBeenCalledWith("/api/client/conversations/groups", {
       body: JSON.stringify({

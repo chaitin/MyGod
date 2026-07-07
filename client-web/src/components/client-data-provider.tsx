@@ -15,6 +15,7 @@ import {
   listConversationMessages,
   markConversationRead as markConversationReadRequest,
   sendConversationFileMessage,
+  sendConversationImageMessage,
   sendConversationTextMessage,
   uploadGroupConversationAvatar as uploadGroupConversationAvatarRequest,
   type ClientConversation,
@@ -546,6 +547,39 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     [mergeIncomingConversationMessage, updateConversationMessageState]
   )
 
+  const sendConversationImage = useCallback(
+    async (conversationId: string, image: File) => {
+      const state = conversationMessageStatesRef.current[conversationId]
+      if (!conversationId || state?.sending) {
+        return null
+      }
+
+      const clientMessageId = createClientMessageId()
+      updateConversationMessageState(conversationId, (currentState) => ({
+        ...currentState,
+        sending: true,
+      }))
+
+      try {
+        const message = await sendConversationImageMessage(conversationId, {
+          clientMessageId,
+          image,
+        })
+        mergeIncomingConversationMessage(message, { markLoaded: true })
+        return message
+      } catch (error: unknown) {
+        toast.error(getClientDataErrorMessage(error, "发送图片失败"))
+        return null
+      } finally {
+        updateConversationMessageState(conversationId, (currentState) => ({
+          ...currentState,
+          sending: false,
+        }))
+      }
+    },
+    [mergeIncomingConversationMessage, updateConversationMessageState]
+  )
+
   const getConversationMessageState = useCallback(
     (conversationId: string) => {
       return (
@@ -773,6 +807,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     refreshContacts,
     refreshMe,
     sendConversationFile,
+    sendConversationImage,
     sendConversationText,
     syncLoadedConversationMessages,
     updateConversationLastMessage,

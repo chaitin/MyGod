@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"app/internal/appregistry"
 	"app/internal/auth"
 	"app/internal/config"
 	"app/internal/realtime"
@@ -50,6 +51,7 @@ func newTestRouterWithRealtimeOptions(t *testing.T, options realtime.Options) (*
 		},
 		Database: config.DatabaseConfig{DSN: "sqlite-test"},
 		Admin:    config.AdminConfig{Password: "admin-secret"},
+		Apps:     config.AppsConfig{GoddessSecret: "test-goddess-secret"},
 	}, options)
 
 	return httptest.NewServer(router), db
@@ -65,6 +67,8 @@ func migrateTestSchema(db *gorm.DB) error {
 		&store.Message{},
 		&store.DirectConversation{},
 		&store.TemporaryFile{},
+		&store.App{},
+		&store.AppConversation{},
 		&store.AppSettings{},
 		&store.ThirdPartyLoginProvider{},
 		&store.ThirdPartyLoginState{},
@@ -947,6 +951,27 @@ func TestListClientConversationsCreatesBuiltinAssistantConversationOnce(t *testi
 	}
 	if memberCount != 2 {
 		t.Fatalf("assistant member count = %d, want user and app members", memberCount)
+	}
+
+	var appMember store.ConversationMember
+	if err := db.First(
+		&appMember,
+		"conversation_id = ? AND member_type = ?",
+		builtinAssistantConversationID(alice.ID),
+		store.ConversationMemberTypeApp,
+	).Error; err != nil {
+		t.Fatalf("find assistant app member: %v", err)
+	}
+	if appMember.MemberID != appregistry.GoddessAppID {
+		t.Fatalf("assistant app member id = %s, want goddess app id", appMember.MemberID)
+	}
+
+	var appConversation store.AppConversation
+	if err := db.First(&appConversation, "app_id = ? AND user_id = ?", appregistry.GoddessAppID, alice.ID).Error; err != nil {
+		t.Fatalf("find assistant app conversation: %v", err)
+	}
+	if appConversation.ConversationID != builtinAssistantConversationID(alice.ID) {
+		t.Fatalf("app conversation id = %s, want assistant conversation", appConversation.ConversationID)
 	}
 }
 
@@ -2034,8 +2059,29 @@ func TestClientInfoIsPublicAndReturnsDefaultSettings(t *testing.T) {
 	if data["organization_name"] != "长亭科技" {
 		t.Fatalf("organization_name = %v, want 长亭科技", data["organization_name"])
 	}
+	if data["authenticated"] != false {
+		t.Fatalf("authenticated = %v, want false", data["authenticated"])
+	}
 	if _, ok := data["version"]; ok {
 		t.Fatalf("version = %v, want omitted", data["version"])
+	}
+}
+
+func TestClientInfoReturnsAuthenticationState(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, time.Now().UTC())
+	userCookie := loginAsUser(t, server, "alice@example.com")
+
+	resp, body := getJSON(t, server, "/api/client/info", userCookie)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+
+	data := requireSuccess(t, body)
+	if data["authenticated"] != true {
+		t.Fatalf("authenticated = %v, want true", data["authenticated"])
 	}
 }
 
@@ -3267,6 +3313,145 @@ func TestAdminCanReadAndUpdateInfoSettings(t *testing.T) {
 	if clientData["app_name"] != "星环协作" {
 		t.Fatalf("client app_name = %v, want 星环协作", clientData["app_name"])
 	}
+}
+
+func TestAdminCanManageApps(t *testing.T) {
+	server, _ := newTestRouter(t)
+	defer server.Close()
+	adminCookie := loginAsAdmin(t, server)
+
+	listResp, listBody := getJSON(t, server, "/api/admin/apps", adminCookie)
+	if listResp.StatusCode != http.StatusOK {
+		t.Fatalf("list status = %d, want 200", listResp.StatusCode)
+	}
+	apps := requireSuccess(t, listBody)["apps"].([]any)
+	if len(apps) != 1 {
+		t.Fatalf("app count = %d, want goddess app", len(apps))
+	}
+	goddessApp := apps[0].(map[string]any)
+	if goddessApp["id"] != appregistry.GoddessAppID {
+		t.Fatalf("goddess id = %v, want %s", goddessApp["id"], appregistry.GoddessAppID)
+	}
+	if goddessApp["name"] != appregistry.GoddessDefaultName {
+		t.Fatalf("goddess name = %v, want %s", goddessApp["name"], appregistry.GoddessDefaultName)
+	}
+	if goddessApp["callback_secret"] != "test-goddess-secret" {
+		t.Fatalf("goddess secret = %v, want configured secret", goddessApp["callback_secret"])
+	}
+	if goddessApp["system"] != true {
+		t.Fatalf("goddess system = %v, want true", goddessApp["system"])
+	}
+	if goddessApp["visibility"] != store.AppVisibilityPublic {
+		t.Fatalf("goddess visibility = %v, want public", goddessApp["visibility"])
+	}
+
+	updateGoddessResp, updateGoddessBody := putJSON(t, server, "/api/admin/apps/"+appregistry.GoddessAppID, map[string]any{
+		"name":         "女菩萨 Pro",
+		"avatar":       "/assets/apps/goddess.webp",
+		"description":  "AI Agent",
+		"callback_url": "https://agent.example.com/webhook",
+		"visibility":   "public",
+	}, adminCookie)
+	if updateGoddessResp.StatusCode != http.StatusOK {
+		t.Fatalf("update goddess status = %d, want 200, body = %#v", updateGoddessResp.StatusCode, updateGoddessBody)
+	}
+	updatedGoddess := requireSuccess(t, updateGoddessBody)["app"].(map[string]any)
+	if updatedGoddess["name"] != "女菩萨 Pro" {
+		t.Fatalf("updated goddess name = %v", updatedGoddess["name"])
+	}
+	if updatedGoddess["callback_url"] != "https://agent.example.com/webhook" {
+		t.Fatalf("updated goddess callback_url = %v", updatedGoddess["callback_url"])
+	}
+	if updatedGoddess["callback_secret"] != "test-goddess-secret" {
+		t.Fatalf("updated goddess secret = %v, want configured secret", updatedGoddess["callback_secret"])
+	}
+
+	regenerateGoddessResp, _ := postJSON(t, server, "/api/admin/apps/"+appregistry.GoddessAppID+"/secret/regenerate", map[string]any{}, adminCookie)
+	if regenerateGoddessResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("regenerate goddess status = %d, want 403", regenerateGoddessResp.StatusCode)
+	}
+	deleteGoddessResp, _ := requestJSON(t, server, http.MethodDelete, "/api/admin/apps/"+appregistry.GoddessAppID, map[string]any{}, adminCookie)
+	if deleteGoddessResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("delete goddess status = %d, want 403", deleteGoddessResp.StatusCode)
+	}
+
+	createResp, createBody := postJSON(t, server, "/api/admin/apps", map[string]any{
+		"name":         "知识库助手",
+		"avatar":       "/assets/apps/kb.webp",
+		"description":  "回答知识库问题",
+		"visibility":   "public",
+		"callback_url": "https://kb.example.com/webhook",
+	}, adminCookie)
+	if createResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %#v", createResp.StatusCode, createBody)
+	}
+	createdApp := requireSuccess(t, createBody)["app"].(map[string]any)
+	appID := createdApp["id"].(string)
+	firstSecret := createdApp["callback_secret"].(string)
+	if appID == "" {
+		t.Fatal("created app id is empty")
+	}
+	if firstSecret == "" || firstSecret == "test-goddess-secret" {
+		t.Fatalf("created app secret = %q, want generated unique secret", firstSecret)
+	}
+	if createdApp["system"] != false {
+		t.Fatalf("created app system = %v, want false", createdApp["system"])
+	}
+	if createdApp["creator_user_id"] != nil {
+		t.Fatalf("created app creator_user_id = %v, want nil", createdApp["creator_user_id"])
+	}
+
+	updateResp, updateBody := putJSON(t, server, "/api/admin/apps/"+appID, map[string]any{
+		"name":         "知识库 Agent",
+		"avatar":       "",
+		"description":  "更新后的介绍",
+		"visibility":   "public",
+		"callback_url": "",
+	}, adminCookie)
+	if updateResp.StatusCode != http.StatusOK {
+		t.Fatalf("update status = %d, want 200, body = %#v", updateResp.StatusCode, updateBody)
+	}
+	updatedApp := requireSuccess(t, updateBody)["app"].(map[string]any)
+	if updatedApp["name"] != "知识库 Agent" {
+		t.Fatalf("updated app name = %v", updatedApp["name"])
+	}
+	if updatedApp["callback_url"] != "" {
+		t.Fatalf("updated callback_url = %v, want empty", updatedApp["callback_url"])
+	}
+
+	disableResp, disableBody := postJSON(t, server, "/api/admin/apps/"+appID+"/disable", map[string]any{}, adminCookie)
+	if disableResp.StatusCode != http.StatusOK {
+		t.Fatalf("disable status = %d, want 200, body = %#v", disableResp.StatusCode, disableBody)
+	}
+	disabledApp := requireSuccess(t, disableBody)["app"].(map[string]any)
+	if disabledApp["enabled"] != false {
+		t.Fatalf("disabled enabled = %v, want false", disabledApp["enabled"])
+	}
+
+	enableResp, enableBody := postJSON(t, server, "/api/admin/apps/"+appID+"/enable", map[string]any{}, adminCookie)
+	if enableResp.StatusCode != http.StatusOK {
+		t.Fatalf("enable status = %d, want 200, body = %#v", enableResp.StatusCode, enableBody)
+	}
+	enabledApp := requireSuccess(t, enableBody)["app"].(map[string]any)
+	if enabledApp["enabled"] != true {
+		t.Fatalf("enabled enabled = %v, want true", enabledApp["enabled"])
+	}
+
+	regenerateResp, regenerateBody := postJSON(t, server, "/api/admin/apps/"+appID+"/secret/regenerate", map[string]any{}, adminCookie)
+	if regenerateResp.StatusCode != http.StatusOK {
+		t.Fatalf("regenerate status = %d, want 200, body = %#v", regenerateResp.StatusCode, regenerateBody)
+	}
+	regeneratedApp := requireSuccess(t, regenerateBody)["app"].(map[string]any)
+	secondSecret := regeneratedApp["callback_secret"].(string)
+	if secondSecret == "" || secondSecret == firstSecret {
+		t.Fatalf("regenerated secret = %q, want changed from %q", secondSecret, firstSecret)
+	}
+
+	deleteResp, deleteBody := requestJSON(t, server, http.MethodDelete, "/api/admin/apps/"+appID, map[string]any{}, adminCookie)
+	if deleteResp.StatusCode != http.StatusOK {
+		t.Fatalf("delete status = %d, want 200, body = %#v", deleteResp.StatusCode, deleteBody)
+	}
+	requireSuccess(t, deleteBody)
 }
 
 func TestAdminCanManageThirdPartyLoginProviders(t *testing.T) {

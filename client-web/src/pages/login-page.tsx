@@ -1,4 +1,5 @@
 import { LogInIcon, MoveRight } from "lucide-react"
+import { useEffect } from "react"
 import { useNavigate } from "react-router"
 
 import { Button } from "@/components/ui/button"
@@ -8,9 +9,16 @@ import { useAppInfo } from "@/lib/app-info-context"
 import { clientLogin } from "@/lib/client-auth"
 
 export function LoginPage() {
-  const { appName, organizationName, thirdPartyProviders } = useAppInfo()
+  const { appName, authenticated, organizationName, thirdPartyProviders } =
+    useAppInfo()
   const navigate = useNavigate()
   const hasThirdPartyProviders = thirdPartyProviders.length > 0
+
+  useEffect(() => {
+    if (authenticated) {
+      navigate("/init", { replace: true })
+    }
+  }, [authenticated, navigate])
 
   async function handleLogin(credentials: {
     account: string

@@ -43,6 +43,7 @@ services:
       CLIENT_HOSTNAME: ${CLIENT_HOSTNAME:-client.localhost}
       ADMIN_HOSTNAME: ${ADMIN_HOSTNAME:-admin.localhost}
       ASSETS_HOSTNAME: ${ASSETS_HOSTNAME:-assets.localhost}
+      GODDESS_APP_SECRET: ${GODDESS_APP_SECRET:-change-me}
       RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-mygod}
       RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-change-me}
     volumes:

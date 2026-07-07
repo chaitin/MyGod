@@ -17,6 +17,7 @@ func TestMigrationDirectoryContainsExpectedMigrations(t *testing.T) {
 		"00002_add_conversation_member_last_read_seq.sql",
 		"00003_create_temporary_files.sql",
 		"00004_add_conversation_avatar.sql",
+		"00005_create_apps.sql",
 	}
 	if len(matches) != len(want) {
 		t.Fatalf("migration file count = %d, want %d: %v", len(matches), len(want), matches)
@@ -43,6 +44,43 @@ func TestConversationAvatarMigrationDefinesSchemaChange(t *testing.T) {
 	} {
 		if !strings.Contains(sql, required) {
 			t.Fatalf("conversation avatar migration missing %q", required)
+		}
+	}
+}
+
+func TestAppsMigrationDefinesSchema(t *testing.T) {
+	rawSQL, err := os.ReadFile("../../migrations/00005_create_apps.sql")
+	if err != nil {
+		t.Fatalf("read apps migration: %v", err)
+	}
+	sql := normalizeSQL(string(rawSQL))
+
+	for _, required := range []string{
+		"-- +goose up",
+		"create table apps",
+		"id uuid primary key",
+		"name text not null",
+		"avatar text not null default ''",
+		"description text not null default ''",
+		"creator_user_id uuid references users(id) on delete set null",
+		"enabled boolean not null default true",
+		"visibility text not null",
+		"callback_url text not null default ''",
+		"callback_secret text not null",
+		"constraint apps_visibility_check check (visibility in ('creator', 'public'))",
+		"constraint apps_callback_secret_unique unique (callback_secret)",
+		"create table app_conversations",
+		"app_id uuid not null references apps(id) on delete cascade",
+		"user_id uuid not null references users(id) on delete cascade",
+		"conversation_id uuid not null references conversations(id) on delete cascade",
+		"primary key (app_id, user_id)",
+		"constraint app_conversations_conversation_unique unique (conversation_id)",
+		"-- +goose down",
+		"drop table app_conversations",
+		"drop table apps",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("apps migration missing %q", required)
 		}
 	}
 }

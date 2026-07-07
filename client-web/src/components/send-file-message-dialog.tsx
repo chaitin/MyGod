@@ -39,19 +39,19 @@ export function SendFileMessageDialog({
           </DialogDescription>
         </DialogHeader>
         {file && (
-          <div className="grid gap-3 rounded-md border p-3">
-            <div className="min-w-0">
+          <div className="grid gap-3">
+            <div className="min-w-0 rounded-md border p-3">
               <p className="truncate text-sm font-medium">{file.name}</p>
               <p className="text-xs text-muted-foreground">
                 {formatFileSize(file.size)}
               </p>
             </div>
-            <div className="min-w-0 text-xs text-muted-foreground">
-              发送到{" "}
+            <p className="min-w-0 text-sm text-muted-foreground">
+              将要发送到{" "}
               <span className="font-medium text-foreground">
                 {conversationName}
               </span>
-            </div>
+            </p>
           </div>
         )}
         <DialogFooter>

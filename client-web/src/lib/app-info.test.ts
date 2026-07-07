@@ -10,6 +10,7 @@ describe("client app info", () => {
           success: true,
           data: {
             app_name: "星环协作",
+            authenticated: true,
             organization_name: "长亭科技",
             third_party_providers: [
               {
@@ -32,6 +33,7 @@ describe("client app info", () => {
 
     expect(info).toEqual({
       appName: "星环协作",
+      authenticated: true,
       oidcProviders: [
         {
           key: "company-sso",
@@ -47,6 +49,7 @@ describe("client app info", () => {
       ],
     })
     expect(fetcher).toHaveBeenCalledWith("/api/client/info", {
+      credentials: "include",
       method: "GET",
     })
   })

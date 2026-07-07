@@ -43,6 +43,9 @@ const (
 	ConversationMemberRoleAdmin  = "admin"
 	ConversationMemberRoleMember = "member"
 
+	AppVisibilityCreator = "creator"
+	AppVisibilityPublic  = "public"
+
 	AppSettingsID           = 1
 	DefaultAppName          = "MyGod"
 	DefaultOrganizationName = "长亭科技"
@@ -151,6 +154,35 @@ type TemporaryFile struct {
 
 func (TemporaryFile) TableName() string {
 	return "temporary_files"
+}
+
+type App struct {
+	ID             string    `gorm:"type:uuid;primaryKey"`
+	Name           string    `gorm:"size:120;not null"`
+	Avatar         string    `gorm:"size:512;not null;default:''"`
+	Description    string    `gorm:"not null;default:''"`
+	CreatorUserID  *string   `gorm:"type:uuid;index"`
+	CreatorUser    *User     `gorm:"foreignKey:CreatorUserID;constraint:OnDelete:SET NULL;"`
+	Enabled        bool      `gorm:"not null;default:true;index"`
+	Visibility     string    `gorm:"size:32;not null;index"`
+	CallbackURL    string    `gorm:"size:2048;not null;default:''"`
+	CallbackSecret string    `gorm:"not null;uniqueIndex"`
+	CreatedAt      time.Time `gorm:"not null"`
+	UpdatedAt      time.Time `gorm:"not null"`
+}
+
+type AppConversation struct {
+	AppID          string       `gorm:"type:uuid;primaryKey"`
+	App            App          `gorm:"constraint:OnDelete:CASCADE;"`
+	UserID         string       `gorm:"type:uuid;primaryKey;index"`
+	User           User         `gorm:"constraint:OnDelete:CASCADE;"`
+	ConversationID string       `gorm:"type:uuid;not null;uniqueIndex"`
+	Conversation   Conversation `gorm:"constraint:OnDelete:CASCADE;"`
+	CreatedAt      time.Time    `gorm:"not null"`
+}
+
+func (AppConversation) TableName() string {
+	return "app_conversations"
 }
 
 type AppSettings struct {

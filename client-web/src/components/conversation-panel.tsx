@@ -9,6 +9,7 @@ import {
   Settings,
   Smile,
 } from "lucide-react"
+import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
 import {
@@ -16,6 +17,10 @@ import {
   type ClientConversation,
   type ClientMessage,
 } from "@/lib/client-data-api"
+import {
+  compressImageForMessage,
+  imageMessageMaxBytes,
+} from "@/lib/image-message"
 import { AddGroupMembersDialog } from "@/components/add-group-members-dialog"
 import { ConversationInfoDrawer } from "@/components/conversation-info-drawer"
 import {
@@ -23,11 +28,13 @@ import {
   type ExpressionItem,
 } from "@/components/expression-picker"
 import { MessageAttachment } from "@/components/message-attachment"
+import { MessageImage } from "@/components/message-image"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { MessageActionMenu } from "@/components/message-action-menu"
 import { SendFileMessageDialog } from "@/components/send-file-message-dialog"
+import { SendImageMessageDialog } from "@/components/send-image-message-dialog"
 import { UserProfilePopover } from "@/components/user-profile-popover"
 import {
   Empty,
@@ -54,6 +61,8 @@ export type ConversationPanelMessage = {
   senderUserId: string | null
 }
 
+const maxFileMessageUploadBytes = 20 * 1024 * 1024
+
 type ConversationPanelProps = {
   conversation: ClientConversation | null
   draft: string
@@ -63,6 +72,7 @@ type ConversationPanelProps = {
   messages: ConversationPanelMessage[]
   onDraftChange: (draft: string) => void
   onSendFile: (file: File) => Promise<ClientMessage | null>
+  onSendImage: (image: File) => Promise<ClientMessage | null>
   onLoadBeforeMessages: () => void
   onSendMessage: () => void
   sending: boolean
@@ -77,6 +87,7 @@ export function ConversationPanel({
   messages,
   onDraftChange,
   onSendFile,
+  onSendImage,
   onLoadBeforeMessages,
   onSendMessage,
   sending,
@@ -105,6 +116,7 @@ export function ConversationPanel({
             draft={draft}
             onDraftChange={onDraftChange}
             onSendFile={onSendFile}
+            onSendImage={onSendImage}
             onSendMessage={onSendMessage}
             sending={sending}
           />
@@ -337,6 +349,7 @@ function ConversationPanelComposer({
   draft,
   onDraftChange,
   onSendFile,
+  onSendImage,
   onSendMessage,
   sending,
 }: {
@@ -344,14 +357,19 @@ function ConversationPanelComposer({
   draft: string
   onDraftChange: (draft: string) => void
   onSendFile: (file: File) => Promise<ClientMessage | null>
+  onSendImage: (image: File) => Promise<ClientMessage | null>
   onSendMessage: () => void
   sending: boolean
 }) {
   const fileInputRef = React.useRef<HTMLInputElement | null>(null)
+  const imageInputRef = React.useRef<HTMLInputElement | null>(null)
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null)
   const [expressionPickerOpen, setExpressionPickerOpen] = React.useState(false)
   const [fileDialogOpen, setFileDialogOpen] = React.useState(false)
+  const [imageDialogOpen, setImageDialogOpen] = React.useState(false)
+  const [imagePreparing, setImagePreparing] = React.useState(false)
   const [selectedFile, setSelectedFile] = React.useState<File | null>(null)
+  const [selectedImage, setSelectedImage] = React.useState<File | null>(null)
 
   function handleComposerKeyDown(
     event: React.KeyboardEvent<HTMLTextAreaElement>
@@ -392,6 +410,10 @@ function ConversationPanelComposer({
     fileInputRef.current?.click()
   }
 
+  function handleImageButtonClick() {
+    imageInputRef.current?.click()
+  }
+
   function handleFileInputChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] ?? null
 
@@ -401,8 +423,66 @@ function ConversationPanelComposer({
       return
     }
 
+    if (file.size > maxFileMessageUploadBytes) {
+      setSelectedFile(null)
+      setFileDialogOpen(false)
+      toast.error("文件大于 20MB，无法上传")
+      return
+    }
+
     setSelectedFile(file)
     setFileDialogOpen(true)
+  }
+
+  function handleImageInputChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const image = event.target.files?.[0] ?? null
+
+    event.target.value = ""
+
+    if (!image) {
+      return
+    }
+
+    void prepareSelectedImage(image)
+  }
+
+  function handleComposerPaste(
+    event: React.ClipboardEvent<HTMLTextAreaElement>
+  ) {
+    const image = getClipboardImageFile(event.clipboardData)
+
+    if (!image) {
+      return
+    }
+
+    event.preventDefault()
+    void prepareSelectedImage(image)
+  }
+
+  async function prepareSelectedImage(image: File) {
+    if (sending || imagePreparing) {
+      return
+    }
+
+    setImagePreparing(true)
+    setSelectedImage(null)
+    setImageDialogOpen(false)
+
+    try {
+      const compressedImage = await compressImageForMessage(image)
+
+      if (compressedImage.size > imageMessageMaxBytes) {
+        toast.error("图片大于 2MB，无法上传")
+        return
+      }
+
+      setSelectedImage(compressedImage)
+      setImageDialogOpen(true)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "读取图片失败")
+    } finally {
+      setImagePreparing(false)
+    }
   }
 
   function handleFileDialogOpenChange(open: boolean) {
@@ -430,6 +510,31 @@ function ConversationPanelComposer({
     }
   }
 
+  function handleImageDialogOpenChange(open: boolean) {
+    if (sending) {
+      return
+    }
+
+    setImageDialogOpen(open)
+
+    if (!open) {
+      setSelectedImage(null)
+    }
+  }
+
+  async function handleImageSendConfirm() {
+    if (!selectedImage || sending) {
+      return
+    }
+
+    const message = await onSendImage(selectedImage)
+
+    if (message) {
+      setImageDialogOpen(false)
+      setSelectedImage(null)
+    }
+  }
+
   return (
     <footer
       className="shrink-0 border-t p-4"
@@ -439,6 +544,13 @@ function ConversationPanelComposer({
         ref={fileInputRef}
         className="hidden"
         onChange={handleFileInputChange}
+        type="file"
+      />
+      <input
+        ref={imageInputRef}
+        accept="image/png,image/jpeg,image/webp"
+        className="hidden"
+        onChange={handleImageInputChange}
         type="file"
       />
       <div
@@ -451,6 +563,7 @@ function ConversationPanelComposer({
             value={draft}
             onChange={(event) => onDraftChange(event.target.value)}
             onKeyDown={handleComposerKeyDown}
+            onPaste={handleComposerPaste}
             placeholder="输入消息"
             className="max-h-48 min-h-24 resize-none"
           />
@@ -492,13 +605,18 @@ function ConversationPanelComposer({
             </Button>
             <Button
               aria-label="插入图片"
-              disabled
+              disabled={sending || imagePreparing}
+              onClick={handleImageButtonClick}
               size="icon-sm"
               title="插入图片"
               type="button"
               variant="ghost"
             >
-              <ImageIcon className="size-4" />
+              {imagePreparing ? (
+                <LoaderCircle className="size-4 animate-spin" />
+              ) : (
+                <ImageIcon className="size-4" />
+              )}
             </Button>
           </div>
           <Button
@@ -525,8 +643,32 @@ function ConversationPanelComposer({
         open={fileDialogOpen}
         sending={sending}
       />
+      <SendImageMessageDialog
+        conversationName={conversationName}
+        image={selectedImage}
+        onConfirm={() => void handleImageSendConfirm()}
+        onOpenChange={handleImageDialogOpenChange}
+        open={imageDialogOpen}
+        sending={sending}
+      />
     </footer>
   )
+}
+
+function getClipboardImageFile(clipboardData: DataTransfer) {
+  for (const item of Array.from(clipboardData.items)) {
+    if (!item.type.startsWith("image/")) {
+      continue
+    }
+
+    const file = item.getAsFile()
+
+    if (file) {
+      return file
+    }
+  }
+
+  return null
 }
 
 function insertTextareaText(
@@ -591,7 +733,7 @@ function MessageBubble({
       <div
         className={cn(
           "flex max-w-[min(70%,42rem)] flex-col gap-1",
-          fromMe && "items-end"
+          fromMe ? "items-end" : "items-start"
         )}
       >
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -601,7 +743,7 @@ function MessageBubble({
         <MessageActionMenu>
           <div
             className={cn(
-              "rounded-md px-4 py-3 text-sm leading-relaxed shadow-xs",
+              "max-w-full rounded-md px-4 py-3 text-sm leading-relaxed shadow-xs",
               fromMe
                 ? "bg-teal-100 text-foreground hover:bg-teal-200/70 data-[state=open]:bg-teal-200/70 dark:bg-teal-950 hover:dark:bg-teal-900/70 dark:data-[state=open]:bg-teal-900/70"
                 : "bg-neutral-200/80 text-foreground hover:bg-neutral-200 data-[state=open]:bg-neutral-200 dark:bg-neutral-800/80 hover:dark:bg-neutral-800 dark:data-[state=open]:bg-neutral-800"
@@ -662,6 +804,8 @@ function MessageBodyRenderer({
   switch (body.type) {
     case "file":
       return <MessageAttachment file={body} />
+    case "image":
+      return <MessageImage image={body} />
     case "text":
       return <TextMessageBody content={body.content} />
     case "system_event":

@@ -4,7 +4,9 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
+	"app/internal/auth"
 	"app/internal/store"
 
 	"github.com/labstack/echo/v4"
@@ -13,6 +15,7 @@ import (
 
 type infoSettingsResponse struct {
 	AppName             string                             `json:"app_name" example:"MyGod"`
+	Authenticated       *bool                              `json:"authenticated,omitempty" example:"false"`
 	OrganizationName    string                             `json:"organization_name" example:"长亭科技"`
 	ThirdPartyProviders []publicThirdPartyProviderResponse `json:"third_party_providers"`
 }
@@ -45,8 +48,12 @@ func (s *Server) clientInfo(c echo.Context) error {
 	if err != nil {
 		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
 	}
+	authenticated, err := s.isClientInfoRequestAuthenticated(c)
+	if err != nil {
+		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
+	}
 
-	return success(c, http.StatusOK, newInfoSettingsResponse(settings, providers))
+	return success(c, http.StatusOK, newClientInfoSettingsResponse(settings, providers, authenticated))
 }
 
 // getInfoSettings godoc
@@ -165,6 +172,28 @@ func (s *Server) listPublicThirdPartyProviders() ([]publicThirdPartyProviderResp
 	return responses, nil
 }
 
+func (s *Server) isClientInfoRequestAuthenticated(c echo.Context) (bool, error) {
+	cookie, err := c.Cookie(userSessionCookieName)
+	if err != nil || cookie.Value == "" {
+		return false, nil
+	}
+
+	var session store.UserSession
+	err = s.db.Preload("User").Where(
+		"token_hash = ? AND expires_at > ?",
+		auth.HashSessionToken(cookie.Value),
+		time.Now().UTC(),
+	).First(&session).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+
+	return session.User.Status == store.UserStatusActive, nil
+}
+
 func newInfoSettingsResponse(settings store.AppSettings, providers []publicThirdPartyProviderResponse) infoSettingsResponse {
 	if providers == nil {
 		providers = []publicThirdPartyProviderResponse{}
@@ -175,4 +204,11 @@ func newInfoSettingsResponse(settings store.AppSettings, providers []publicThird
 		OrganizationName:    settings.OrganizationName,
 		ThirdPartyProviders: providers,
 	}
+}
+
+func newClientInfoSettingsResponse(settings store.AppSettings, providers []publicThirdPartyProviderResponse, authenticated bool) infoSettingsResponse {
+	response := newInfoSettingsResponse(settings, providers)
+	response.Authenticated = &authenticated
+
+	return response
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useState } from "react"
 
 import { Camera, LogOut, X } from "lucide-react"
 import { toast } from "sonner"
@@ -38,11 +38,11 @@ export function GroupConversationInfo({
   const conversation = getConversation(conversationId)
   const [avatarPickerOpen, setAvatarPickerOpen] = useState(false)
   const [avatarSaving, setAvatarSaving] = useState(false)
-  const [draftAvatar, setDraftAvatar] = useState("")
-
-  useEffect(() => {
-    setDraftAvatar(conversation?.avatar ?? "")
-  }, [conversation?.avatar, conversation?.id])
+  const [draftAvatarOverride, setDraftAvatarOverride] = useState<{
+    avatar: string
+    baseAvatar: string
+    conversationId: string
+  } | null>(null)
 
   if (!conversation) {
     return (
@@ -64,6 +64,12 @@ export function GroupConversationInfo({
   )
   const currentMember = members.find((member) => member.id === me.id)
   const canChangeAvatar = canManageGroupAvatar(currentMember?.role)
+  const conversationAvatar = activeConversation.avatar
+  const draftAvatar =
+    draftAvatarOverride?.conversationId === activeConversation.id &&
+    draftAvatarOverride.baseAvatar === conversationAvatar
+      ? draftAvatarOverride.avatar
+      : conversationAvatar
 
   async function handleAvatarSave(avatar: CroppedAvatar) {
     if (!canChangeAvatar || avatarSaving) {
@@ -76,7 +82,11 @@ export function GroupConversationInfo({
         activeConversation.id,
         avatar.file
       )
-      setDraftAvatar(updatedConversation.avatar)
+      setDraftAvatarOverride({
+        avatar: updatedConversation.avatar,
+        baseAvatar: updatedConversation.avatar,
+        conversationId: updatedConversation.id,
+      })
       setAvatarPickerOpen(false)
       toast.success("群头像已保存")
     } catch (error) {

@@ -123,6 +123,11 @@ type FileMessageBodyResponse = {
   type?: "file"
 }
 
+type ImageMessageBodyResponse = {
+  file_id?: string
+  type?: "image"
+}
+
 type SystemEventUserRefResponse = {
   display_name?: string
   id?: string
@@ -144,6 +149,7 @@ type GroupAvatarUpdatedSystemEventBodyResponse = {
 type MessageBodyResponse =
   | TextMessageBodyResponse
   | FileMessageBodyResponse
+  | ImageMessageBodyResponse
   | GroupMembersInvitedSystemEventBodyResponse
   | GroupAvatarUpdatedSystemEventBodyResponse
 
@@ -262,6 +268,11 @@ export type ClientFileMessageBody = {
   type: "file"
 }
 
+export type ClientImageMessageBody = {
+  fileId: string
+  type: "image"
+}
+
 export type ClientSystemEventUserRef = {
   displayName: string
   id: string
@@ -283,6 +294,7 @@ export type ClientGroupAvatarUpdatedSystemEventBody = {
 export type ClientMessageBody =
   | ClientTextMessageBody
   | ClientFileMessageBody
+  | ClientImageMessageBody
   | ClientGroupMembersInvitedSystemEventBody
   | ClientGroupAvatarUpdatedSystemEventBody
 
@@ -325,11 +337,19 @@ export type SendConversationFileMessageInput = {
   file: File
 }
 
+export type SendConversationImageMessageInput = {
+  clientMessageId: string
+  image: File
+}
+
 export type TemporaryFileReadURL = {
   expiresAt: string
   fileId: string
   url: string
 }
+
+const temporaryFileReadURLCache = new Map<string, TemporaryFileReadURL>()
+const temporaryFileReadURLCacheSafetyWindowMs = 5 * 60 * 1000
 
 export type MarkConversationReadOptions = {
   upToSeq?: number
@@ -765,13 +785,69 @@ export async function sendConversationFileMessage(
   return normalizeMessage(message)
 }
 
+export async function sendConversationImageMessage(
+  conversationId: string,
+  input: SendConversationImageMessageInput,
+  fetcher: ClientDataFetch = fetch
+) {
+  const formData = new FormData()
+  formData.set("client_message_id", input.clientMessageId)
+  formData.set("image", input.image)
+
+  const response = await fetcher(
+    `/api/client/conversations/${encodeURIComponent(conversationId)}/messages/images`,
+    {
+      body: formData,
+      credentials: "include",
+      method: "POST",
+    }
+  )
+  const payload = await readJson<
+    ClientDataErrorEnvelope | ClientDataSuccessEnvelope<CreateMessageResponse>
+  >(response)
+
+  if (!response.ok || payload?.success === false) {
+    throw createRequestError(payload, response, "发送图片失败")
+  }
+
+  const message = (
+    payload as ClientDataSuccessEnvelope<CreateMessageResponse> | undefined
+  )?.data?.message
+
+  return normalizeMessage(message)
+}
+
 export async function readTemporaryFileURLs(
   fileIds: string[],
   fetcher: ClientDataFetch = fetch
 ): Promise<TemporaryFileReadURL[]> {
+  if (fileIds.length === 0) {
+    return []
+  }
+
+  const now = Date.now()
+  const urlsByID = new Map<string, TemporaryFileReadURL>()
+  const missingFileIDs: string[] = []
+
+  for (const fileId of new Set(fileIds)) {
+    const cachedURL = temporaryFileReadURLCache.get(fileId)
+
+    if (cachedURL && isTemporaryFileReadURLFresh(cachedURL, now)) {
+      urlsByID.set(fileId, cachedURL)
+      continue
+    }
+
+    temporaryFileReadURLCache.delete(fileId)
+    missingFileIDs.push(fileId)
+  }
+
+  if (missingFileIDs.length === 0) {
+    return fileIds.map((fileId) => urlsByID.get(fileId)).filter(isDefined)
+  }
+
   const response = await fetcher("/api/client/temporary-files/read-urls", {
     body: JSON.stringify({
-      file_ids: fileIds,
+      file_ids: missingFileIDs,
     }),
     credentials: "include",
     headers: {
@@ -797,7 +873,17 @@ export async function readTemporaryFileURLs(
     throw new ClientDataRequestError("文件下载地址响应格式不正确")
   }
 
-  return urls.map(normalizeTemporaryFileReadURL)
+  for (const url of urls.map(normalizeTemporaryFileReadURL)) {
+    temporaryFileReadURLCache.set(url.fileId, url)
+    urlsByID.set(url.fileId, url)
+  }
+
+  const orderedURLs = fileIds.map((fileId) => urlsByID.get(fileId))
+  if (orderedURLs.some((url) => !url)) {
+    throw new ClientDataRequestError("文件下载地址响应格式不正确")
+  }
+
+  return orderedURLs.filter(isDefined)
 }
 
 export async function markConversationRead(
@@ -858,6 +944,10 @@ export function formatClientMessageBodySummary(body: ClientMessageBody) {
 
   if (body.type === "file") {
     return `[文件] ${body.name}`
+  }
+
+  if (body.type === "image") {
+    return "[图片]"
   }
 
   if (body.event === "group_avatar_updated") {
@@ -1063,6 +1153,13 @@ function normalizeMessageBody(
     }
   }
 
+  if (body?.type === "image" && typeof body.file_id === "string") {
+    return {
+      fileId: body.file_id,
+      type: "image",
+    }
+  }
+
   if (body?.type === "system_event") {
     return normalizeSystemEventMessageBody(body)
   }
@@ -1132,6 +1229,19 @@ function normalizeTemporaryFileReadURL(
     fileId: item.file_id,
     url: item.url,
   }
+}
+
+function isTemporaryFileReadURLFresh(item: TemporaryFileReadURL, now: number) {
+  const expiresAt = Date.parse(item.expiresAt)
+
+  return (
+    Number.isFinite(expiresAt) &&
+    expiresAt - temporaryFileReadURLCacheSafetyWindowMs > now
+  )
+}
+
+function isDefined<T>(value: T | null | undefined): value is T {
+  return value !== null && value !== undefined
 }
 
 function isSystemEventUserRefResponse(

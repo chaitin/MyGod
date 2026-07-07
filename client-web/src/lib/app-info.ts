@@ -18,6 +18,7 @@ type ClientInfoErrorEnvelope = {
 
 type ClientInfoResponse = {
   app_name?: string
+  authenticated?: boolean
   oidc_providers?: ClientInfoThirdPartyProviderResponse[]
   organization_name?: string
   third_party_providers?: ClientInfoThirdPartyProviderResponse[]
@@ -35,6 +36,7 @@ export type AppInfoThirdPartyProvider = {
 
 export type AppInfo = {
   appName: string
+  authenticated: boolean
   oidcProviders: AppInfoThirdPartyProvider[]
   organizationName: string
   thirdPartyProviders: AppInfoThirdPartyProvider[]
@@ -42,6 +44,7 @@ export type AppInfo = {
 
 export const defaultAppInfo: AppInfo = {
   appName: "MyGod",
+  authenticated: false,
   oidcProviders: [],
   organizationName: "长亭科技",
   thirdPartyProviders: [],
@@ -59,6 +62,7 @@ export class ClientInfoRequestError extends Error {
 
 export async function getClientInfo(fetcher: ClientInfoFetch = fetch) {
   const response = await fetcher("/api/client/info", {
+    credentials: "include",
     method: "GET",
   })
   const payload = await readJson<
@@ -103,6 +107,7 @@ function normalizeClientInfo(info: ClientInfoResponse | undefined): AppInfo {
 
   return {
     appName: info.app_name,
+    authenticated: info.authenticated === true,
     oidcProviders: thirdPartyProviders,
     organizationName: info.organization_name,
     thirdPartyProviders,

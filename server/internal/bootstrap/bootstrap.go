@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"app/internal/appregistry"
 	"app/internal/config"
 	"app/internal/objectstore"
 	"app/internal/store"
@@ -16,6 +17,9 @@ const storageBootstrapTimeout = 2 * time.Minute
 
 func Run(ctx context.Context, db *gorm.DB, cfg config.Config) error {
 	if err := runMigrations(db); err != nil {
+		return err
+	}
+	if err := bootstrapApps(db, cfg); err != nil {
 		return err
 	}
 	if err := bootstrapStorage(ctx, cfg.Storage); err != nil {
@@ -32,6 +36,14 @@ func runMigrations(db *gorm.DB) error {
 	}
 	if err := store.RunPostgresMigrations(db, migrationsDir); err != nil {
 		return fmt.Errorf("migrate database: %w", err)
+	}
+
+	return nil
+}
+
+func bootstrapApps(db *gorm.DB, cfg config.Config) error {
+	if _, err := appregistry.EnsureGoddessApp(db, cfg.Apps); err != nil {
+		return fmt.Errorf("bootstrap goddess app: %w", err)
 	}
 
 	return nil

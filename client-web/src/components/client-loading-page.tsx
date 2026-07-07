@@ -1,4 +1,14 @@
+import { useEffect } from "react"
+
+import { useAppInfo } from "@/lib/app-info-context"
+
 export function ClientLoadingPage() {
+  const { appName } = useAppInfo()
+
+  useEffect(() => {
+    document.title = `正在加载 - ${appName}`
+  }, [appName])
+
   return (
     <div className="flex h-svh items-center justify-center bg-background text-foreground">
       <div className="flex w-56 flex-col items-center gap-3">

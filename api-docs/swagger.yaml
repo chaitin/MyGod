@@ -16,6 +16,53 @@ definitions:
       message:
         $ref: '#/definitions/httpserver.messageResponse'
     type: object
+  httpserver.adminAppEnvelope:
+    properties:
+      app:
+        $ref: '#/definitions/httpserver.adminAppResponse'
+    type: object
+  httpserver.adminAppRequest:
+    properties:
+      avatar:
+        type: string
+      callback_url:
+        type: string
+      description:
+        type: string
+      name:
+        type: string
+      visibility:
+        type: string
+    type: object
+  httpserver.adminAppResponse:
+    properties:
+      avatar:
+        type: string
+      callback_secret:
+        type: string
+      callback_url:
+        type: string
+      created_at:
+        format: date-time
+        type: string
+      creator_user_id:
+        type: string
+      description:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: string
+      name:
+        type: string
+      system:
+        type: boolean
+      updated_at:
+        format: date-time
+        type: string
+      visibility:
+        type: string
+    type: object
   httpserver.adminLoginResponse:
     properties:
       admin:
@@ -302,12 +349,22 @@ definitions:
       app_name:
         example: MyGod
         type: string
+      authenticated:
+        example: false
+        type: boolean
       organization_name:
         example: 长亭科技
         type: string
       third_party_providers:
         items:
           $ref: '#/definitions/httpserver.publicThirdPartyProviderResponse'
+        type: array
+    type: object
+  httpserver.listAdminAppsResponse:
+    properties:
+      apps:
+        items:
+          $ref: '#/definitions/httpserver.adminAppResponse'
         type: array
     type: object
   httpserver.listClientConversationsResponse:
@@ -693,6 +750,262 @@ info:
   title: AI 原生企业协作服务 API
   version: 0.1.0
 paths:
+  /api/admin/apps:
+    get:
+      description: 管理员读取应用配置，包含回调地址和回调密钥。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httpserver.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/httpserver.listAdminAppsResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+      summary: 列出应用
+      tags:
+      - 管理员应用
+    post:
+      consumes:
+      - application/json
+      description: 管理员创建一个应用配置。回调密钥由服务端生成。
+      parameters:
+      - description: 应用配置
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/httpserver.adminAppRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/httpserver.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/httpserver.adminAppEnvelope'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+      summary: 创建应用
+      tags:
+      - 管理员应用
+  /api/admin/apps/{id}:
+    delete:
+      description: 管理员删除普通应用。女菩萨不能删除。
+      parameters:
+      - description: 应用 ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/httpserver.successEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+      summary: 删除应用
+      tags:
+      - 管理员应用
+    put:
+      consumes:
+      - application/json
+      description: 管理员更新一个应用配置。女菩萨的可见范围固定为所有人。
+      parameters:
+      - description: 应用 ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 应用配置
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/httpserver.adminAppRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httpserver.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/httpserver.adminAppEnvelope'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+      summary: 更新应用
+      tags:
+      - 管理员应用
+  /api/admin/apps/{id}/disable:
+    post:
+      parameters:
+      - description: 应用 ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httpserver.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/httpserver.adminAppEnvelope'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+      summary: 禁用应用
+      tags:
+      - 管理员应用
+  /api/admin/apps/{id}/enable:
+    post:
+      parameters:
+      - description: 应用 ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httpserver.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/httpserver.adminAppEnvelope'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+      summary: 启用应用
+      tags:
+      - 管理员应用
+  /api/admin/apps/{id}/secret/regenerate:
+    post:
+      description: 普通应用可以生成新密钥。女菩萨密钥由配置管理，不能在后台生成。
+      parameters:
+      - description: 应用 ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httpserver.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/httpserver.adminAppEnvelope'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+      summary: 生成应用回调密钥
+      tags:
+      - 管理员应用
   /api/admin/assistant/models:
     get:
       description: 管理员读取 MyGod 助手的大模型配置，包含 API Key 和健康检查状态。
@@ -2158,6 +2471,75 @@ paths:
           schema:
             $ref: '#/definitions/httpserver.errorEnvelope'
       summary: 发送文件消息
+      tags:
+      - 客户端消息
+  /api/client/conversations/{conversation_id}/messages/images:
+    post:
+      consumes:
+      - multipart/form-data
+      description: 普通用户上传 WebP 图片并发送为会话图片消息。图片写入 temporary bucket，消息 body 只保存 file_id。
+      parameters:
+      - description: 会话 ID
+        in: path
+        name: conversation_id
+        required: true
+        type: string
+      - description: 客户端消息 ID
+        in: formData
+        name: client_message_id
+        required: true
+        type: string
+      - description: WebP 图片
+        in: formData
+        name: image
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httpserver.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/httpserver.createMessageResponse'
+              type: object
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/httpserver.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/httpserver.createMessageResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+      summary: 发送图片消息
       tags:
       - 客户端消息
   /api/client/conversations/{conversation_id}/read:

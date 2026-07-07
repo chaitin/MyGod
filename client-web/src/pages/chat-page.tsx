@@ -77,6 +77,7 @@ export function ChatPage() {
     markConversationRead,
     me,
     sendConversationFile,
+    sendConversationImage,
     sendConversationText,
   } = useClientData()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -194,6 +195,14 @@ export function ChatPage() {
     }
 
     return sendConversationFile(activeConversationId, file)
+  }
+
+  async function sendImageMessage(image: File) {
+    if (!activeConversationId || activeMessageState?.sending) {
+      return null
+    }
+
+    return sendConversationImage(activeConversationId, image)
   }
 
   function selectConversation(conversationId: string) {
@@ -333,6 +342,7 @@ export function ChatPage() {
         messages={activeMessages}
         onDraftChange={setDraft}
         onSendFile={sendFileMessage}
+        onSendImage={sendImageMessage}
         onLoadBeforeMessages={loadBeforeMessages}
         onSendMessage={sendMessage}
         sending={Boolean(activeMessageState?.sending)}
