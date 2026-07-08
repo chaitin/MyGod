@@ -25,7 +25,7 @@ func TestAppMessageSendDownloadsFileURL(t *testing.T) {
 	content := []byte("quarterly report\n")
 	sourceServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
-		w.Header().Set("Content-Disposition", `attachment; filename="report.txt"`)
+		w.Header().Set("Content-Disposition", `attachment; filename="remote-report.txt"`)
 		_, _ = w.Write(content)
 	}))
 	defer sourceServer.Close()
@@ -81,8 +81,9 @@ func TestAppMessageSendDownloadsFileURL(t *testing.T) {
 				"conversation_id": conversationID,
 			},
 			"message": map[string]any{
-				"type":    "file",
-				"content": sourceServer.URL + "/download",
+				"type": "file",
+				"name": "指定报告.md",
+				"url":  sourceServer.URL + "/download/remote-report.txt",
 			},
 		}),
 	})
@@ -92,11 +93,14 @@ func TestAppMessageSendDownloadsFileURL(t *testing.T) {
 	if body["type"] != messageTypeFile {
 		t.Fatalf("message.body.type = %v, want file", body["type"])
 	}
-	if body["name"] != "report.txt" {
-		t.Fatalf("message.body.name = %v, want report.txt", body["name"])
+	if body["name"] != "指定报告.md" {
+		t.Fatalf("message.body.name = %v, want 指定报告.md", body["name"])
 	}
 	if body["size_bytes"] != float64(len(content)) {
 		t.Fatalf("message.body.size_bytes = %v, want %d", body["size_bytes"], len(content))
+	}
+	if message["summary"] != "[文件] 指定报告.md" {
+		t.Fatalf("message.summary = %v, want specified file summary", message["summary"])
 	}
 	fileID := body["file_id"].(string)
 
@@ -116,6 +120,217 @@ func TestAppMessageSendDownloadsFileURL(t *testing.T) {
 	if pushedBody["type"] != messageTypeFile || pushedBody["file_id"] != fileID {
 		t.Fatalf("pushed body = %#v, want file file id", pushedBody)
 	}
+}
+
+func TestAppMessageSendCreatesInlineFileContent(t *testing.T) {
+	s3Server, uploadedObjects := newFakeS3Server(t)
+	defer s3Server.Close()
+
+	server, db := newTemporaryFileTestRouter(t, s3Server.URL, "assets.example.test")
+	defer server.Close()
+
+	now := time.Date(2026, 7, 8, 10, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	app := insertTestApp(t, db, store.App{
+		Name:             "Echo App",
+		Enabled:          true,
+		Visibility:       store.AppVisibilityPublic,
+		ConnectionSecret: "echo-app-secret",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	})
+	aliceCookie := loginAsUser(t, server, alice.Email)
+	appConn := dialAppWebSocket(t, server, app.ID, app.ConnectionSecret)
+
+	createConversationResp, createConversationBody := postJSON(t, server, "/api/client/conversations/apps", map[string]any{
+		"app_id": app.ID,
+	}, aliceCookie)
+	if createConversationResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create app conversation status = %d, want 201, body = %#v", createConversationResp.StatusCode, createConversationBody)
+	}
+	conversation := requireSuccess(t, createConversationBody)["conversation"].(map[string]any)
+	conversationID := conversation["id"].(string)
+	fileContent := "# 报告\n\n这是 assistant 生成的小文件。\n"
+
+	response := sendAppRequest(t, appConn, realtime.Envelope{
+		V:      realtime.ProtocolVersion,
+		Kind:   realtime.KindRequest,
+		ID:     "app-file-content-request",
+		Method: appMethodMessageSend,
+		Payload: mustMarshalPayloadForTest(t, map[string]any{
+			"target": map[string]any{
+				"type":            "app",
+				"conversation_id": conversationID,
+			},
+			"message": map[string]any{
+				"type":    "file",
+				"name":    "assistant-report.md",
+				"content": fileContent,
+			},
+		}),
+	})
+	payload := requireAppSendMessageResponsePayload(t, response)
+	message := payload["message"].(map[string]any)
+	body := message["body"].(map[string]any)
+	if body["type"] != messageTypeFile {
+		t.Fatalf("message.body.type = %v, want file", body["type"])
+	}
+	if body["name"] != "assistant-report.md" {
+		t.Fatalf("message.body.name = %v, want assistant-report.md", body["name"])
+	}
+	if body["size_bytes"] != float64(len([]byte(fileContent))) {
+		t.Fatalf("message.body.size_bytes = %v, want %d", body["size_bytes"], len([]byte(fileContent)))
+	}
+	if message["summary"] != "[文件] assistant-report.md" {
+		t.Fatalf("message.summary = %v, want inline file summary", message["summary"])
+	}
+
+	fileID := body["file_id"].(string)
+	var storedFile store.TemporaryFile
+	if err := db.First(&storedFile, "id = ?", fileID).Error; err != nil {
+		t.Fatalf("find temporary file: %v", err)
+	}
+	uploadedObjects.mu.Lock()
+	uploadedBody := uploadedObjects.objects["/mygod-temporary/"+storedFile.ObjectKey]
+	uploadedObjects.mu.Unlock()
+	if string(uploadedBody) != fileContent {
+		t.Fatalf("uploaded body = %q, want generated file content", string(uploadedBody))
+	}
+}
+
+func TestAppMessageSendRejectsFileWithoutSpecifiedName(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	now := time.Date(2026, 7, 8, 10, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	app := insertTestApp(t, db, store.App{
+		Name:             "Echo App",
+		Enabled:          true,
+		Visibility:       store.AppVisibilityPublic,
+		ConnectionSecret: "echo-app-secret",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	})
+	aliceCookie := loginAsUser(t, server, alice.Email)
+	appConn := dialAppWebSocket(t, server, app.ID, app.ConnectionSecret)
+
+	createConversationResp, createConversationBody := postJSON(t, server, "/api/client/conversations/apps", map[string]any{
+		"app_id": app.ID,
+	}, aliceCookie)
+	if createConversationResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create app conversation status = %d, want 201, body = %#v", createConversationResp.StatusCode, createConversationBody)
+	}
+	conversation := requireSuccess(t, createConversationBody)["conversation"].(map[string]any)
+
+	response := sendRawAppRequest(t, appConn, realtime.Envelope{
+		V:      realtime.ProtocolVersion,
+		Kind:   realtime.KindRequest,
+		ID:     "app-file-missing-name-request",
+		Method: appMethodMessageSend,
+		Payload: mustMarshalPayloadForTest(t, map[string]any{
+			"target": map[string]any{
+				"type":            "app",
+				"conversation_id": conversation["id"],
+			},
+			"message": map[string]any{
+				"type":    "file",
+				"content": "没有文件名不能发",
+			},
+		}),
+	})
+	requireAppErrorResponse(t, response, "invalid_request")
+}
+
+func TestAppMessageSendRejectsFileWithURLAndContent(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	now := time.Date(2026, 7, 8, 10, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	app := insertTestApp(t, db, store.App{
+		Name:             "Echo App",
+		Enabled:          true,
+		Visibility:       store.AppVisibilityPublic,
+		ConnectionSecret: "echo-app-secret",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	})
+	aliceCookie := loginAsUser(t, server, alice.Email)
+	appConn := dialAppWebSocket(t, server, app.ID, app.ConnectionSecret)
+
+	createConversationResp, createConversationBody := postJSON(t, server, "/api/client/conversations/apps", map[string]any{
+		"app_id": app.ID,
+	}, aliceCookie)
+	if createConversationResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create app conversation status = %d, want 201, body = %#v", createConversationResp.StatusCode, createConversationBody)
+	}
+	conversation := requireSuccess(t, createConversationBody)["conversation"].(map[string]any)
+
+	response := sendRawAppRequest(t, appConn, realtime.Envelope{
+		V:      realtime.ProtocolVersion,
+		Kind:   realtime.KindRequest,
+		ID:     "app-file-conflicting-source-request",
+		Method: appMethodMessageSend,
+		Payload: mustMarshalPayloadForTest(t, map[string]any{
+			"target": map[string]any{
+				"type":            "app",
+				"conversation_id": conversation["id"],
+			},
+			"message": map[string]any{
+				"type":    "file",
+				"name":    "report.md",
+				"url":     "https://example.com/report.md",
+				"content": "不能同时传",
+			},
+		}),
+	})
+	requireAppErrorResponse(t, response, "invalid_request")
+}
+
+func TestAppMessageSendRejectsFilePathName(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	now := time.Date(2026, 7, 8, 10, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	app := insertTestApp(t, db, store.App{
+		Name:             "Echo App",
+		Enabled:          true,
+		Visibility:       store.AppVisibilityPublic,
+		ConnectionSecret: "echo-app-secret",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	})
+	aliceCookie := loginAsUser(t, server, alice.Email)
+	appConn := dialAppWebSocket(t, server, app.ID, app.ConnectionSecret)
+
+	createConversationResp, createConversationBody := postJSON(t, server, "/api/client/conversations/apps", map[string]any{
+		"app_id": app.ID,
+	}, aliceCookie)
+	if createConversationResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create app conversation status = %d, want 201, body = %#v", createConversationResp.StatusCode, createConversationBody)
+	}
+	conversation := requireSuccess(t, createConversationBody)["conversation"].(map[string]any)
+
+	response := sendRawAppRequest(t, appConn, realtime.Envelope{
+		V:      realtime.ProtocolVersion,
+		Kind:   realtime.KindRequest,
+		ID:     "app-file-path-name-request",
+		Method: appMethodMessageSend,
+		Payload: mustMarshalPayloadForTest(t, map[string]any{
+			"target": map[string]any{
+				"type":            "app",
+				"conversation_id": conversation["id"],
+			},
+			"message": map[string]any{
+				"type":    "file",
+				"name":    "reports/report.md",
+				"content": "不能把路径当文件名",
+			},
+		}),
+	})
+	requireAppErrorResponse(t, response, "invalid_request")
 }
 
 func TestClientCanSendConversationFileMessage(t *testing.T) {

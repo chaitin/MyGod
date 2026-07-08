@@ -70,8 +70,10 @@ type messageInput struct {
 	ContactID      string `json:"contact_id"`
 	Content        string `json:"content"`
 	ConversationID string `json:"conversation_id"`
+	Name           string `json:"name"`
 	TargetType     string `json:"target_type"`
 	Type           string `json:"type"`
+	URL            string `json:"url"`
 }
 
 type createGroupInput struct {
@@ -85,8 +87,10 @@ type addGroupMembersInput struct {
 }
 
 type scopedMessagePayload struct {
-	Content string `json:"content"`
+	Content string `json:"content,omitempty"`
+	Name    string `json:"name,omitempty"`
 	Type    string `json:"type"`
+	URL     string `json:"url,omitempty"`
 }
 
 type sendMessageTargetPayload struct {
@@ -199,12 +203,12 @@ func (s *Source) ListTools(ctx context.Context) ([]mcpclient.Tool, error) {
 		},
 		{
 			Name:        replyToolName,
-			Description: "回复当前触发 assistant 的会话。只能发回当前会话，不能指定联系人；需要回复当前用户或当前群时使用。支持 text、markdown、image、file；image/file 的 content 必须是可下载 URL。",
+			Description: "回复当前触发 assistant 的会话。只能发回当前会话，不能指定联系人；需要回复当前用户或当前群时使用。支持 text、markdown、image、file。image 的 content 必须是可下载 URL。file 必须提供 name，不要猜文件名；已有可下载文件用 url，assistant 生成的小文件用 content，url/content 只能二选一；没有明确文件名时先追问。",
 			InputSchema: messageInputSchema(false),
 		},
 		{
 			Name:        sendAsUserToolName,
-			Description: "以当前触发用户的身份发送到私聊或已有群聊。只有用户明确要求“替我发给某人/以我的身份发给某人”或“替我发到某个已有群聊”时才能使用；target_type=user 时 contact_id 必须来自 contacts，target_type=group 时 conversation_id 必须来自 my_groups。目标群聊不明确、查到多个相似群或没有查到时先追问，不要猜 conversation_id。不要用它回复当前会话；回复当前会话必须用 reply。不要用它创建群聊或拉人进群。",
+			Description: "以当前触发用户的身份发送到私聊或已有群聊。只有用户明确要求“替我发给某人/以我的身份发给某人”或“替我发到某个已有群聊”时才能使用；target_type=user 时 contact_id 必须来自 contacts，target_type=group 时 conversation_id 必须来自 my_groups。目标群聊不明确、查到多个相似群或没有查到时先追问，不要猜 conversation_id。不要用它回复当前会话；回复当前会话必须用 reply。不要用它创建群聊或拉人进群。发送 file 时必须提供 name，不要猜文件名；已有可下载文件用 url，assistant 生成的小文件用 content；没有明确文件名时先追问。",
 			InputSchema: messageInputSchema(true),
 		},
 		{
@@ -470,6 +474,9 @@ func parseMessageInput(input json.RawMessage, requireContact bool) (scopedMessag
 	default:
 		return scopedMessagePayload{}, fmt.Errorf("unsupported message type %q", parsed.Type)
 	}
+	if messageType == messageTypeFile {
+		return parseFileMessageInput(parsed)
+	}
 	content := strings.TrimSpace(parsed.Content)
 	if content == "" {
 		return scopedMessagePayload{}, fmt.Errorf("content is required")
@@ -479,6 +486,49 @@ func parseMessageInput(input json.RawMessage, requireContact bool) (scopedMessag
 		Type:    messageType,
 		Content: content,
 	}, nil
+}
+
+func parseFileMessageInput(parsed messageInput) (scopedMessagePayload, error) {
+	name, err := normalizeSpecifiedMessageFileName(parsed.Name)
+	if err != nil {
+		return scopedMessagePayload{}, err
+	}
+	url := strings.TrimSpace(parsed.URL)
+	hasURL := url != ""
+	hasContent := parsed.Content != ""
+	switch {
+	case hasURL && hasContent:
+		return scopedMessagePayload{}, fmt.Errorf("file url and content are mutually exclusive")
+	case hasURL:
+		return scopedMessagePayload{
+			Type: messageTypeFile,
+			Name: name,
+			URL:  url,
+		}, nil
+	case hasContent:
+		return scopedMessagePayload{
+			Type:    messageTypeFile,
+			Name:    name,
+			Content: parsed.Content,
+		}, nil
+	default:
+		return scopedMessagePayload{}, fmt.Errorf("file url or content is required")
+	}
+}
+
+func normalizeSpecifiedMessageFileName(rawName string) (string, error) {
+	name := strings.TrimSpace(rawName)
+	if name == "" || name == "." || name == "/" {
+		return "", fmt.Errorf("file name is required")
+	}
+	if strings.ContainsAny(name, `/\`) {
+		return "", fmt.Errorf("file name must not contain a path")
+	}
+	if len([]rune(name)) > 255 {
+		return "", fmt.Errorf("file name must be at most 255 characters")
+	}
+
+	return name, nil
 }
 
 func parseSendAsUserInput(input json.RawMessage) (scopedMessagePayload, sendAsUserTarget, string, error) {
@@ -521,16 +571,24 @@ func parseSendAsUserInput(input json.RawMessage) (scopedMessagePayload, sendAsUs
 }
 
 func messageInputSchema(requireContact bool) map[string]any {
-	required := []string{"type", "content"}
+	required := []string{"type"}
 	properties := map[string]any{
 		"type": map[string]any{
 			"type":        "string",
 			"enum":        []string{messageTypeText, messageTypeMarkdown, messageTypeImage, messageTypeFile},
-			"description": "消息类型。text/markdown 的 content 是文本；image/file 的 content 是可下载 URL。",
+			"description": "消息类型。text/markdown 的 content 是文本；image 的 content 是可下载 URL；file 必须显式提供 name，并在 url 或 content 中二选一。",
 		},
 		"content": map[string]any{
 			"type":        "string",
-			"description": "text/markdown 时为消息内容；image/file 时为可下载 URL。",
+			"description": "text/markdown 时为消息内容；image 时为可下载 URL；file 且没有 url 时为 assistant 生成的小文件内容，受 64KiB websocket 消息上限约束。",
+		},
+		"name": map[string]any{
+			"type":        "string",
+			"description": "type=file 时必填，必须是用户明确指定的文件名，不能包含路径；没有明确文件名时先追问，不要猜文件名。",
+		},
+		"url": map[string]any{
+			"type":        "string",
+			"description": "type=file 且已有可下载文件时使用；与 content 只能二选一。",
 		},
 	}
 	if requireContact {

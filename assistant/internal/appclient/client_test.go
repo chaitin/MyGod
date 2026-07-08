@@ -31,6 +31,31 @@ func (f appRequestFunc) Request(ctx context.Context, method string, payload any)
 	return f(ctx, method, payload)
 }
 
+func TestConnectionRequesterRejectsOversizedOutgoingEnvelope(t *testing.T) {
+	wrote := false
+	requester := newConnectionRequester(func(envelope) error {
+		wrote = true
+		return nil
+	})
+
+	_, err := requester.Request(context.Background(), methodMessageSend, map[string]any{
+		"message": map[string]any{
+			"type":    "file",
+			"name":    "big.txt",
+			"content": strings.Repeat("x", maxMessageBytes),
+		},
+	})
+	if err == nil {
+		t.Fatal("Request() error = nil, want oversized message error")
+	}
+	if !strings.Contains(err.Error(), "64KiB") {
+		t.Fatalf("Request() error = %v, want 64KiB limit", err)
+	}
+	if wrote {
+		t.Fatal("write called for oversized message")
+	}
+}
+
 func TestHandleServerMessageSendsLLMReply(t *testing.T) {
 	body, err := json.Marshal(messageBody{
 		Type:    "text",
@@ -52,9 +77,10 @@ func TestHandleServerMessageSendsLLMReply(t *testing.T) {
 			Summary: "你好",
 		},
 		Sender: senderPayload{
-			ID:   "user-1",
-			Name: "Alice",
-			Type: "user",
+			Email: "alice@example.com",
+			ID:    "user-1",
+			Name:  "Alice",
+			Type:  "user",
 		},
 	})
 	if err != nil {
@@ -142,8 +168,8 @@ func TestHandleServerMessageSendsLLMReply(t *testing.T) {
 	if historyPayload.BeforeOrEqualSeq != 3 {
 		t.Fatalf("history before_or_equal_seq = %d, want 3", historyPayload.BeforeOrEqualSeq)
 	}
-	if historyPayload.Limit != defaultConversationContextLimit {
-		t.Fatalf("history limit = %d, want %d", historyPayload.Limit, defaultConversationContextLimit)
+	if historyPayload.Limit != 50 {
+		t.Fatalf("history limit = %d, want 50", historyPayload.Limit)
 	}
 	if len(agentRequests) != 1 {
 		t.Fatalf("agent request count = %d, want 1", len(agentRequests))
@@ -166,6 +192,9 @@ func TestHandleServerMessageSendsLLMReply(t *testing.T) {
 	}
 	if agentRequest.Sender.ID != "user-1" {
 		t.Fatalf("agent sender id = %q, want user-1", agentRequest.Sender.ID)
+	}
+	if agentRequest.Sender.Email != "alice@example.com" {
+		t.Fatalf("agent sender email = %q, want alice@example.com", agentRequest.Sender.Email)
 	}
 	if agentRequest.Sender.Name != "Alice" {
 		t.Fatalf("agent sender name = %q, want Alice", agentRequest.Sender.Name)

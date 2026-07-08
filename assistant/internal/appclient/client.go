@@ -42,7 +42,7 @@ const (
 	methodConversationMessagesList = "conversation.messages.list"
 	methodTemporaryFilesReadURLs   = "temporary_files.read_urls"
 
-	defaultConversationContextLimit = 30
+	defaultConversationContextLimit = 50
 )
 
 type Client struct {
@@ -115,6 +115,7 @@ type sendMessageTarget struct {
 }
 
 type senderPayload struct {
+	Email    string `json:"email"`
 	ID       string `json:"id"`
 	Name     string `json:"name"`
 	Nickname string `json:"nickname"`
@@ -333,19 +334,28 @@ func (r *connectionRequester) Request(ctx context.Context, method string, payloa
 	}
 
 	id := newRequestID()
+	request := envelope{
+		V:       protocolVersion,
+		Kind:    kindRequest,
+		ID:      id,
+		Method:  method,
+		Payload: content,
+	}
+	encodedRequest, err := json.Marshal(request)
+	if err != nil {
+		return nil, err
+	}
+	if len(encodedRequest) > maxMessageBytes {
+		return nil, fmt.Errorf("app websocket request exceeds 64KiB limit")
+	}
+
 	responseCh := make(chan envelope, 1)
 	r.mu.Lock()
 	r.pending[id] = pendingResponse{ch: responseCh}
 	r.mu.Unlock()
 	defer r.forget(id)
 
-	if err := r.write(envelope{
-		V:       protocolVersion,
-		Kind:    kindRequest,
-		ID:      id,
-		Method:  method,
-		Payload: content,
-	}); err != nil {
+	if err := r.write(request); err != nil {
 		return nil, err
 	}
 
@@ -480,13 +490,15 @@ func handleParsedServerMessage(ctx context.Context, message envelope, requester 
 				Type: payload.Conversation.Type,
 			},
 			Sender: agent.Sender{
-				ID:   payload.Sender.ID,
-				Name: senderName,
-				Type: payload.Sender.Type,
+				Email: payload.Sender.Email,
+				ID:    payload.Sender.ID,
+				Name:  senderName,
+				Type:  payload.Sender.Type,
 			},
-			MessageID: payload.Message.ID,
-			Content:   content,
-			History:   history,
+			MessageID:   payload.Message.ID,
+			Content:     content,
+			CurrentTime: time.Now().UTC(),
+			History:     history,
 		}, sink)
 		if err != nil && !errors.Is(err, context.Canceled) {
 			log.Printf("agent reply failed: %v", err)

@@ -272,6 +272,21 @@ func normalizeFileMessageName(rawName string) (string, error) {
 	return name, nil
 }
 
+func normalizeSpecifiedFileMessageName(rawName string) (string, error) {
+	name := strings.TrimSpace(rawName)
+	if name == "" || name == "." || name == "/" {
+		return "", errors.New("文件名不能为空")
+	}
+	if strings.ContainsAny(name, `/\`) {
+		return "", errors.New("文件名不能包含路径")
+	}
+	if len([]rune(name)) > maxFileMessageNameLength {
+		return "", errors.New("文件名不能超过 255 个字符")
+	}
+
+	return name, nil
+}
+
 func fileMessageSummary(name string) string {
 	return "[文件] " + strings.TrimSpace(name)
 }

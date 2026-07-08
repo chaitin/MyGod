@@ -137,6 +137,44 @@ func TestSendAsUserToolMetadataClarifiesGroupUsageScenarios(t *testing.T) {
 	}
 }
 
+func TestMessageToolMetadataClarifiesFileUsageScenarios(t *testing.T) {
+	source := NewSource()
+	tools, err := source.ListTools(context.Background())
+	if err != nil {
+		t.Fatalf("ListTools() error = %v", err)
+	}
+	toolsByName := map[string]mcpToolForTest{}
+	for _, tool := range tools {
+		schema, ok := tool.InputSchema.(map[string]any)
+		if !ok {
+			t.Fatalf("%s schema = %#v, want object schema", tool.Name, tool.InputSchema)
+		}
+		toolsByName[tool.Name] = mcpToolForTest{
+			Description: tool.Description,
+			Schema:      schema,
+		}
+	}
+
+	for _, toolName := range []string{"reply", "send_as_user"} {
+		for _, snippet := range []string{"file", "name", "url", "content", "小文件", "不要猜文件名", "先追问"} {
+			if !strings.Contains(toolsByName[toolName].Description, snippet) {
+				t.Fatalf("%s description = %q, want to contain %q", toolName, toolsByName[toolName].Description, snippet)
+			}
+		}
+		properties := toolsByName[toolName].Schema["properties"].(map[string]any)
+		for _, property := range []string{"name", "url", "content"} {
+			if _, ok := properties[property]; !ok {
+				t.Fatalf("%s schema properties = %#v, want %s", toolName, properties, property)
+			}
+		}
+	}
+}
+
+type mcpToolForTest struct {
+	Description string
+	Schema      map[string]any
+}
+
 func TestContactsToolCallsAppRequest(t *testing.T) {
 	requester := &fakeRequester{}
 	ctx := WithScope(context.Background(), Scope{Requester: requester})
@@ -236,6 +274,119 @@ func TestReplyToolCallsMessageSendForCurrentConversation(t *testing.T) {
 	}
 	if payload.Message.Type != "image" || payload.Message.Content != "https://example.com/a.png" {
 		t.Fatalf("message = %#v, want image URL", payload.Message)
+	}
+}
+
+func TestReplyToolCallsMessageSendForFileURLWithSpecifiedName(t *testing.T) {
+	requester := &fakeRequester{}
+	ctx := WithScope(context.Background(), Scope{
+		ConversationID:   "conversation-1",
+		ConversationType: "app",
+		Requester:        requester,
+	})
+	source := NewSource()
+
+	_, err := source.CallTool(ctx, "reply", json.RawMessage(`{"type":"file","name":"report.md","url":"https://example.com/report.md"}`))
+	if err != nil {
+		t.Fatalf("CallTool() error = %v", err)
+	}
+	if len(requester.calls) != 1 {
+		t.Fatalf("request call count = %d, want 1", len(requester.calls))
+	}
+	var payload struct {
+		Message struct {
+			Type    string `json:"type"`
+			Name    string `json:"name"`
+			URL     string `json:"url"`
+			Content string `json:"content"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal(requester.calls[0].payload, &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if payload.Message.Type != "file" || payload.Message.Name != "report.md" || payload.Message.URL != "https://example.com/report.md" {
+		t.Fatalf("message = %#v, want file URL with specified name", payload.Message)
+	}
+	if payload.Message.Content != "" {
+		t.Fatalf("message content = %q, want empty for URL file", payload.Message.Content)
+	}
+}
+
+func TestReplyToolCallsMessageSendForInlineFileContentWithSpecifiedName(t *testing.T) {
+	requester := &fakeRequester{}
+	ctx := WithScope(context.Background(), Scope{
+		ConversationID:   "conversation-1",
+		ConversationType: "app",
+		Requester:        requester,
+	})
+	source := NewSource()
+
+	fileContent := "  # 报告\n\n正文\n"
+	input, err := json.Marshal(map[string]any{
+		"type":    "file",
+		"name":    "assistant-report.md",
+		"content": fileContent,
+	})
+	if err != nil {
+		t.Fatalf("marshal input: %v", err)
+	}
+	_, err = source.CallTool(ctx, "reply", input)
+	if err != nil {
+		t.Fatalf("CallTool() error = %v", err)
+	}
+	var payload struct {
+		Message struct {
+			Type    string `json:"type"`
+			Name    string `json:"name"`
+			URL     string `json:"url"`
+			Content string `json:"content"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal(requester.calls[0].payload, &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if payload.Message.Type != "file" || payload.Message.Name != "assistant-report.md" || payload.Message.Content != fileContent {
+		t.Fatalf("message = %#v, want inline file content with specified name", payload.Message)
+	}
+	if payload.Message.URL != "" {
+		t.Fatalf("message url = %q, want empty for inline file", payload.Message.URL)
+	}
+}
+
+func TestReplyToolRejectsInvalidFileInputs(t *testing.T) {
+	source := NewSource()
+	ctx := WithScope(context.Background(), Scope{
+		ConversationID:   "conversation-1",
+		ConversationType: "app",
+		Requester:        &fakeRequester{},
+	})
+
+	for _, tt := range []struct {
+		name  string
+		input string
+	}{
+		{
+			name:  "missing file name",
+			input: `{"type":"file","content":"hello"}`,
+		},
+		{
+			name:  "path file name",
+			input: `{"type":"file","name":"reports/report.md","content":"hello"}`,
+		},
+		{
+			name:  "url and content",
+			input: `{"type":"file","name":"report.md","url":"https://example.com/report.md","content":"hello"}`,
+		},
+		{
+			name:  "missing source",
+			input: `{"type":"file","name":"report.md"}`,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := source.CallTool(ctx, "reply", json.RawMessage(tt.input)); err == nil {
+				t.Fatal("CallTool() error = nil, want invalid file input error")
+			}
+		})
 	}
 }
 

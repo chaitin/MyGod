@@ -316,9 +316,10 @@ func (s *Server) handleAppSendMessageAsUser(appID string, request realtime.Envel
 			ID:  message.ID,
 			Seq: message.Seq,
 			Sender: &appMessageSenderPayload{
-				ID:   actor.ID,
-				Name: actor.Name,
-				Type: store.MessageSenderTypeUser,
+				Email: actor.Email,
+				ID:    actor.ID,
+				Name:  actor.Name,
+				Type:  store.MessageSenderTypeUser,
 			},
 			Summary: message.Summary,
 		},
@@ -967,6 +968,7 @@ func newAppHistoryMessageSenderPayload(message store.Message, usersByID map[stri
 	switch message.SenderType {
 	case store.MessageSenderTypeUser:
 		if user, ok := usersByID[*message.SenderID]; ok {
+			sender.Email = user.Email
 			sender.Name = user.Name
 			sender.Nickname = user.Nickname
 		}
@@ -1035,6 +1037,7 @@ type preparedAppSendMessageBody struct {
 
 type appSendMessageBodyEnvelope struct {
 	Content string `json:"content"`
+	Name    string `json:"name"`
 	Type    string `json:"type"`
 	URL     string `json:"url"`
 }
@@ -1064,7 +1067,7 @@ func (s *Server) prepareAppSendMessageBody(ctx context.Context, raw json.RawMess
 			Finalize: staticMessageBodyFinalizer(imageMessageSummary()),
 		}, nil
 	case messageTypeFile:
-		body, name, err := s.createRemoteFileMessageBody(ctx, firstNonEmptyAppString(envelope.Content, envelope.URL))
+		body, name, err := s.prepareAppSendFileMessageBody(ctx, envelope)
 		if err != nil {
 			return preparedAppSendMessageBody{}, err
 		}
@@ -1074,6 +1077,22 @@ func (s *Server) prepareAppSendMessageBody(ctx context.Context, raw json.RawMess
 		}, nil
 	default:
 		return preparedAppSendMessageBody{}, newAppRequestFailure("invalid_request", "不支持的消息类型")
+	}
+}
+
+func (s *Server) prepareAppSendFileMessageBody(ctx context.Context, envelope appSendMessageBodyEnvelope) (json.RawMessage, string, error) {
+	url := strings.TrimSpace(envelope.URL)
+	hasURL := url != ""
+	hasContent := envelope.Content != ""
+	switch {
+	case hasURL && hasContent:
+		return nil, "", newAppRequestFailure("invalid_request", "文件 URL 和内容只能二选一")
+	case hasURL:
+		return s.createRemoteFileMessageBody(ctx, url, envelope.Name)
+	case hasContent:
+		return s.createInlineFileMessageBody(ctx, envelope.Content, envelope.Name)
+	default:
+		return nil, "", newAppRequestFailure("invalid_request", "文件 URL 或内容不能为空")
 	}
 }
 

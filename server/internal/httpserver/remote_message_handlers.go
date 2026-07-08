@@ -31,6 +31,8 @@ const (
 	remoteMessageFetchTimeout     = 15 * time.Second
 	remoteMessageFetchMaxRedirect = 3
 	remoteImageWebPQuality        = 80
+	maxAppInlineFileContentBytes  = 64 * 1024
+	appInlineFileContentType      = "text/plain; charset=utf-8"
 )
 
 type downloadedRemoteMessageFile struct {
@@ -74,7 +76,11 @@ func (s *Server) createRemoteImageMessageBody(ctx context.Context, rawURL string
 	return body, nil
 }
 
-func (s *Server) createRemoteFileMessageBody(ctx context.Context, rawURL string) (json.RawMessage, string, error) {
+func (s *Server) createRemoteFileMessageBody(ctx context.Context, rawURL string, rawName string) (json.RawMessage, string, error) {
+	name, err := normalizeSpecifiedFileMessageName(rawName)
+	if err != nil {
+		return nil, "", newAppRequestFailure("invalid_request", err.Error())
+	}
 	remoteFile, err := downloadRemoteMessageFile(ctx, rawURL, maxTemporaryFileUploadBytes)
 	if err != nil {
 		return nil, "", err
@@ -82,16 +88,42 @@ func (s *Server) createRemoteFileMessageBody(ctx context.Context, rawURL string)
 	if len(remoteFile.Content) == 0 {
 		return nil, "", newAppRequestFailure("invalid_request", "文件不能为空")
 	}
-	name, err := normalizeFileMessageName(remoteFile.Filename)
-	if err != nil {
-		return nil, "", newAppRequestFailure("invalid_request", err.Error())
-	}
 
 	contentType := strings.TrimSpace(remoteFile.ContentType)
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
 	temporaryFile, err := s.saveRemoteMessageTemporaryFile(ctx, remoteFile.Content, contentType)
+	if err != nil {
+		return nil, "", err
+	}
+	body, err := json.Marshal(fileMessageBody{
+		Type:      messageTypeFile,
+		FileID:    temporaryFile.ID,
+		Name:      name,
+		SizeBytes: temporaryFile.SizeBytes,
+	})
+	if err != nil {
+		return nil, "", err
+	}
+
+	return body, name, nil
+}
+
+func (s *Server) createInlineFileMessageBody(ctx context.Context, rawContent string, rawName string) (json.RawMessage, string, error) {
+	name, err := normalizeSpecifiedFileMessageName(rawName)
+	if err != nil {
+		return nil, "", newAppRequestFailure("invalid_request", err.Error())
+	}
+	content := []byte(rawContent)
+	if len(content) == 0 {
+		return nil, "", newAppRequestFailure("invalid_request", "文件内容不能为空")
+	}
+	if len(content) > maxAppInlineFileContentBytes {
+		return nil, "", newAppRequestFailure("request_too_large", "文件内容不能超过 64KiB")
+	}
+
+	temporaryFile, err := s.saveRemoteMessageTemporaryFile(ctx, content, appInlineFileContentType)
 	if err != nil {
 		return nil, "", err
 	}

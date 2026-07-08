@@ -34,6 +34,7 @@ type appMessagePayload struct {
 }
 
 type appMessageSenderPayload struct {
+	Email    string `json:"email,omitempty"`
 	ID       string `json:"id"`
 	Name     string `json:"name"`
 	Nickname string `json:"nickname"`
@@ -64,6 +65,7 @@ func (s *Server) dispatchAppMessageCreatedEvent(sender store.User, message store
 			Summary:   message.Summary,
 		},
 		Sender: appMessageSenderPayload{
+			Email:    sender.Email,
 			ID:       sender.ID,
 			Name:     sender.Name,
 			Nickname: sender.Nickname,

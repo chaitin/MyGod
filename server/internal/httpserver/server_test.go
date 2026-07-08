@@ -769,6 +769,17 @@ func readRealtimeEvent(t *testing.T, conn *websocket.Conn) realtime.Envelope {
 func sendAppRequest(t *testing.T, conn *websocket.Conn, request realtime.Envelope) realtime.Envelope {
 	t.Helper()
 
+	response := sendRawAppRequest(t, conn, request)
+	if response.OK == nil || !*response.OK {
+		t.Fatalf("response ok = %#v, error = %#v", response.OK, response.Error)
+	}
+
+	return response
+}
+
+func sendRawAppRequest(t *testing.T, conn *websocket.Conn, request realtime.Envelope) realtime.Envelope {
+	t.Helper()
+
 	if err := conn.WriteJSON(request); err != nil {
 		t.Fatalf("WriteJSON() error = %v", err)
 	}
@@ -780,10 +791,6 @@ func sendAppRequest(t *testing.T, conn *websocket.Conn, request realtime.Envelop
 	if response.ReplyTo != request.ID {
 		t.Fatalf("response reply_to = %v, want %s", response.ReplyTo, request.ID)
 	}
-	if response.OK == nil || !*response.OK {
-		t.Fatalf("response ok = %#v, error = %#v", response.OK, response.Error)
-	}
-
 	return response
 }
 
@@ -805,6 +812,20 @@ func requireAppSendMessageResponsePayload(t *testing.T, response realtime.Envelo
 	}
 
 	return payload
+}
+
+func requireAppErrorResponse(t *testing.T, response realtime.Envelope, code string) {
+	t.Helper()
+
+	if response.OK == nil || *response.OK {
+		t.Fatalf("response ok = %#v, want false", response.OK)
+	}
+	if response.Error == nil {
+		t.Fatalf("response error = nil, want %s", code)
+	}
+	if response.Error.Code != code {
+		t.Fatalf("response error code = %q, want %q: %s", response.Error.Code, code, response.Error.Message)
+	}
 }
 
 func mustMarshalPayloadForTest(t *testing.T, payload any) json.RawMessage {
@@ -1404,6 +1425,14 @@ func TestAppWebSocketMessageSendAsUserStoresDelegatedByAndPushesDirectMessage(t 
 	triggerEvent := readRealtimeEvent(t, appConn)
 	if triggerEvent.Kind != realtime.KindEvent || triggerEvent.Event != realtime.EventMessageCreated {
 		t.Fatalf("trigger app event = %#v, want message.created", triggerEvent)
+	}
+	var triggerAppPayload map[string]any
+	if err := json.Unmarshal(triggerEvent.Payload, &triggerAppPayload); err != nil {
+		t.Fatalf("unmarshal trigger app payload: %v", err)
+	}
+	triggerSender := triggerAppPayload["sender"].(map[string]any)
+	if triggerSender["email"] != alice.Email {
+		t.Fatalf("trigger sender email = %v, want %s", triggerSender["email"], alice.Email)
 	}
 
 	response := sendAppRequest(t, appConn, realtime.Envelope{
