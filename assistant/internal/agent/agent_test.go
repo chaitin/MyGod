@@ -210,7 +210,7 @@ func TestAgentBuildsEmptyHistoryAsArray(t *testing.T) {
 	}
 }
 
-func TestAgentRunSendsThinkingAndTextAsMarkdown(t *testing.T) {
+func TestAgentRunSuppressesThinkingAndSendsTextAsMarkdown(t *testing.T) {
 	agent := New(modelFunc(func(ctx context.Context, request llm.Request) (llm.Response, error) {
 		return llm.Response{Blocks: []llm.Block{
 			{Type: llm.BlockTypeThinking, Thinking: "我需要先判断用户意图"},
@@ -226,14 +226,11 @@ func TestAgentRunSendsThinkingAndTextAsMarkdown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if len(outputs) != 2 {
-		t.Fatalf("output count = %d, want 2", len(outputs))
+	if len(outputs) != 1 {
+		t.Fatalf("output count = %d, want only final text", len(outputs))
 	}
-	if outputs[0] != "**思考过程**\n\n我需要先判断用户意图" {
-		t.Fatalf("thinking output = %q, want markdown thinking block", outputs[0])
-	}
-	if outputs[1] != "可以，我来处理。" {
-		t.Fatalf("text output = %q, want text markdown", outputs[1])
+	if outputs[0] != "可以，我来处理。" {
+		t.Fatalf("text output = %q, want text markdown", outputs[0])
 	}
 }
 
@@ -259,8 +256,8 @@ func TestAgentRunAsksAgainWhenModelReturnsNoConclusion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if strings.Join(outputs, "\n") != "**思考过程**\n\n我还在分析\n这是最终回答。" {
-		t.Fatalf("outputs = %v, want thinking then final answer", outputs)
+	if strings.Join(outputs, "\n") != "这是最终回答。" {
+		t.Fatalf("outputs = %v, want only final answer", outputs)
 	}
 	if len(requests) != 2 {
 		t.Fatalf("model request count = %d, want 2", len(requests))
@@ -448,10 +445,10 @@ func TestAgentRunSendsFallbackAfterRepeatedNoConclusion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if len(outputs) != 3 {
-		t.Fatalf("output count = %d, want two thinking outputs and fallback", len(outputs))
+	if len(outputs) != 1 {
+		t.Fatalf("output count = %d, want only fallback", len(outputs))
 	}
-	if outputs[2] != LoopLimitFallback {
-		t.Fatalf("fallback = %q, want %q", outputs[2], LoopLimitFallback)
+	if outputs[0] != LoopLimitFallback {
+		t.Fatalf("fallback = %q, want %q", outputs[0], LoopLimitFallback)
 	}
 }

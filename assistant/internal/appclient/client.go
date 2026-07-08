@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"assistant/internal/agent"
+	"assistant/internal/builtintools"
 	"assistant/internal/config"
 	"assistant/internal/llm"
 	"assistant/internal/mcpclient"
@@ -134,13 +135,8 @@ type historyMessagePayload struct {
 }
 
 func New(ctx context.Context, cfg config.Config) (*Client, error) {
-	sources, err := mcpclient.NewSDKSources(ctx, cfg.MCP.Servers)
+	registry, sources, err := newToolRegistry(ctx, cfg.MCP.Servers)
 	if err != nil {
-		return nil, err
-	}
-	registry, err := mcpclient.NewRegistry(ctx, sources)
-	if err != nil {
-		mcpclient.CloseSources(sources)
 		return nil, err
 	}
 
@@ -150,6 +146,25 @@ func New(ctx context.Context, cfg config.Config) (*Client, error) {
 		assistantAgent: agent.New(llm.NewAnthropicClient(cfg.LLM), agent.WithToolRegistry(registry), agent.WithMaxTurns(cfg.Agent.MaxTurns)),
 		mcpSources:     sources,
 	}, nil
+}
+
+func newToolRegistry(ctx context.Context, servers []config.MCPServerConfig) (*mcpclient.Registry, []mcpclient.Source, error) {
+	mcpSources, err := mcpclient.NewSDKSources(ctx, servers)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	sources := make([]mcpclient.Source, 0, len(mcpSources)+1)
+	sources = append(sources, builtintools.NewSource())
+	sources = append(sources, mcpSources...)
+
+	registry, err := mcpclient.NewRegistry(ctx, sources)
+	if err != nil {
+		mcpclient.CloseSources(mcpSources)
+		return nil, nil, err
+	}
+
+	return registry, mcpSources, nil
 }
 
 func (c *Client) Close() {

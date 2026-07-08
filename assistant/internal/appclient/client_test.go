@@ -12,6 +12,7 @@ import (
 
 	"assistant/internal/agent"
 	"assistant/internal/config"
+	"assistant/internal/mcpclient"
 
 	"github.com/gorilla/websocket"
 )
@@ -230,6 +231,25 @@ func TestNewReturnsErrorWhenMCPServerCannotInitialize(t *testing.T) {
 	if err == nil {
 		t.Fatal("New() error = nil, want MCP initialization error")
 	}
+}
+
+func TestNewToolRegistryIncludesBuiltinSleepTool(t *testing.T) {
+	registry, sources, err := newToolRegistry(context.Background(), nil)
+	defer func() {
+		if sources != nil {
+			mcpclient.CloseSources(sources)
+		}
+	}()
+	if err != nil {
+		t.Fatalf("newToolRegistry() error = %v", err)
+	}
+
+	for _, tool := range registry.Tools() {
+		if tool.Name == "builtin__sleep" {
+			return
+		}
+	}
+	t.Fatalf("tools = %+v, want builtin__sleep", registry.Tools())
 }
 
 func TestUserAgentRunnerCancelsPreviousMessageFromSameUser(t *testing.T) {

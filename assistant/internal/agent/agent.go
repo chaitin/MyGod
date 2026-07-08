@@ -217,12 +217,7 @@ func (a *Agent) handleResponseBlocks(ctx context.Context, sink OutputSink, block
 				return responseBlocksResult{}, err
 			}
 		case llm.BlockTypeThinking:
-			if strings.TrimSpace(block.Thinking) == "" {
-				continue
-			}
-			if err := sink.SendMarkdown(ctx, formatThinking(block.Thinking)); err != nil {
-				return responseBlocksResult{}, err
-			}
+			continue
 		case llm.BlockTypeToolUse:
 			result.toolUses = append(result.toolUses, block)
 		}
@@ -282,10 +277,6 @@ func (a *Agent) llmTools() []llm.Tool {
 	}
 
 	return result
-}
-
-func formatThinking(thinking string) string {
-	return "**思考过程**\n\n" + thinking
 }
 
 func hasContext(request Request) bool {
