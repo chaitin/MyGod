@@ -95,6 +95,7 @@ import {
   type AdminUser,
   updateAdminUserStatus,
 } from "@/lib/admin-users"
+import { formatRelativeTimeDistance } from "@/lib/relative-time"
 import { cn } from "@/lib/utils"
 
 type Member = {
@@ -1168,7 +1169,7 @@ export function getMemberOnlineStatusText(
     return "当前在线"
   }
 
-  const lastOnlineDistance = formatLastOnlineDistance(member.lastOnlineAt, now)
+  const lastOnlineDistance = formatRelativeTimeDistance(member.lastOnlineAt, now)
 
   if (!lastOnlineDistance) {
     return "从未在线"
@@ -1196,43 +1197,6 @@ function formatJoinedAt(value: string) {
 
   if (Number.isNaN(date.getTime())) {
     return value
-  }
-
-  return date.toISOString().slice(0, 10)
-}
-
-function formatLastOnlineDistance(value: string, now: Date) {
-  const trimmedValue = value.trim()
-
-  if (!trimmedValue) {
-    return ""
-  }
-
-  const date = new Date(trimmedValue)
-
-  if (Number.isNaN(date.getTime())) {
-    return trimmedValue
-  }
-
-  const diffMs = Math.max(0, now.getTime() - date.getTime())
-  const minuteMs = 60 * 1000
-  const hourMs = 60 * minuteMs
-  const dayMs = 24 * hourMs
-
-  if (diffMs < minuteMs) {
-    return "刚刚"
-  }
-
-  if (diffMs < hourMs) {
-    return `${Math.floor(diffMs / minuteMs)}分钟`
-  }
-
-  if (diffMs < dayMs) {
-    return `${Math.floor(diffMs / hourMs)}小时`
-  }
-
-  if (diffMs < 30 * dayMs) {
-    return `${Math.floor(diffMs / dayMs)}天`
   }
 
   return date.toISOString().slice(0, 10)

@@ -86,7 +86,7 @@ describe("members page online status text", () => {
         },
         now
       )
-    ).toBe("5分钟前在线")
+    ).toBe("5 分钟前在线")
   })
 
   it("shows a fallback when an offline member has no online record", () => {
