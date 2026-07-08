@@ -915,6 +915,21 @@ function MessageBubble({
   const fromMe = message.role === "me"
   const fallback = fromMe ? "我" : getConversationInitial(conversation.name)
   const copyText = getMessageCopyText(message)
+  const bubbleRef = React.useRef<HTMLDivElement | null>(null)
+  const selectedCopyTextRef = React.useRef("")
+
+  function handleMessageContextMenu() {
+    selectedCopyTextRef.current = getSelectedTextWithinElement(
+      bubbleRef.current
+    )
+  }
+
+  function handleCopyMessage() {
+    const selectedText = selectedCopyTextRef.current
+    selectedCopyTextRef.current = ""
+
+    void copyMessageToClipboard(message, selectedText, bubbleRef.current)
+  }
 
   return (
     <div className={cn("flex gap-3", fromMe ? "justify-end" : "justify-start")}>
@@ -932,7 +947,7 @@ function MessageBubble({
         <MessageActionMenu
           canRevoke={message.canRevoke}
           copyDisabled={!copyText}
-          onCopy={() => void copyMessageToClipboard(message)}
+          onCopy={handleCopyMessage}
           onReply={() => onReply(message)}
           onRevoke={() => onRevoke(message)}
         >
@@ -944,6 +959,8 @@ function MessageBubble({
                 : "bg-neutral-200/80 text-foreground hover:bg-neutral-200 data-[state=open]:bg-neutral-200 dark:bg-neutral-800/80 hover:dark:bg-neutral-800 dark:data-[state=open]:bg-neutral-800"
             )}
             data-message-action-trigger
+            onContextMenu={handleMessageContextMenu}
+            ref={bubbleRef}
           >
             {message.replyTo && (
               <MessageReplyReference replyTo={message.replyTo} />
@@ -968,8 +985,16 @@ function MessageBubble({
   )
 }
 
-async function copyMessageToClipboard(message: ConversationPanelMessage) {
-  const text = getMessageCopyText(message)
+async function copyMessageToClipboard(
+  message: ConversationPanelMessage,
+  selectedText: string,
+  messageElement: HTMLElement | null
+) {
+  const text =
+    (selectedText.trim()
+      ? selectedText
+      : getSelectedTextWithinElement(messageElement)) ||
+    getMessageCopyText(message)
   if (!text) {
     toast.error("没有可复制内容")
     return
@@ -980,6 +1005,34 @@ async function copyMessageToClipboard(message: ConversationPanelMessage) {
     toast.success("已复制")
   } catch {
     toast.error("复制失败")
+  }
+}
+
+function getSelectedTextWithinElement(element: HTMLElement | null) {
+  if (!element) {
+    return ""
+  }
+
+  const selection = window.getSelection()
+  const selectedText = selection?.toString() ?? ""
+  if (!selection || selection.isCollapsed || !selectedText.trim()) {
+    return ""
+  }
+
+  for (let index = 0; index < selection.rangeCount; index += 1) {
+    if (rangeIntersectsElement(selection.getRangeAt(index), element)) {
+      return selectedText
+    }
+  }
+
+  return ""
+}
+
+function rangeIntersectsElement(range: Range, element: HTMLElement) {
+  try {
+    return range.intersectsNode(element)
+  } catch {
+    return false
   }
 }
 
