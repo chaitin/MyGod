@@ -383,6 +383,14 @@ definitions:
           $ref: '#/definitions/httpserver.publicThirdPartyProviderResponse'
         type: array
     type: object
+  httpserver.leaveGroupConversationResponse:
+    properties:
+      conversation_id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      message:
+        $ref: '#/definitions/httpserver.messageResponse'
+    type: object
   httpserver.listAdminAppsResponse:
     properties:
       apps:
@@ -665,6 +673,12 @@ definitions:
         $ref: '#/definitions/httpserver.conversationListItemResponse'
       message:
         $ref: '#/definitions/httpserver.messageResponse'
+    type: object
+  httpserver.updateGroupConversationNameRequest:
+    properties:
+      name:
+        example: 产品讨论组
+        type: string
     type: object
   httpserver.updateInfoSettingsRequest:
     properties:
@@ -2423,6 +2437,102 @@ paths:
           schema:
             $ref: '#/definitions/httpserver.errorEnvelope'
       summary: 加入公开群
+      tags:
+      - 客户端会话
+  /api/client/conversations/groups/{conversation_id}/leave:
+    post:
+      description: 当前用户退出 active 群聊，并生成系统消息。群主不能退出群聊。
+      parameters:
+      - description: 会话 ID
+        in: path
+        name: conversation_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httpserver.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/httpserver.leaveGroupConversationResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+      summary: 退出群聊
+      tags:
+      - 客户端会话
+  /api/client/conversations/groups/{conversation_id}/name:
+    patch:
+      consumes:
+      - application/json
+      description: 群主或管理员修改 active 群聊名称，并生成系统消息。
+      parameters:
+      - description: 会话 ID
+        in: path
+        name: conversation_id
+        required: true
+        type: string
+      - description: 群聊名称
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/httpserver.updateGroupConversationNameRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httpserver.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/httpserver.addGroupConversationMembersResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+      summary: 修改群聊名称
       tags:
       - 客户端会话
   /api/client/conversations/groups/{conversation_id}/private:

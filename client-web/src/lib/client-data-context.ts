@@ -62,14 +62,17 @@ export type ClientDataContextValue = {
   ) => void
   openDirectConversation: (userId: string) => Promise<ClientConversation>
   openAppConversation: (appId: string) => Promise<ClientConversation>
-  joinGroupConversation: (
-    conversationId: string
-  ) => Promise<ClientConversation>
+  joinGroupConversation: (conversationId: string) => Promise<ClientConversation>
+  leaveGroupConversation: (conversationId: string) => Promise<void>
   setGroupConversationPublic: (
     conversationId: string
   ) => Promise<ClientConversation>
   setGroupConversationPrivate: (
     conversationId: string
+  ) => Promise<ClientConversation>
+  updateGroupConversationName: (
+    conversationId: string,
+    name: string
   ) => Promise<ClientConversation>
   refreshConversations: () => Promise<void>
   refreshContacts: () => Promise<void>

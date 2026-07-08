@@ -11,6 +11,7 @@ import {
   getCurrentClientUser,
   isClientMessageInitiatedByUser,
   joinGroupConversation as joinGroupConversationRequest,
+  leaveGroupConversation as leaveGroupConversationRequest,
   listClientContacts,
   listClientConversations,
   listConversationMessages,
@@ -21,6 +22,7 @@ import {
   sendConversationTextMessage,
   setGroupConversationPrivate as setGroupConversationPrivateRequest,
   setGroupConversationPublic as setGroupConversationPublicRequest,
+  updateGroupConversationName as updateGroupConversationNameRequest,
   uploadGroupConversationAvatar as uploadGroupConversationAvatarRequest,
   type ClientConversation,
   type ClientMessage,
@@ -629,6 +631,20 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     )
   }, [])
 
+  const removeConversation = useCallback((conversationId: string) => {
+    setConversations((currentConversations) =>
+      currentConversations.filter(
+        (conversation) => conversation.id !== conversationId
+      )
+    )
+    setConversationMessageStates((currentStates) => {
+      const nextStates = { ...currentStates }
+      delete nextStates[conversationId]
+
+      return nextStates
+    })
+  }, [])
+
   const openDirectConversation = useCallback(
     async (userId: string) => {
       try {
@@ -745,6 +761,29 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
         "取消公开群失败"
       ),
     [applyGroupConversationAction]
+  )
+
+  const updateGroupConversationName = useCallback(
+    async (conversationId: string, name: string) =>
+      applyGroupConversationAction(
+        () => updateGroupConversationNameRequest(conversationId, { name }),
+        "修改群聊名称失败"
+      ),
+    [applyGroupConversationAction]
+  )
+
+  const leaveGroupConversation = useCallback(
+    async (conversationId: string) => {
+      try {
+        await leaveGroupConversationRequest(conversationId)
+        removeConversation(conversationId)
+        navigate("/chat", { replace: true })
+        void refreshContacts().catch(() => undefined)
+      } catch (error) {
+        throw handleError(error, "退出群聊失败")
+      }
+    },
+    [handleError, navigate, refreshContacts, removeConversation]
   )
 
   const updateGroupConversationAvatar = useCallback(
@@ -886,6 +925,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     getConversation,
     getConversationMessageState,
     joinGroupConversation,
+    leaveGroupConversation,
     loadBeforeConversationMessages,
     markConversationRead,
     handleIncomingConversationMessage,
@@ -907,6 +947,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     syncLoadedConversationMessages,
     updateConversationLastMessage,
     updateGroupConversationAvatar,
+    updateGroupConversationName,
   }
 
   return (

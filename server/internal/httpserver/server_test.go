@@ -5034,6 +5034,179 @@ func TestClientGroupVisibilityRejectsNonOwner(t *testing.T) {
 	}
 }
 
+func TestUpdateGroupConversationNameCreatesSystemMessage(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	now := time.Now().UTC()
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	conversation := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindGroup,
+		memberIDs:       []string{alice.ID, bob.ID},
+		name:            "产品讨论组",
+		now:             now,
+	})
+	cookie := loginAsUser(t, server, alice.Email)
+
+	resp, body := patchJSON(t, server, "/api/client/conversations/groups/"+conversation.ID+"/name", map[string]any{
+		"name": " 新产品讨论组 ",
+	}, cookie)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %#v", resp.StatusCode, body)
+	}
+
+	data := requireSuccess(t, body)
+	updatedConversation := data["conversation"].(map[string]any)
+	createdMessage := data["message"].(map[string]any)
+	summary := "Alice 修改群聊名称为 新产品讨论组"
+	if updatedConversation["name"] != "新产品讨论组" {
+		t.Fatalf("conversation.name = %v, want 新产品讨论组", updatedConversation["name"])
+	}
+	if updatedConversation["last_message_summary"] != summary {
+		t.Fatalf("last_message_summary = %v, want %s", updatedConversation["last_message_summary"], summary)
+	}
+	if createdMessage["seq"] != float64(1) {
+		t.Fatalf("message.seq = %v, want 1", createdMessage["seq"])
+	}
+
+	var storedConversation store.Conversation
+	if err := db.First(&storedConversation, "id = ?", conversation.ID).Error; err != nil {
+		t.Fatalf("find stored conversation: %v", err)
+	}
+	if storedConversation.Name != "新产品讨论组" {
+		t.Fatalf("stored conversation name = %q, want 新产品讨论组", storedConversation.Name)
+	}
+
+	var storedMessage store.Message
+	if err := db.First(&storedMessage, "conversation_id = ? AND seq = ?", conversation.ID, int64(1)).Error; err != nil {
+		t.Fatalf("find stored system message: %v", err)
+	}
+	if storedMessage.Summary != summary {
+		t.Fatalf("stored summary = %v, want %s", storedMessage.Summary, summary)
+	}
+	requireSystemEventActorBody(t, storedMessage.Body, "group_name_updated", alice.ID, "Alice")
+
+	var systemBody map[string]any
+	if err := json.Unmarshal(storedMessage.Body, &systemBody); err != nil {
+		t.Fatalf("unmarshal system body: %v", err)
+	}
+	if systemBody["name"] != "新产品讨论组" {
+		t.Fatalf("body.name = %v, want 新产品讨论组", systemBody["name"])
+	}
+}
+
+func TestUpdateGroupConversationNameRejectsMember(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	now := time.Now().UTC()
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	conversation := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindGroup,
+		memberIDs:       []string{alice.ID, bob.ID},
+		name:            "产品讨论组",
+		now:             now,
+	})
+
+	resp, body := patchJSON(t, server, "/api/client/conversations/groups/"+conversation.ID+"/name", map[string]any{
+		"name": "新产品讨论组",
+	}, loginAsUser(t, server, bob.Email))
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403, body = %#v", resp.StatusCode, body)
+	}
+	requireError(t, body, "forbidden")
+}
+
+func TestLeaveGroupConversationCreatesSystemMessage(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	now := time.Now().UTC()
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	conversation := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindGroup,
+		memberIDs:       []string{alice.ID, bob.ID},
+		name:            "产品讨论组",
+		now:             now,
+	})
+
+	resp, body := postJSON(t, server, "/api/client/conversations/groups/"+conversation.ID+"/leave", map[string]any{}, loginAsUser(t, server, bob.Email))
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %#v", resp.StatusCode, body)
+	}
+	data := requireSuccess(t, body)
+	if data["conversation_id"] != conversation.ID {
+		t.Fatalf("conversation_id = %v, want %s", data["conversation_id"], conversation.ID)
+	}
+	createdMessage := data["message"].(map[string]any)
+	if createdMessage["seq"] != float64(1) {
+		t.Fatalf("message.seq = %v, want 1", createdMessage["seq"])
+	}
+
+	var member store.ConversationMember
+	if err := db.First(&member, "conversation_id = ? AND member_type = ? AND member_id = ?", conversation.ID, store.ConversationMemberTypeUser, bob.ID).Error; err != nil {
+		t.Fatalf("find left member: %v", err)
+	}
+	if member.LeftAt == nil {
+		t.Fatal("left_at = nil, want set")
+	}
+
+	var storedMessage store.Message
+	if err := db.First(&storedMessage, "conversation_id = ? AND seq = ?", conversation.ID, int64(1)).Error; err != nil {
+		t.Fatalf("find stored system message: %v", err)
+	}
+	if storedMessage.Summary != "Bob 已退出群聊" {
+		t.Fatalf("stored summary = %v, want Bob 已退出群聊", storedMessage.Summary)
+	}
+	requireSystemEventActorBody(t, storedMessage.Body, "group_member_left", bob.ID, "Bob")
+
+	var activeMembers int64
+	if err := db.Model(&store.ConversationMember{}).
+		Where("conversation_id = ? AND member_type = ? AND left_at IS NULL", conversation.ID, store.ConversationMemberTypeUser).
+		Count(&activeMembers).Error; err != nil {
+		t.Fatalf("count active members: %v", err)
+	}
+	if activeMembers != 1 {
+		t.Fatalf("active members = %d, want 1", activeMembers)
+	}
+}
+
+func TestLeaveGroupConversationRejectsOwner(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	now := time.Now().UTC()
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	conversation := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindGroup,
+		memberIDs:       []string{alice.ID, bob.ID},
+		name:            "产品讨论组",
+		now:             now,
+	})
+
+	resp, body := postJSON(t, server, "/api/client/conversations/groups/"+conversation.ID+"/leave", map[string]any{}, loginAsUser(t, server, alice.Email))
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403, body = %#v", resp.StatusCode, body)
+	}
+	requireError(t, body, "forbidden")
+
+	var member store.ConversationMember
+	if err := db.First(&member, "conversation_id = ? AND member_type = ? AND member_id = ?", conversation.ID, store.ConversationMemberTypeUser, alice.ID).Error; err != nil {
+		t.Fatalf("find owner member: %v", err)
+	}
+	if member.LeftAt != nil {
+		t.Fatalf("owner left_at = %v, want nil", member.LeftAt)
+	}
+}
+
 func TestClientJoinPublicGroupCreatesMemberAndSystemMessage(t *testing.T) {
 	server, db := newTestRouter(t)
 	defer server.Close()

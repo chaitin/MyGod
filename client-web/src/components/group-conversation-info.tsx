@@ -1,6 +1,6 @@
-import { useState } from "react"
+import { useEffect, useId, useRef, useState } from "react"
 
-import { Camera, Globe2, Lock, LogOut, X } from "lucide-react"
+import { Camera, Check, Globe2, Lock, LogOut, Pencil, X } from "lucide-react"
 import { toast } from "sonner"
 
 import type { ClientConversationMember } from "@/lib/client-data-api"
@@ -22,6 +22,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
+import { Label } from "@/components/ui/label"
 import {
   Dialog,
   DialogClose,
@@ -36,6 +37,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
+import { Input } from "@/components/ui/input"
 
 type GroupConversationInfoProps = {
   conversationId: string
@@ -46,14 +48,18 @@ export function GroupConversationInfo({
 }: GroupConversationInfoProps) {
   const {
     getConversation,
+    leaveGroupConversation,
     me,
     setGroupConversationPrivate,
     setGroupConversationPublic,
+    updateGroupConversationName,
     updateGroupConversationAvatar,
   } = useClientData()
   const conversation = getConversation(conversationId)
   const [avatarPickerOpen, setAvatarPickerOpen] = useState(false)
   const [avatarSaving, setAvatarSaving] = useState(false)
+  const [leaveSaving, setLeaveSaving] = useState(false)
+  const [nameSaving, setNameSaving] = useState(false)
   const [visibilitySaving, setVisibilitySaving] = useState(false)
   const [visibilityTarget, setVisibilityTarget] = useState<
     "private" | "public" | null
@@ -84,8 +90,11 @@ export function GroupConversationInfo({
   )
   const currentMember = members.find((member) => member.id === me.id)
   const canChangeAvatar = canManageGroupAvatar(currentMember?.role)
+  const canChangeName = canManageGroupName(currentMember?.role)
+  const canLeaveGroup = Boolean(currentMember && currentMember.role !== "owner")
   const canChangeVisibility = currentMember?.role === "owner"
   const isPublicGroup = activeConversation.visibility === "public"
+  const conversationName = activeConversation.name
   const conversationAvatar = activeConversation.avatar
   const draftAvatar =
     draftAvatarOverride?.conversationId === activeConversation.id &&
@@ -118,6 +127,39 @@ export function GroupConversationInfo({
     }
   }
 
+  async function handleNameSave(name: string) {
+    if (!canChangeName || nameSaving) {
+      return
+    }
+
+    setNameSaving(true)
+    try {
+      await updateGroupConversationName(activeConversation.id, name)
+      toast.success("群聊名称已保存")
+    } catch (error) {
+      toast.error(getErrorMessage(error, "修改群聊名称失败"))
+      throw error
+    } finally {
+      setNameSaving(false)
+    }
+  }
+
+  async function handleLeaveGroup() {
+    if (!canLeaveGroup || leaveSaving) {
+      return
+    }
+
+    setLeaveSaving(true)
+    try {
+      await leaveGroupConversation(activeConversation.id)
+      toast.success("已退出群聊")
+    } catch (error) {
+      toast.error(getErrorMessage(error, "退出群聊失败"))
+    } finally {
+      setLeaveSaving(false)
+    }
+  }
+
   async function handleVisibilityChange(target: "private" | "public") {
     if (!canChangeVisibility || visibilitySaving) {
       return
@@ -144,9 +186,6 @@ export function GroupConversationInfo({
     <>
       <SheetHeader className="border-b">
         <SheetTitle>群聊信息</SheetTitle>
-        <SheetDescription>
-          {activeConversation.memberCount} 人群聊
-        </SheetDescription>
       </SheetHeader>
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         <div className="flex flex-col gap-5">
@@ -155,15 +194,20 @@ export function GroupConversationInfo({
               avatar={draftAvatar}
               canChangeAvatar={canChangeAvatar}
               members={members}
-              name={activeConversation.name}
+              name={conversationName}
               onClick={() => setAvatarPickerOpen(true)}
             />
           </div>
 
+          <GroupConversationNameControl
+            canChangeName={canChangeName}
+            name={conversationName}
+            onSave={handleNameSave}
+            saving={nameSaving}
+          />
+
           <div className="grid gap-2">
-            <div className="text-sm font-medium">
-              群成员（{activeConversation.memberCount}）
-            </div>
+            <Label>群成员（{activeConversation.memberCount}）</Label>
             <div className="grid gap-1">
               {members.map((member) => (
                 <GroupMemberItem key={member.id} member={member} />
@@ -231,7 +275,12 @@ export function GroupConversationInfo({
             {isPublicGroup ? "取消公开群" : "设置为公开群"}
           </Button>
         )}
-        <Button type="button" variant="destructive">
+        <Button
+          disabled={leaveSaving || !canLeaveGroup}
+          onClick={() => void handleLeaveGroup()}
+          type="button"
+          variant="destructive"
+        >
           <LogOut aria-hidden="true" className="size-4" />
           退出群聊
         </Button>
@@ -279,6 +328,124 @@ export function GroupConversationInfo({
         </AlertDialogContent>
       </AlertDialog>
     </>
+  )
+}
+
+function GroupConversationNameControl({
+  canChangeName,
+  name,
+  onSave,
+  saving,
+}: {
+  canChangeName: boolean
+  name: string
+  onSave: (name: string) => Promise<void> | void
+  saving: boolean
+}) {
+  const inputId = useId()
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [editing, setEditing] = useState(false)
+  const [draftName, setDraftName] = useState(name)
+  const trimmedDraftName = draftName.trim()
+  const saveDisabled =
+    trimmedDraftName === "" || trimmedDraftName === name.trim()
+
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus()
+      inputRef.current?.select()
+    }
+  }, [editing])
+
+  function startEditing() {
+    if (saving) {
+      return
+    }
+
+    setDraftName(name)
+    setEditing(true)
+  }
+
+  function cancelEditing() {
+    if (saving) {
+      return
+    }
+
+    setDraftName(name)
+    setEditing(false)
+  }
+
+  async function saveName() {
+    if (saveDisabled || saving) {
+      return
+    }
+
+    try {
+      await onSave(trimmedDraftName)
+      setEditing(false)
+    } catch {
+      return
+    }
+  }
+
+  return (
+    <div className="grid gap-2">
+      <Label htmlFor={inputId}>群聊名称</Label>
+      <div className="flex min-w-0 items-center gap-2">
+        <Input
+          disabled={!editing || saving}
+          id={inputId}
+          maxLength={120}
+          onChange={(event) => setDraftName(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault()
+              void saveName()
+            }
+            if (event.key === "Escape") {
+              event.preventDefault()
+              cancelEditing()
+            }
+          }}
+          ref={inputRef}
+          value={editing ? draftName : name}
+        />
+        {canChangeName && editing ? (
+          <>
+            <Button
+              aria-label="保存群聊名称"
+              disabled={saveDisabled || saving}
+              onClick={() => void saveName()}
+              size="icon-sm"
+              type="button"
+            >
+              <Check className="size-4" />
+            </Button>
+            <Button
+              aria-label="取消修改群聊名称"
+              disabled={saving}
+              onClick={cancelEditing}
+              size="icon-sm"
+              type="button"
+              variant="outline"
+            >
+              <X className="size-4" />
+            </Button>
+          </>
+        ) : canChangeName ? (
+          <Button
+            aria-label="修改群聊名称"
+            disabled={saving}
+            onClick={startEditing}
+            size="icon-sm"
+            type="button"
+            variant="outline"
+          >
+            <Pencil className="size-4" />
+          </Button>
+        ) : null}
+      </div>
+    </div>
   )
 }
 
@@ -402,6 +569,12 @@ function compareConversationMembers(
 }
 
 function canManageGroupAvatar(
+  role: ClientConversationMember["role"] | undefined
+) {
+  return role === "owner" || role === "admin"
+}
+
+function canManageGroupName(
   role: ClientConversationMember["role"] | undefined
 ) {
   return role === "owner" || role === "admin"

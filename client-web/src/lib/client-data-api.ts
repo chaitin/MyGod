@@ -133,6 +133,11 @@ type GroupConversationActionResponse = {
   message?: MessageResponse | null
 }
 
+type LeaveGroupConversationResponse = {
+  conversation_id?: string
+  message?: MessageResponse
+}
+
 type UploadGroupConversationAvatarResponse = {
   conversation?: ConversationResponse
   message?: MessageResponse
@@ -191,6 +196,19 @@ type GroupMemberJoinedSystemEventBodyResponse = {
   type?: "system_event"
 }
 
+type GroupMemberLeftSystemEventBodyResponse = {
+  actor?: SystemEventUserRefResponse
+  event?: "group_member_left"
+  type?: "system_event"
+}
+
+type GroupNameUpdatedSystemEventBodyResponse = {
+  actor?: SystemEventUserRefResponse
+  event?: "group_name_updated"
+  name?: string
+  type?: "system_event"
+}
+
 type MessageBodyResponse =
   | TextMessageBodyResponse
   | FileMessageBodyResponse
@@ -199,6 +217,8 @@ type MessageBodyResponse =
   | GroupAvatarUpdatedSystemEventBodyResponse
   | GroupVisibilityChangedSystemEventBodyResponse
   | GroupMemberJoinedSystemEventBodyResponse
+  | GroupMemberLeftSystemEventBodyResponse
+  | GroupNameUpdatedSystemEventBodyResponse
 
 type MessageResponse = {
   body?: MessageBodyResponse
@@ -377,6 +397,19 @@ export type ClientGroupMemberJoinedSystemEventBody = {
   type: "system_event"
 }
 
+export type ClientGroupMemberLeftSystemEventBody = {
+  actor: ClientSystemEventUserRef
+  event: "group_member_left"
+  type: "system_event"
+}
+
+export type ClientGroupNameUpdatedSystemEventBody = {
+  actor: ClientSystemEventUserRef
+  event: "group_name_updated"
+  name: string
+  type: "system_event"
+}
+
 export type ClientMessageBody =
   | ClientTextMessageBody
   | ClientFileMessageBody
@@ -385,6 +418,8 @@ export type ClientMessageBody =
   | ClientGroupAvatarUpdatedSystemEventBody
   | ClientGroupVisibilityChangedSystemEventBody
   | ClientGroupMemberJoinedSystemEventBody
+  | ClientGroupMemberLeftSystemEventBody
+  | ClientGroupNameUpdatedSystemEventBody
 
 export type ClientMessage = {
   body: ClientMessageBody
@@ -458,6 +493,10 @@ export type AddGroupConversationMembersInput = {
   memberIds: string[]
 }
 
+export type UpdateGroupConversationNameInput = {
+  name: string
+}
+
 export type AddGroupConversationMembersResult = {
   conversation: ClientConversation
   message: ClientMessage | null
@@ -470,6 +509,11 @@ export type GroupConversationActionResult = {
 
 export type UploadGroupConversationAvatarResult = {
   conversation: ClientConversation
+  message: ClientMessage
+}
+
+export type LeaveGroupConversationResult = {
+  conversationId: string
   message: ClientMessage
 }
 
@@ -581,7 +625,12 @@ export async function listClientContacts(fetcher: ClientDataFetch = fetch) {
     payload as ClientDataSuccessEnvelope<ListClientContactsResponse> | undefined
   )?.data
 
-  if (!data || !Array.isArray(data.apps) || !Array.isArray(data.groups) || !Array.isArray(data.users)) {
+  if (
+    !data ||
+    !Array.isArray(data.apps) ||
+    !Array.isArray(data.groups) ||
+    !Array.isArray(data.users)
+  ) {
     throw new ClientDataRequestError("通讯录响应格式不正确")
   }
 
@@ -675,7 +724,8 @@ export async function openAppConversation(
   }
 
   const conversation = (
-    payload as ClientDataSuccessEnvelope<CreateAppConversationResponse> | undefined
+    payload as
+      ClientDataSuccessEnvelope<CreateAppConversationResponse> | undefined
   )?.data?.conversation
 
   return normalizeConversation(conversation)
@@ -746,6 +796,83 @@ export async function setGroupConversationPrivate(
   )
 }
 
+export async function updateGroupConversationName(
+  conversationId: string,
+  input: UpdateGroupConversationNameInput,
+  fetcher: ClientDataFetch = fetch
+): Promise<GroupConversationActionResult> {
+  const response = await fetcher(
+    `/api/client/conversations/groups/${encodeURIComponent(conversationId)}/name`,
+    {
+      body: JSON.stringify({
+        name: input.name,
+      }),
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      method: "PATCH",
+    }
+  )
+  const payload = await readJson<
+    | ClientDataErrorEnvelope
+    | ClientDataSuccessEnvelope<GroupConversationActionResponse>
+  >(response)
+
+  if (!response.ok || payload?.success === false) {
+    throw createRequestError(payload, response, "修改群聊名称失败")
+  }
+
+  const data = (
+    payload as
+      ClientDataSuccessEnvelope<GroupConversationActionResponse> | undefined
+  )?.data
+
+  if (!data?.conversation) {
+    throw new ClientDataRequestError("修改群聊名称响应格式不正确")
+  }
+
+  return {
+    conversation: normalizeConversation(data.conversation),
+    message: data.message ? normalizeMessage(data.message) : null,
+  }
+}
+
+export async function leaveGroupConversation(
+  conversationId: string,
+  fetcher: ClientDataFetch = fetch
+): Promise<LeaveGroupConversationResult> {
+  const response = await fetcher(
+    `/api/client/conversations/groups/${encodeURIComponent(conversationId)}/leave`,
+    {
+      credentials: "include",
+      method: "POST",
+    }
+  )
+  const payload = await readJson<
+    | ClientDataErrorEnvelope
+    | ClientDataSuccessEnvelope<LeaveGroupConversationResponse>
+  >(response)
+
+  if (!response.ok || payload?.success === false) {
+    throw createRequestError(payload, response, "退出群聊失败")
+  }
+
+  const data = (
+    payload as
+      ClientDataSuccessEnvelope<LeaveGroupConversationResponse> | undefined
+  )?.data
+
+  if (!data?.conversation_id || !data.message) {
+    throw new ClientDataRequestError("退出群聊响应格式不正确")
+  }
+
+  return {
+    conversationId: data.conversation_id,
+    message: normalizeMessage(data.message),
+  }
+}
+
 async function postGroupConversationAction(
   url: string,
   fallbackMessage: string,
@@ -765,7 +892,8 @@ async function postGroupConversationAction(
   }
 
   const data = (
-    payload as ClientDataSuccessEnvelope<GroupConversationActionResponse> | undefined
+    payload as
+      ClientDataSuccessEnvelope<GroupConversationActionResponse> | undefined
   )?.data
 
   if (!data?.conversation) {
@@ -1158,6 +1286,14 @@ export function formatClientMessageBodySummary(body: ClientMessageBody) {
     return `${body.actor.displayName} 加入群聊`
   }
 
+  if (body.event === "group_member_left") {
+    return `${body.actor.displayName} 已退出群聊`
+  }
+
+  if (body.event === "group_name_updated") {
+    return `${body.actor.displayName} 修改群聊名称为 ${body.name}`
+  }
+
   return `${body.inviter.displayName} 邀请 ${body.invitees
     .map((invitee) => invitee.displayName)
     .join(",")} 加入群聊`
@@ -1181,7 +1317,9 @@ export function isClientMessageInitiatedByUser(
 
   if (
     message.body.event === "group_visibility_changed" ||
-    message.body.event === "group_member_joined"
+    message.body.event === "group_member_joined" ||
+    message.body.event === "group_member_left" ||
+    message.body.event === "group_name_updated"
   ) {
     return message.body.actor.id === userId
   }
@@ -1227,9 +1365,7 @@ function normalizeContactUser(
   }
 }
 
-function normalizeContactApp(
-  app: ContactAppResponse | undefined
-): ContactApp {
+function normalizeContactApp(app: ContactAppResponse | undefined): ContactApp {
   if (!app?.id || !app.name) {
     throw new ClientDataRequestError("通讯录响应格式不正确")
   }
@@ -1420,11 +1556,15 @@ function normalizeSystemEventMessageBody(
     | GroupAvatarUpdatedSystemEventBodyResponse
     | GroupVisibilityChangedSystemEventBodyResponse
     | GroupMemberJoinedSystemEventBodyResponse
+    | GroupMemberLeftSystemEventBodyResponse
+    | GroupNameUpdatedSystemEventBodyResponse
 ):
   | ClientGroupMembersInvitedSystemEventBody
   | ClientGroupAvatarUpdatedSystemEventBody
   | ClientGroupVisibilityChangedSystemEventBody
-  | ClientGroupMemberJoinedSystemEventBody {
+  | ClientGroupMemberJoinedSystemEventBody
+  | ClientGroupMemberLeftSystemEventBody
+  | ClientGroupNameUpdatedSystemEventBody {
   if (body.event === "group_avatar_updated") {
     if (!("actor" in body) || !isSystemEventUserRefResponse(body.actor)) {
       throw new ClientDataRequestError("消息响应格式不正确")
@@ -1458,6 +1598,35 @@ function normalizeSystemEventMessageBody(
     return {
       actor: normalizeSystemEventUserRef(body.actor),
       event: "group_member_joined",
+      type: "system_event",
+    }
+  }
+
+  if (body.event === "group_member_left") {
+    if (!("actor" in body) || !isSystemEventUserRefResponse(body.actor)) {
+      throw new ClientDataRequestError("消息响应格式不正确")
+    }
+
+    return {
+      actor: normalizeSystemEventUserRef(body.actor),
+      event: "group_member_left",
+      type: "system_event",
+    }
+  }
+
+  if (body.event === "group_name_updated") {
+    if (
+      !("actor" in body) ||
+      !isSystemEventUserRefResponse(body.actor) ||
+      typeof body.name !== "string"
+    ) {
+      throw new ClientDataRequestError("消息响应格式不正确")
+    }
+
+    return {
+      actor: normalizeSystemEventUserRef(body.actor),
+      event: "group_name_updated",
+      name: body.name,
       type: "system_event",
     }
   }

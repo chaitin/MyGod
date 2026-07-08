@@ -30,7 +30,9 @@ export function ClientConversationRealtimeSync() {
         })
         if (
           message.body.type === "system_event" &&
-          message.body.event === "group_avatar_updated"
+          (message.body.event === "group_avatar_updated" ||
+            message.body.event === "group_name_updated" ||
+            message.body.event === "group_member_left")
         ) {
           void refreshConversations().catch(() => undefined)
         }
