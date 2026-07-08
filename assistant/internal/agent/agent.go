@@ -165,10 +165,14 @@ func (a *Agent) Run(ctx context.Context, request Request, sink OutputSink) error
 			return err
 		}
 		if len(handled.toolUses) > 0 {
+			toolResults, hasFinalOutput := a.callTools(ctx, handled.toolUses)
 			messages = append(messages, llm.Message{
 				Role:   llm.RoleUser,
-				Blocks: a.callTools(ctx, handled.toolUses),
+				Blocks: toolResults,
 			})
+			if hasFinalOutput {
+				return nil
+			}
 			continue
 		}
 		if handled.hasText {
@@ -226,17 +230,21 @@ func (a *Agent) handleResponseBlocks(ctx context.Context, sink OutputSink, block
 	return result, nil
 }
 
-func (a *Agent) callTools(ctx context.Context, toolUses []llm.Block) []llm.Block {
+func (a *Agent) callTools(ctx context.Context, toolUses []llm.Block) ([]llm.Block, bool) {
 	results := make([]llm.Block, 0, len(toolUses))
+	hasFinalOutput := false
 	for _, toolUse := range toolUses {
-		result := a.callTool(ctx, toolUse)
+		result, finalOutput := a.callTool(ctx, toolUse)
 		results = append(results, result)
+		if finalOutput {
+			hasFinalOutput = true
+		}
 	}
 
-	return results
+	return results, hasFinalOutput
 }
 
-func (a *Agent) callTool(ctx context.Context, toolUse llm.Block) llm.Block {
+func (a *Agent) callTool(ctx context.Context, toolUse llm.Block) (llm.Block, bool) {
 	result := mcpclient.ToolResult{
 		Content: "tool registry is not configured",
 		IsError: true,
@@ -258,7 +266,7 @@ func (a *Agent) callTool(ctx context.Context, toolUse llm.Block) llm.Block {
 		ToolUseID: toolUse.ToolUseID,
 		Text:      result.Content,
 		IsError:   result.IsError,
-	}
+	}, result.Final && !result.IsError
 }
 
 func (a *Agent) llmTools() []llm.Tool {

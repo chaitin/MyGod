@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -39,6 +39,53 @@ describe("send message dialogs", () => {
 
     expect(onConfirm).toHaveBeenCalledTimes(1)
     expect(onOpenChange).not.toHaveBeenCalledWith(false)
+  })
+
+  it("allows image preview zooming up to 3x", async () => {
+    render(
+      <SendImageMessageDialog
+        conversationName="产品讨论组"
+        image={new File(["image"], "demo.png", { type: "image/png" })}
+        onConfirm={vi.fn()}
+        onOpenChange={vi.fn()}
+        open
+        sending={false}
+      />
+    )
+
+    const image = await screen.findByAltText("待发送图片预览")
+    Object.defineProperty(image, "naturalHeight", {
+      configurable: true,
+      value: 80,
+    })
+    Object.defineProperty(image, "naturalWidth", {
+      configurable: true,
+      value: 100,
+    })
+
+    fireEvent.load(image)
+    await waitFor(() => {
+      expect(image).toHaveStyle({
+        height: "80px",
+        width: "100px",
+      })
+    })
+
+    const previewViewport = image.parentElement?.parentElement
+    if (!previewViewport) {
+      throw new Error("image preview viewport not found")
+    }
+
+    for (let index = 0; index < 30; index += 1) {
+      fireEvent.wheel(previewViewport, { deltaY: -100 })
+    }
+
+    await waitFor(() => {
+      expect(image).toHaveStyle({
+        height: "240px",
+        width: "300px",
+      })
+    })
   })
 
   it("pressing Enter confirms file sending instead of cancelling", async () => {

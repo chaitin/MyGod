@@ -7,7 +7,6 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -641,7 +640,7 @@ func fetchWeComUserProfile(ctx context.Context, provider store.ThirdPartyLoginPr
 
 	return externalUserProfile{
 		ExternalUserID: externalID,
-		Email:          firstNonEmptyStringField(claims, "email", "biz_mail"),
+		Email:          firstNonEmptyStringField(claims, "biz_mail", "email"),
 		Name:           firstNonEmptyStringField(claims, "name", "userid", "openid", "external_userid"),
 		Nickname:       firstNonEmptyStringField(claims, "alias", "name", "userid", "openid", "external_userid"),
 		Phone:          stringFieldFromClaims(claims, "mobile"),
@@ -889,13 +888,25 @@ func profileFromClaims(provider store.ThirdPartyLoginProvider, claims map[string
 
 	return externalUserProfile{
 		ExternalUserID: externalID,
-		Email:          stringFieldFromClaims(claims, stringConfigValue(config, "email_field")),
+		Email:          thirdPartyEmailFromClaims(provider, config, claims),
 		Name:           stringFieldFromClaims(claims, stringConfigValue(config, "name_field")),
 		Nickname:       stringFieldFromClaims(claims, stringConfigValue(config, "nickname_field")),
 		Phone:          stringFieldFromClaims(claims, stringConfigValue(config, "phone_field")),
 		Avatar:         stringFieldFromClaims(claims, stringConfigValue(config, "avatar_field")),
 		Raw:            raw,
 	}, nil
+}
+
+func thirdPartyEmailFromClaims(provider store.ThirdPartyLoginProvider, config map[string]any, claims map[string]any) string {
+	emailField := stringConfigValue(config, "email_field")
+	if provider.Type == store.ThirdPartyLoginProviderTypeDingTalk {
+		return firstNonEmptyStringField(claims, "org_email", emailField, "email")
+	}
+	if provider.Type == store.ThirdPartyLoginProviderTypeFeishu {
+		return firstNonEmptyStringField(claims, "enterprise_email", emailField, "email")
+	}
+
+	return stringFieldFromClaims(claims, emailField)
 }
 
 func fallbackExternalUserID(providerType string, claims map[string]any) string {
@@ -934,30 +945,33 @@ func (s *Server) findOrCreateThirdPartyUser(provider store.ThirdPartyLoginProvid
 	if strings.TrimSpace(profile.ExternalUserID) == "" {
 		return store.User{}, thirdPartyUserError{status: http.StatusBadRequest, code: "invalid_third_party_login", message: "第三方用户标识为空"}
 	}
+	email, emailFromProvider, err := thirdPartyProfileEmailFromProvider(profile)
+	if err != nil {
+		return store.User{}, thirdPartyUserError{status: http.StatusBadRequest, code: "invalid_third_party_login", message: "第三方邮箱格式错误"}
+	}
+	if !emailFromProvider {
+		return store.User{}, thirdPartyUserError{status: http.StatusBadRequest, code: "invalid_third_party_login", message: "第三方邮箱为空"}
+	}
 	if len(profile.Raw) == 0 {
 		profile.Raw = json.RawMessage(`{}`)
 	}
 
 	var resultUser store.User
-	err := s.db.Transaction(func(tx *gorm.DB) error {
-		if email, emailFromProvider, emailErr := thirdPartyProfileEmailFromProvider(profile); emailErr != nil {
-			return thirdPartyUserError{status: http.StatusBadRequest, code: "invalid_third_party_login", message: "第三方邮箱格式错误"}
-		} else if emailFromProvider {
-			user, found, findErr := findThirdPartyUserByEmail(tx, email)
-			if findErr != nil {
-				return findErr
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		user, found, findErr := findThirdPartyUserByEmail(tx, email)
+		if findErr != nil {
+			return findErr
+		}
+		if found {
+			updatedUser, updateErr := syncThirdPartyUserFieldsFromProfile(tx, user, profile)
+			if updateErr != nil {
+				return updateErr
 			}
-			if found {
-				updatedUser, updateErr := syncThirdPartyUserFieldsFromProfile(tx, user, profile)
-				if updateErr != nil {
-					return updateErr
-				}
-				if upsertErr := upsertThirdPartyAccount(tx, provider, profile, updatedUser.ID); upsertErr != nil {
-					return upsertErr
-				}
-				resultUser = updatedUser
-				return nil
+			if upsertErr := upsertThirdPartyAccount(tx, provider, profile, updatedUser.ID); upsertErr != nil {
+				return upsertErr
 			}
+			resultUser = updatedUser
+			return nil
 		}
 
 		var account store.ThirdPartyAccount
@@ -985,7 +999,7 @@ func (s *Server) findOrCreateThirdPartyUser(provider store.ThirdPartyLoginProvid
 			return err
 		}
 
-		user, err := s.findOrCreateThirdPartyBoundUser(tx, provider, profile)
+		user, err = s.findOrCreateThirdPartyBoundUser(tx, provider, profile)
 		if err != nil {
 			return err
 		}
@@ -1061,6 +1075,13 @@ func syncThirdPartyUserFieldsFromProfile(tx *gorm.DB, user store.User, profile e
 		user.Name = name
 	}
 
+	if email, emailFromProvider, err := thirdPartyProfileEmailFromProvider(profile); err != nil {
+		return store.User{}, thirdPartyUserError{status: http.StatusBadRequest, code: "invalid_third_party_login", message: "第三方邮箱格式错误"}
+	} else if emailFromProvider && email != strings.TrimSpace(strings.ToLower(user.Email)) && isSyntheticThirdPartyEmail(user.Email) {
+		updates["email"] = email
+		user.Email = email
+	}
+
 	rawPhone := strings.TrimSpace(profile.Phone)
 	if rawPhone != "" {
 		phone, err := normalizePhone(rawPhone)
@@ -1087,7 +1108,7 @@ func syncThirdPartyUserFieldsFromProfile(tx *gorm.DB, user store.User, profile e
 	}
 	if err := tx.Model(&store.User{}).Where("id = ?", user.ID).Updates(updates).Error; err != nil {
 		if isUniqueConstraintError(err) {
-			return store.User{}, thirdPartyUserError{status: http.StatusConflict, code: "conflict", message: "手机号已存在"}
+			return store.User{}, thirdPartyUserError{status: http.StatusConflict, code: "conflict", message: "邮箱或手机号已存在"}
 		}
 		return store.User{}, err
 	}
@@ -1096,9 +1117,12 @@ func syncThirdPartyUserFieldsFromProfile(tx *gorm.DB, user store.User, profile e
 }
 
 func (s *Server) findOrCreateThirdPartyBoundUser(tx *gorm.DB, provider store.ThirdPartyLoginProvider, profile externalUserProfile) (store.User, error) {
-	email, emailFromProvider, err := thirdPartyProfileEmail(provider, profile)
+	email, emailFromProvider, err := thirdPartyProfileEmailFromProvider(profile)
 	if err != nil {
 		return store.User{}, thirdPartyUserError{status: http.StatusBadRequest, code: "invalid_third_party_login", message: "第三方邮箱格式错误"}
+	}
+	if !emailFromProvider {
+		return store.User{}, thirdPartyUserError{status: http.StatusBadRequest, code: "invalid_third_party_login", message: "第三方邮箱为空"}
 	}
 
 	var user store.User
@@ -1134,7 +1158,7 @@ func (s *Server) findOrCreateThirdPartyBoundUser(tx *gorm.DB, provider store.Thi
 	if name == "" {
 		name = strings.TrimSpace(profile.Nickname)
 	}
-	if name == "" && emailFromProvider {
+	if name == "" {
 		name = emailPrefix(email)
 	}
 	if name == "" {
@@ -1164,14 +1188,6 @@ func (s *Server) findOrCreateThirdPartyBoundUser(tx *gorm.DB, provider store.Thi
 	return user, nil
 }
 
-func thirdPartyProfileEmail(provider store.ThirdPartyLoginProvider, profile externalUserProfile) (string, bool, error) {
-	if email, ok, err := thirdPartyProfileEmailFromProvider(profile); ok || err != nil {
-		return email, ok, err
-	}
-
-	return syntheticThirdPartyEmail(provider, profile.ExternalUserID), false, nil
-}
-
 func thirdPartyProfileEmailFromProvider(profile externalUserProfile) (string, bool, error) {
 	rawEmail := strings.TrimSpace(profile.Email)
 	if rawEmail == "" {
@@ -1197,32 +1213,8 @@ func findThirdPartyUserByEmail(tx *gorm.DB, email string) (store.User, bool, err
 	return store.User{}, false, err
 }
 
-func syntheticThirdPartyEmail(provider store.ThirdPartyLoginProvider, externalUserID string) string {
-	sum := sha256.Sum256([]byte(provider.ID + ":" + externalUserID))
-	prefix := sanitizeEmailLocalPart(provider.Key)
-	if prefix == "" {
-		prefix = "third-party"
-	}
-
-	return fmt.Sprintf("%s.%s@third-party.local", prefix, hex.EncodeToString(sum[:8]))
-}
-
-func sanitizeEmailLocalPart(value string) string {
-	var builder strings.Builder
-	for _, currentRune := range strings.ToLower(value) {
-		switch {
-		case currentRune >= 'a' && currentRune <= 'z':
-			builder.WriteRune(currentRune)
-		case currentRune >= '0' && currentRune <= '9':
-			builder.WriteRune(currentRune)
-		case currentRune == '.' || currentRune == '_' || currentRune == '+' || currentRune == '-':
-			builder.WriteRune(currentRune)
-		default:
-			builder.WriteByte('-')
-		}
-	}
-
-	return strings.Trim(builder.String(), ".-+_")
+func isSyntheticThirdPartyEmail(email string) bool {
+	return strings.HasSuffix(strings.ToLower(strings.TrimSpace(email)), "@third-party.local")
 }
 
 func (s *Server) createUserSession(c echo.Context, user store.User) error {

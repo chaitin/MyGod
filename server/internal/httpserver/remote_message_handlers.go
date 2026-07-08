@@ -1,0 +1,281 @@
+package httpserver
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
+	"io"
+	"math"
+	"mime"
+	"net"
+	"net/http"
+	"net/url"
+	"path"
+	"strings"
+	"time"
+
+	"app/internal/store"
+
+	"github.com/HugoSmits86/nativewebp"
+	"github.com/google/uuid"
+	xdraw "golang.org/x/image/draw"
+)
+
+const (
+	remoteMessageFetchTimeout     = 15 * time.Second
+	remoteMessageFetchMaxRedirect = 3
+)
+
+type downloadedRemoteMessageFile struct {
+	Content     []byte
+	ContentType string
+	Filename    string
+}
+
+var validateRemoteMessageFetchURL = validateLinkFetchURL
+var remoteMessageFetchHTTPClient = newRemoteMessageFetchHTTPClient()
+
+func (s *Server) createRemoteImageMessageBody(ctx context.Context, rawURL string) (json.RawMessage, error) {
+	remoteFile, err := downloadRemoteMessageFile(ctx, rawURL, maxTemporaryFileUploadBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	webpContent, err := convertImageMessageContentToWebP(remoteFile.Content)
+	if err != nil {
+		return nil, err
+	}
+	if len(webpContent) > maxImageMessageUploadBytes {
+		return nil, newAppRequestFailure("request_too_large", "图片不能超过 2MiB")
+	}
+	if _, _, err := parseWebPDimensions(webpContent); err != nil {
+		return nil, newAppRequestFailure("invalid_request", "图片转换失败")
+	}
+
+	temporaryFile, err := s.saveRemoteMessageTemporaryFile(ctx, webpContent, imageMessageContentType)
+	if err != nil {
+		return nil, err
+	}
+	body, err := json.Marshal(imageMessageBody{
+		Type:   messageTypeImage,
+		FileID: temporaryFile.ID,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return body, nil
+}
+
+func (s *Server) createRemoteFileMessageBody(ctx context.Context, rawURL string) (json.RawMessage, string, error) {
+	remoteFile, err := downloadRemoteMessageFile(ctx, rawURL, maxTemporaryFileUploadBytes)
+	if err != nil {
+		return nil, "", err
+	}
+	if len(remoteFile.Content) == 0 {
+		return nil, "", newAppRequestFailure("invalid_request", "文件不能为空")
+	}
+	name, err := normalizeFileMessageName(remoteFile.Filename)
+	if err != nil {
+		return nil, "", newAppRequestFailure("invalid_request", err.Error())
+	}
+
+	contentType := strings.TrimSpace(remoteFile.ContentType)
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	temporaryFile, err := s.saveRemoteMessageTemporaryFile(ctx, remoteFile.Content, contentType)
+	if err != nil {
+		return nil, "", err
+	}
+	body, err := json.Marshal(fileMessageBody{
+		Type:      messageTypeFile,
+		FileID:    temporaryFile.ID,
+		Name:      name,
+		SizeBytes: temporaryFile.SizeBytes,
+	})
+	if err != nil {
+		return nil, "", err
+	}
+
+	return body, name, nil
+}
+
+func (s *Server) saveRemoteMessageTemporaryFile(ctx context.Context, content []byte, contentType string) (store.TemporaryFile, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	storageClient, err := s.newObjectStoreClient(ctx)
+	if err != nil {
+		return store.TemporaryFile{}, newAppRequestFailure("internal_error", "临时文件存储未配置")
+	}
+
+	now := time.Now().UTC()
+	fileID := uuid.NewString()
+	objectKey := buildTemporaryObjectKey(now, fileID)
+	if err := storageClient.PutTemporaryObject(ctx, objectKey, bytes.NewReader(content), int64(len(content)), contentType); err != nil {
+		return store.TemporaryFile{}, newAppRequestFailure("internal_error", "上传文件失败")
+	}
+
+	temporaryFile := store.TemporaryFile{
+		ID:        fileID,
+		ObjectKey: objectKey,
+		SizeBytes: int64(len(content)),
+		CreatedAt: now,
+	}
+	if err := s.db.Create(&temporaryFile).Error; err != nil {
+		return store.TemporaryFile{}, newAppRequestFailure("internal_error", "保存文件失败")
+	}
+
+	return temporaryFile, nil
+}
+
+func downloadRemoteMessageFile(ctx context.Context, rawURL string, maxBytes int64) (downloadedRemoteMessageFile, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	remoteURL, err := normalizeRemoteMessageURL(ctx, rawURL)
+	if err != nil {
+		return downloadedRemoteMessageFile{}, err
+	}
+
+	requestCtx, cancel := context.WithTimeout(ctx, remoteMessageFetchTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, remoteURL.String(), nil)
+	if err != nil {
+		return downloadedRemoteMessageFile{}, newAppRequestFailure("invalid_request", "URL 格式错误")
+	}
+	req.Header.Set("User-Agent", "MyGod Remote Message Fetcher")
+
+	resp, err := remoteMessageFetchHTTPClient.Do(req)
+	if err != nil {
+		return downloadedRemoteMessageFile{}, newAppRequestFailure("invalid_request", "下载 URL 失败")
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return downloadedRemoteMessageFile{}, newAppRequestFailure("invalid_request", "下载 URL 失败")
+	}
+	if resp.ContentLength > maxBytes {
+		return downloadedRemoteMessageFile{}, newAppRequestFailure("request_too_large", "文件不能超过 20MiB")
+	}
+
+	content, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
+	if err != nil {
+		return downloadedRemoteMessageFile{}, newAppRequestFailure("invalid_request", "读取 URL 内容失败")
+	}
+	if int64(len(content)) > maxBytes {
+		return downloadedRemoteMessageFile{}, newAppRequestFailure("request_too_large", "文件不能超过 20MiB")
+	}
+
+	return downloadedRemoteMessageFile{
+		Content:     content,
+		ContentType: strings.TrimSpace(resp.Header.Get("Content-Type")),
+		Filename:    remoteMessageFilename(resp.Header.Get("Content-Disposition"), remoteURL),
+	}, nil
+}
+
+func normalizeRemoteMessageURL(ctx context.Context, rawURL string) (*url.URL, error) {
+	messageURL := strings.TrimSpace(rawURL)
+	if messageURL == "" {
+		return nil, newAppRequestFailure("invalid_request", "URL 不能为空")
+	}
+	if strings.ContainsAny(messageURL, " \t\r\n") {
+		return nil, newAppRequestFailure("invalid_request", "URL 格式错误")
+	}
+
+	parsedURL, err := url.Parse(messageURL)
+	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
+		return nil, newAppRequestFailure("invalid_request", "URL 格式错误")
+	}
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return nil, newAppRequestFailure("invalid_request", "只支持 http 或 https URL")
+	}
+	if err := validateRemoteMessageFetchURL(ctx, parsedURL); err != nil {
+		return nil, newAppRequestFailure("invalid_request", "URL 不允许访问")
+	}
+
+	return parsedURL, nil
+}
+
+func newRemoteMessageFetchHTTPClient() *http.Client {
+	dialer := &net.Dialer{Timeout: remoteMessageFetchTimeout}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	transport.DialContext = func(ctx context.Context, network string, address string) (net.Conn, error) {
+		return dialLinkPreviewAddress(ctx, dialer, network, address)
+	}
+
+	return &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= remoteMessageFetchMaxRedirect {
+				return errors.New("remote message redirect limit exceeded")
+			}
+			return validateRemoteMessageFetchURL(req.Context(), req.URL)
+		},
+		Timeout:   remoteMessageFetchTimeout,
+		Transport: transport,
+	}
+}
+
+func remoteMessageFilename(contentDisposition string, remoteURL *url.URL) string {
+	if mediaType, params, err := mime.ParseMediaType(contentDisposition); err == nil && strings.EqualFold(mediaType, "attachment") {
+		if filename := strings.TrimSpace(params["filename"]); filename != "" {
+			return filename
+		}
+	}
+
+	if remoteURL != nil {
+		if filename := strings.TrimSpace(path.Base(strings.ReplaceAll(remoteURL.Path, "\\", "/"))); filename != "" && filename != "." && filename != "/" {
+			return filename
+		}
+	}
+
+	return "file"
+}
+
+func convertImageMessageContentToWebP(content []byte) ([]byte, error) {
+	if len(content) == 0 {
+		return nil, newAppRequestFailure("invalid_request", "图片不能为空")
+	}
+
+	img, _, err := image.Decode(bytes.NewReader(content))
+	if err != nil {
+		img, err = nativewebp.Decode(bytes.NewReader(content))
+		if err != nil {
+			return nil, newAppRequestFailure("invalid_request", "图片格式不支持")
+		}
+	}
+	img = resizeImageToMaxDimension(img, maxImageMessageDimension)
+
+	var buffer bytes.Buffer
+	if err := nativewebp.Encode(&buffer, img, &nativewebp.Options{CompressionLevel: nativewebp.DefaultCompression}); err != nil {
+		return nil, newAppRequestFailure("invalid_request", "图片转换失败")
+	}
+
+	return buffer.Bytes(), nil
+}
+
+func resizeImageToMaxDimension(img image.Image, maxDimension int) image.Image {
+	bounds := img.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+	if width <= 0 || height <= 0 || maxDimension <= 0 {
+		return img
+	}
+	if width <= maxDimension && height <= maxDimension {
+		return img
+	}
+
+	scale := float64(maxDimension) / float64(max(width, height))
+	targetWidth := max(1, int(math.Round(float64(width)*scale)))
+	targetHeight := max(1, int(math.Round(float64(height)*scale)))
+	target := image.NewRGBA(image.Rect(0, 0, targetWidth, targetHeight))
+	xdraw.CatmullRom.Scale(target, target.Bounds(), img, bounds, xdraw.Over, nil)
+
+	return target
+}

@@ -17,7 +17,7 @@ import (
 
 const (
 	AnthropicVersion = "2023-06-01"
-	DefaultMaxTokens = 1024
+	DefaultMaxTokens = 4096
 )
 
 type Model interface {

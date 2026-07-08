@@ -3,6 +3,7 @@ module app
 go 1.25.7
 
 require (
+	github.com/HugoSmits86/nativewebp v1.3.0
 	github.com/aws/aws-sdk-go-v2 v1.42.1
 	github.com/aws/aws-sdk-go-v2/config v1.32.27
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.26
@@ -16,6 +17,7 @@ require (
 	github.com/swaggo/echo-swagger v1.5.2
 	github.com/yuin/goldmark v1.8.2
 	golang.org/x/crypto v0.53.0
+	golang.org/x/image v0.24.0
 	golang.org/x/net v0.56.0
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/postgres v1.6.0

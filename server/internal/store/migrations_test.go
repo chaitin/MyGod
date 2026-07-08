@@ -14,6 +14,10 @@ func TestMigrationDirectoryContainsExpectedMigrations(t *testing.T) {
 	}
 	want := []string{
 		"00001_init_schema.sql",
+		"00002_add_message_delegation.sql",
+		"00003_add_message_reply_to.sql",
+		"00004_add_app_soft_delete.sql",
+		"00005_add_message_revoke.sql",
 	}
 	if len(matches) != len(want) {
 		t.Fatalf("migration file count = %d, want %d: %v", len(matches), len(want), matches)
@@ -25,7 +29,7 @@ func TestMigrationDirectoryContainsExpectedMigrations(t *testing.T) {
 	}
 }
 
-func TestInitialSchemaMigrationDefinesCurrentSchema(t *testing.T) {
+func TestInitialSchemaMigrationDefinesBaseSchema(t *testing.T) {
 	rawSQL, err := os.ReadFile("../../migrations/00001_init_schema.sql")
 	if err != nil {
 		t.Fatalf("read init schema migration: %v", err)
@@ -137,12 +141,107 @@ func TestInitialSchemaMigrationDefinesCurrentSchema(t *testing.T) {
 		"alter table users",
 		"alter table conversations",
 		"alter table conversation_members",
+		"delegated_by",
 		"llm_models",
 		"rename column",
 		"if not exists",
 	} {
 		if strings.Contains(sql, forbidden) {
 			t.Fatalf("init schema migration contains legacy fragment %q", forbidden)
+		}
+	}
+}
+
+func TestMessageDelegationMigrationAddsDelegationColumns(t *testing.T) {
+	rawSQL, err := os.ReadFile("../../migrations/00002_add_message_delegation.sql")
+	if err != nil {
+		t.Fatalf("read message delegation migration: %v", err)
+	}
+	sql := normalizeSQL(string(rawSQL))
+
+	for _, required := range []string{
+		"-- +goose up",
+		"alter table messages add column delegated_by_type text, add column delegated_by_id uuid, add column delegated_by_name text not null default ''",
+		"add constraint messages_delegated_by_type_check check",
+		"delegated_by_type is null or delegated_by_type in ('user', 'app')",
+		"add constraint messages_delegated_by_id_check check",
+		"delegated_by_type is null and delegated_by_id is null and delegated_by_name = ''",
+		"delegated_by_type is not null and delegated_by_id is not null and delegated_by_name <> ''",
+		"-- +goose down",
+		"drop constraint messages_delegated_by_id_check",
+		"drop constraint messages_delegated_by_type_check",
+		"drop column delegated_by_name",
+		"drop column delegated_by_id",
+		"drop column delegated_by_type",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("message delegation migration missing %q", required)
+		}
+	}
+}
+
+func TestMessageReplyToMigrationAddsReplyToColumn(t *testing.T) {
+	rawSQL, err := os.ReadFile("../../migrations/00003_add_message_reply_to.sql")
+	if err != nil {
+		t.Fatalf("read message reply-to migration: %v", err)
+	}
+	sql := normalizeSQL(string(rawSQL))
+
+	for _, required := range []string{
+		"-- +goose up",
+		"alter table messages add column reply_to_message_id uuid",
+		"create index messages_reply_to_message_id_index on messages (reply_to_message_id)",
+		"add constraint messages_reply_to_message_id_fkey foreign key (reply_to_message_id) references messages(id) on delete set null",
+		"-- +goose down",
+		"drop constraint messages_reply_to_message_id_fkey",
+		"drop column reply_to_message_id",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("message reply-to migration missing %q", required)
+		}
+	}
+}
+
+func TestAppSoftDeleteMigrationAddsDeletedAt(t *testing.T) {
+	rawSQL, err := os.ReadFile("../../migrations/00004_add_app_soft_delete.sql")
+	if err != nil {
+		t.Fatalf("read app soft delete migration: %v", err)
+	}
+	sql := normalizeSQL(string(rawSQL))
+
+	for _, required := range []string{
+		"-- +goose up",
+		"alter table apps add column deleted_at timestamptz",
+		"create index apps_deleted_at_index on apps (deleted_at)",
+		"-- +goose down",
+		"drop index apps_deleted_at_index",
+		"drop column deleted_at",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("app soft delete migration missing %q", required)
+		}
+	}
+}
+
+func TestMessageRevokeMigrationAddsRevokeColumns(t *testing.T) {
+	rawSQL, err := os.ReadFile("../../migrations/00005_add_message_revoke.sql")
+	if err != nil {
+		t.Fatalf("read message revoke migration: %v", err)
+	}
+	sql := normalizeSQL(string(rawSQL))
+
+	for _, required := range []string{
+		"-- +goose up",
+		"alter table messages add column revoked_at timestamptz, add column revoked_by_user_id uuid",
+		"create index messages_revoked_at_index on messages (revoked_at)",
+		"add constraint messages_revoked_by_user_id_fkey foreign key (revoked_by_user_id) references users(id) on delete set null",
+		"-- +goose down",
+		"drop constraint messages_revoked_by_user_id_fkey",
+		"drop column revoked_by_user_id",
+		"drop column revoked_at",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("message revoke migration missing %q", required)
 		}
 	}
 }

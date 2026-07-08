@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -25,6 +26,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 func newTestRouter(t *testing.T) (*httptest.Server, *gorm.DB) {
@@ -589,6 +591,66 @@ func requireSystemEventActorBody(t *testing.T, rawBody json.RawMessage, event st
 	}
 }
 
+func requireGroupMemberRemovedBody(t *testing.T, rawBody json.RawMessage, actorID string, actorDisplayName string, targetID string, targetDisplayName string) {
+	t.Helper()
+
+	var body map[string]any
+	if err := json.Unmarshal(rawBody, &body); err != nil {
+		t.Fatalf("unmarshal system body: %v", err)
+	}
+	if body["type"] != "system_event" {
+		t.Fatalf("body.type = %v, want system_event", body["type"])
+	}
+	if body["event"] != "group_member_removed" {
+		t.Fatalf("body.event = %v, want group_member_removed", body["event"])
+	}
+	actor, ok := body["actor"].(map[string]any)
+	if !ok {
+		t.Fatalf("body.actor = %#v, want object", body["actor"])
+	}
+	if actor["id"] != actorID {
+		t.Fatalf("actor.id = %v, want %s", actor["id"], actorID)
+	}
+	if actor["display_name"] != actorDisplayName {
+		t.Fatalf("actor.display_name = %v, want %s", actor["display_name"], actorDisplayName)
+	}
+	target, ok := body["target"].(map[string]any)
+	if !ok {
+		t.Fatalf("body.target = %#v, want object", body["target"])
+	}
+	if target["id"] != targetID {
+		t.Fatalf("target.id = %v, want %s", target["id"], targetID)
+	}
+	if target["display_name"] != targetDisplayName {
+		t.Fatalf("target.display_name = %v, want %s", target["display_name"], targetDisplayName)
+	}
+}
+
+func requireMessageRevokedBody(t *testing.T, rawBody json.RawMessage, actorID string, actorDisplayName string) {
+	t.Helper()
+
+	var body map[string]any
+	if err := json.Unmarshal(rawBody, &body); err != nil {
+		t.Fatalf("unmarshal system body: %v", err)
+	}
+	if body["type"] != "system_event" {
+		t.Fatalf("body.type = %v, want system_event", body["type"])
+	}
+	if body["event"] != "message_revoked" {
+		t.Fatalf("body.event = %v, want message_revoked", body["event"])
+	}
+	actor, ok := body["actor"].(map[string]any)
+	if !ok {
+		t.Fatalf("body.actor = %#v, want object", body["actor"])
+	}
+	if actor["id"] != actorID {
+		t.Fatalf("actor.id = %v, want %s", actor["id"], actorID)
+	}
+	if actor["display_name"] != actorDisplayName {
+		t.Fatalf("actor.display_name = %v, want %s", actor["display_name"], actorDisplayName)
+	}
+}
+
 func requireSuccess(t *testing.T, response map[string]any) map[string]any {
 	t.Helper()
 
@@ -766,6 +828,25 @@ func readMessageCreatedEvent(t *testing.T, conn *websocket.Conn) map[string]any 
 	var payload map[string]any
 	if err := json.Unmarshal(envelope.Payload, &payload); err != nil {
 		t.Fatalf("unmarshal message.created payload: %v", err)
+	}
+	message, ok := payload["message"].(map[string]any)
+	if !ok {
+		t.Fatalf("payload.message = %#v, want object", payload["message"])
+	}
+
+	return message
+}
+
+func readMessageUpdatedEvent(t *testing.T, conn *websocket.Conn) map[string]any {
+	t.Helper()
+
+	envelope := readRealtimeEvent(t, conn)
+	if envelope.Kind != realtime.KindEvent || envelope.Event != "message.updated" {
+		t.Fatalf("envelope = %#v, want message.updated event", envelope)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(envelope.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal message.updated payload: %v", err)
 	}
 	message, ok := payload["message"].(map[string]any)
 	if !ok {
@@ -1201,6 +1282,680 @@ func TestAppWebSocketConversationMessagesListRejectsNonMemberApp(t *testing.T) {
 	}
 	if response.Error == nil || response.Error.Code != "forbidden" {
 		t.Fatalf("response error = %#v, want forbidden", response.Error)
+	}
+}
+
+func TestAppWebSocketContactsUsersListReturnsActiveUsersOnly(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	now := time.Date(2026, 7, 8, 10, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	if err := db.Model(&alice).Update("nickname", "Al").Error; err != nil {
+		t.Fatalf("set alice nickname: %v", err)
+	}
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	_ = insertTestUser(t, db, "disabled@example.com", "Disabled", store.UserStatusDisabled, now)
+	app := insertTestApp(t, db, store.App{
+		Name:             "Echo App",
+		Enabled:          true,
+		Visibility:       store.AppVisibilityPublic,
+		ConnectionSecret: "echo-app-secret",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	})
+	appConn := dialAppWebSocket(t, server, app.ID, app.ConnectionSecret)
+
+	response := sendAppRequest(t, appConn, realtime.Envelope{
+		V:      realtime.ProtocolVersion,
+		Kind:   realtime.KindRequest,
+		ID:     "app-contacts-request",
+		Method: appMethodContactsUsersList,
+		Payload: mustMarshalPayloadForTest(t, map[string]any{
+			"keyword": "ali",
+		}),
+	})
+	var payload map[string]any
+	if err := json.Unmarshal(response.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal contacts response: %v", err)
+	}
+	contacts := payload["contacts"].([]any)
+	if len(contacts) != 1 {
+		t.Fatalf("contact count = %d, want 1", len(contacts))
+	}
+	contact := contacts[0].(map[string]any)
+	if contact["id"] != alice.ID {
+		t.Fatalf("contact.id = %v, want %s", contact["id"], alice.ID)
+	}
+	if contact["nickname"] != "Al" {
+		t.Fatalf("contact.nickname = %v, want Al", contact["nickname"])
+	}
+	if contact["type"] != "user" {
+		t.Fatalf("contact.type = %v, want user", contact["type"])
+	}
+
+	response = sendAppRequest(t, appConn, realtime.Envelope{
+		V:       realtime.ProtocolVersion,
+		Kind:    realtime.KindRequest,
+		ID:      "app-contacts-all-request",
+		Method:  appMethodContactsUsersList,
+		Payload: mustMarshalPayloadForTest(t, map[string]any{}),
+	})
+	if err := json.Unmarshal(response.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal all contacts response: %v", err)
+	}
+	contacts = payload["contacts"].([]any)
+	contactIDs := make(map[string]bool, len(contacts))
+	for _, rawContact := range contacts {
+		contact := rawContact.(map[string]any)
+		contactIDs[contact["id"].(string)] = true
+		if contact["type"] != "user" {
+			t.Fatalf("contact.type = %v, want user", contact["type"])
+		}
+	}
+	if !contactIDs[alice.ID] || !contactIDs[bob.ID] {
+		t.Fatalf("contact ids = %#v, want alice and bob", contactIDs)
+	}
+}
+
+func TestAppWebSocketMessageSendAsUserStoresDelegatedByAndPushesDirectMessage(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	now := time.Date(2026, 7, 8, 10, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	app := insertTestApp(t, db, store.App{
+		Name:             "女菩萨",
+		Enabled:          true,
+		Visibility:       store.AppVisibilityPublic,
+		ConnectionSecret: "assistant-secret",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	})
+	aliceCookie := loginAsUser(t, server, alice.Email)
+	bobCookie := loginAsUser(t, server, bob.Email)
+	bobConn := dialClientWebSocket(t, server, bobCookie)
+	if ready := readRealtimeEvent(t, bobConn); ready.Kind != realtime.KindEvent || ready.Event != realtime.EventSystemReady {
+		t.Fatalf("ready envelope = %#v, want system.ready", ready)
+	}
+	appConn := dialAppWebSocket(t, server, app.ID, app.ConnectionSecret)
+
+	createConversationResp, createConversationBody := postJSON(t, server, "/api/client/conversations/apps", map[string]any{
+		"app_id": app.ID,
+	}, aliceCookie)
+	if createConversationResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create app conversation status = %d, want 201, body = %#v", createConversationResp.StatusCode, createConversationBody)
+	}
+	appConversation := requireSuccess(t, createConversationBody)["conversation"].(map[string]any)
+	appConversationID := appConversation["id"].(string)
+
+	triggerResp, triggerBody := postJSON(t, server, "/api/client/conversations/"+appConversationID+"/messages", map[string]any{
+		"client_message_id": "trigger-message-1",
+		"body": map[string]any{
+			"type":    "text",
+			"content": "帮我发给 Bob",
+		},
+	}, aliceCookie)
+	if triggerResp.StatusCode != http.StatusCreated {
+		t.Fatalf("trigger message status = %d, want 201, body = %#v", triggerResp.StatusCode, triggerBody)
+	}
+	triggerMessage := requireSuccess(t, triggerBody)["message"].(map[string]any)
+	triggerEvent := readRealtimeEvent(t, appConn)
+	if triggerEvent.Kind != realtime.KindEvent || triggerEvent.Event != realtime.EventMessageCreated {
+		t.Fatalf("trigger app event = %#v, want message.created", triggerEvent)
+	}
+
+	response := sendAppRequest(t, appConn, realtime.Envelope{
+		V:      realtime.ProtocolVersion,
+		Kind:   realtime.KindRequest,
+		ID:     "app-send-as-user-request",
+		Method: appMethodMessageSendAsUser,
+		Payload: mustMarshalPayloadForTest(t, map[string]any{
+			"actor_user_id":      alice.ID,
+			"target_user_id":     bob.ID,
+			"trigger_message_id": triggerMessage["id"],
+			"message": map[string]any{
+				"type":    "markdown",
+				"content": "**请看这个报告**",
+			},
+		}),
+	})
+	payload := requireAppSendMessageResponsePayload(t, response)
+	conversation := payload["conversation"].(map[string]any)
+	if conversation["type"] != store.ConversationKindDirect {
+		t.Fatalf("conversation.type = %v, want direct", conversation["type"])
+	}
+	message := payload["message"].(map[string]any)
+	messageBody := message["body"].(map[string]any)
+	if messageBody["type"] != messageTypeMarkdown {
+		t.Fatalf("message.body.type = %v, want markdown", messageBody["type"])
+	}
+	sender := message["sender"].(map[string]any)
+	if sender["type"] != store.MessageSenderTypeUser || sender["id"] != alice.ID {
+		t.Fatalf("message.sender = %#v, want Alice user sender", sender)
+	}
+	delegatedBy := message["delegated_by"].(map[string]any)
+	if delegatedBy["type"] != store.MessageSenderTypeApp || delegatedBy["id"] != app.ID || delegatedBy["name"] != app.Name {
+		t.Fatalf("message.delegated_by = %#v, want app delegate", delegatedBy)
+	}
+
+	pushedMessage := readMessageCreatedEvent(t, bobConn)
+	if pushedMessage["id"] != message["id"] {
+		t.Fatalf("pushed message id = %v, want %v", pushedMessage["id"], message["id"])
+	}
+	pushedDelegatedBy := pushedMessage["delegated_by"].(map[string]any)
+	if pushedDelegatedBy["type"] != store.MessageSenderTypeApp || pushedDelegatedBy["id"] != app.ID || pushedDelegatedBy["name"] != app.Name {
+		t.Fatalf("pushed delegated_by = %#v, want app delegate", pushedDelegatedBy)
+	}
+
+	var storedMessage store.Message
+	if err := db.First(&storedMessage, "id = ?", message["id"]).Error; err != nil {
+		t.Fatalf("find stored message: %v", err)
+	}
+	if storedMessage.SenderType != store.MessageSenderTypeUser || storedMessage.SenderID == nil || *storedMessage.SenderID != alice.ID {
+		t.Fatalf("stored sender = %s/%v, want Alice", storedMessage.SenderType, storedMessage.SenderID)
+	}
+	if storedMessage.DelegatedByType == nil || *storedMessage.DelegatedByType != store.MessageSenderTypeApp {
+		t.Fatalf("stored delegated_by_type = %v, want app", storedMessage.DelegatedByType)
+	}
+	if storedMessage.DelegatedByID == nil || *storedMessage.DelegatedByID != app.ID {
+		t.Fatalf("stored delegated_by_id = %v, want %s", storedMessage.DelegatedByID, app.ID)
+	}
+
+	historyResp, historyBody := getJSON(t, server, "/api/client/conversations/"+conversation["id"].(string)+"/messages", bobCookie)
+	if historyResp.StatusCode != http.StatusOK {
+		t.Fatalf("history status = %d, want 200, body = %#v", historyResp.StatusCode, historyBody)
+	}
+	messages := requireMessages(t, requireSuccess(t, historyBody))
+	historyMessage := messages[len(messages)-1].(map[string]any)
+	historyDelegatedBy := historyMessage["delegated_by"].(map[string]any)
+	if historyDelegatedBy["type"] != store.MessageSenderTypeApp || historyDelegatedBy["name"] != app.Name {
+		t.Fatalf("history delegated_by = %#v, want app delegate", historyDelegatedBy)
+	}
+}
+
+func TestAppWebSocketMessageSendAsUserRejectsSpoofedActor(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	now := time.Date(2026, 7, 8, 10, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	carol := insertTestUser(t, db, "carol@example.com", "Carol", store.UserStatusActive, now)
+	app := insertTestApp(t, db, store.App{
+		Name:             "女菩萨",
+		Enabled:          true,
+		Visibility:       store.AppVisibilityPublic,
+		ConnectionSecret: "assistant-secret",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	})
+	aliceCookie := loginAsUser(t, server, alice.Email)
+	appConn := dialAppWebSocket(t, server, app.ID, app.ConnectionSecret)
+
+	createConversationResp, createConversationBody := postJSON(t, server, "/api/client/conversations/apps", map[string]any{
+		"app_id": app.ID,
+	}, aliceCookie)
+	if createConversationResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create app conversation status = %d, want 201, body = %#v", createConversationResp.StatusCode, createConversationBody)
+	}
+	appConversation := requireSuccess(t, createConversationBody)["conversation"].(map[string]any)
+	triggerResp, triggerBody := postJSON(t, server, "/api/client/conversations/"+appConversation["id"].(string)+"/messages", map[string]any{
+		"client_message_id": "trigger-message-1",
+		"body": map[string]any{
+			"type":    "text",
+			"content": "帮我发给 Bob",
+		},
+	}, aliceCookie)
+	if triggerResp.StatusCode != http.StatusCreated {
+		t.Fatalf("trigger message status = %d, want 201, body = %#v", triggerResp.StatusCode, triggerBody)
+	}
+	triggerMessage := requireSuccess(t, triggerBody)["message"].(map[string]any)
+	triggerEvent := readRealtimeEvent(t, appConn)
+	if triggerEvent.Kind != realtime.KindEvent || triggerEvent.Event != realtime.EventMessageCreated {
+		t.Fatalf("trigger app event = %#v, want message.created", triggerEvent)
+	}
+
+	request := realtime.Envelope{
+		V:      realtime.ProtocolVersion,
+		Kind:   realtime.KindRequest,
+		ID:     "app-send-as-user-spoofed",
+		Method: appMethodMessageSendAsUser,
+		Payload: mustMarshalPayloadForTest(t, map[string]any{
+			"actor_user_id":      bob.ID,
+			"target_user_id":     carol.ID,
+			"trigger_message_id": triggerMessage["id"],
+			"message": map[string]any{
+				"type":    "text",
+				"content": "伪造 Bob 发送",
+			},
+		}),
+	}
+	if err := appConn.WriteJSON(request); err != nil {
+		t.Fatalf("WriteJSON() error = %v", err)
+	}
+	response := readRealtimeEvent(t, appConn)
+	if response.Kind != realtime.KindResponse || response.ReplyTo != request.ID {
+		t.Fatalf("response = %#v, want matching response", response)
+	}
+	if response.OK == nil || *response.OK {
+		t.Fatalf("response ok = %#v, want false", response.OK)
+	}
+	if response.Error == nil || response.Error.Code != "forbidden" {
+		t.Fatalf("response error = %#v, want forbidden", response.Error)
+	}
+}
+
+func TestAppWebSocketGroupConversationCreateUsesTriggeringUser(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	now := time.Date(2026, 7, 8, 10, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	carol := insertTestUser(t, db, "carol@example.com", "Carol", store.UserStatusActive, now)
+	app := insertTestApp(t, db, store.App{
+		Name:             "女菩萨",
+		Enabled:          true,
+		Visibility:       store.AppVisibilityPublic,
+		ConnectionSecret: "assistant-secret",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	})
+	aliceCookie := loginAsUser(t, server, alice.Email)
+	appConn := dialAppWebSocket(t, server, app.ID, app.ConnectionSecret)
+
+	createConversationResp, createConversationBody := postJSON(t, server, "/api/client/conversations/apps", map[string]any{
+		"app_id": app.ID,
+	}, aliceCookie)
+	if createConversationResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create app conversation status = %d, want 201, body = %#v", createConversationResp.StatusCode, createConversationBody)
+	}
+	appConversation := requireSuccess(t, createConversationBody)["conversation"].(map[string]any)
+	triggerResp, triggerBody := postJSON(t, server, "/api/client/conversations/"+appConversation["id"].(string)+"/messages", map[string]any{
+		"client_message_id": "trigger-create-group-1",
+		"body": map[string]any{
+			"type":    "text",
+			"content": "帮我建一个项目讨论组，拉 Bob 和 Carol",
+		},
+	}, aliceCookie)
+	if triggerResp.StatusCode != http.StatusCreated {
+		t.Fatalf("trigger message status = %d, want 201, body = %#v", triggerResp.StatusCode, triggerBody)
+	}
+	triggerMessage := requireSuccess(t, triggerBody)["message"].(map[string]any)
+	triggerEvent := readRealtimeEvent(t, appConn)
+	if triggerEvent.Kind != realtime.KindEvent || triggerEvent.Event != realtime.EventMessageCreated {
+		t.Fatalf("trigger app event = %#v, want message.created", triggerEvent)
+	}
+
+	response := sendAppRequest(t, appConn, realtime.Envelope{
+		V:      realtime.ProtocolVersion,
+		Kind:   realtime.KindRequest,
+		ID:     "app-create-group-request",
+		Method: "group_conversations.create",
+		Payload: mustMarshalPayloadForTest(t, map[string]any{
+			"actor_user_id":      alice.ID,
+			"trigger_message_id": triggerMessage["id"],
+			"name":               " 项目讨论组 ",
+			"member_ids":         []string{bob.ID, carol.ID, bob.ID},
+		}),
+	})
+	var payload map[string]any
+	if err := json.Unmarshal(response.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal group create response: %v", err)
+	}
+	conversation := payload["conversation"].(map[string]any)
+	if conversation["type"] != store.ConversationKindGroup {
+		t.Fatalf("conversation.type = %v, want group", conversation["type"])
+	}
+	if conversation["name"] != "项目讨论组" {
+		t.Fatalf("conversation.name = %v, want trimmed group name", conversation["name"])
+	}
+	if conversation["created_by_user_id"] != alice.ID {
+		t.Fatalf("conversation.created_by_user_id = %v, want %s", conversation["created_by_user_id"], alice.ID)
+	}
+	if conversation["member_count"] != float64(3) {
+		t.Fatalf("conversation.member_count = %v, want 3", conversation["member_count"])
+	}
+	message := payload["message"].(map[string]any)
+	if message["summary"] != "Alice 邀请 Bob,Carol 加入群聊" {
+		t.Fatalf("message.summary = %v, want invite summary", message["summary"])
+	}
+
+	var storedConversation store.Conversation
+	if err := db.First(&storedConversation, "id = ?", conversation["id"]).Error; err != nil {
+		t.Fatalf("find stored conversation: %v", err)
+	}
+	if storedConversation.CreatedByUserID != alice.ID || storedConversation.Kind != store.ConversationKindGroup {
+		t.Fatalf("stored conversation = %#v, want Alice group", storedConversation)
+	}
+	var members []store.ConversationMember
+	if err := db.Where("conversation_id = ?", storedConversation.ID).Find(&members).Error; err != nil {
+		t.Fatalf("find group members: %v", err)
+	}
+	if len(members) != 3 {
+		t.Fatalf("member count = %d, want 3", len(members))
+	}
+}
+
+func TestAppWebSocketGroupConversationMembersAddUsesTriggeringUser(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	now := time.Date(2026, 7, 8, 10, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	carol := insertTestUser(t, db, "carol@example.com", "Carol", store.UserStatusActive, now)
+	dave := insertTestUser(t, db, "dave@example.com", "Dave", store.UserStatusActive, now)
+	group := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindGroup,
+		lastMessageSeq:  2,
+		memberIDs:       []string{alice.ID, bob.ID},
+		name:            "项目讨论组",
+		now:             now,
+	})
+	setTestConversationMemberLastReadSeq(t, db, group.ID, alice.ID, 2)
+	app := insertTestApp(t, db, store.App{
+		Name:             "女菩萨",
+		Enabled:          true,
+		Visibility:       store.AppVisibilityPublic,
+		ConnectionSecret: "assistant-secret",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	})
+	aliceCookie := loginAsUser(t, server, alice.Email)
+	appConn := dialAppWebSocket(t, server, app.ID, app.ConnectionSecret)
+
+	createConversationResp, createConversationBody := postJSON(t, server, "/api/client/conversations/apps", map[string]any{
+		"app_id": app.ID,
+	}, aliceCookie)
+	if createConversationResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create app conversation status = %d, want 201, body = %#v", createConversationResp.StatusCode, createConversationBody)
+	}
+	appConversation := requireSuccess(t, createConversationBody)["conversation"].(map[string]any)
+	triggerResp, triggerBody := postJSON(t, server, "/api/client/conversations/"+appConversation["id"].(string)+"/messages", map[string]any{
+		"client_message_id": "trigger-add-members-1",
+		"body": map[string]any{
+			"type":    "text",
+			"content": "把 Carol 和 Dave 拉进项目讨论组",
+		},
+	}, aliceCookie)
+	if triggerResp.StatusCode != http.StatusCreated {
+		t.Fatalf("trigger message status = %d, want 201, body = %#v", triggerResp.StatusCode, triggerBody)
+	}
+	triggerMessage := requireSuccess(t, triggerBody)["message"].(map[string]any)
+	triggerEvent := readRealtimeEvent(t, appConn)
+	if triggerEvent.Kind != realtime.KindEvent || triggerEvent.Event != realtime.EventMessageCreated {
+		t.Fatalf("trigger app event = %#v, want message.created", triggerEvent)
+	}
+
+	response := sendAppRequest(t, appConn, realtime.Envelope{
+		V:      realtime.ProtocolVersion,
+		Kind:   realtime.KindRequest,
+		ID:     "app-add-group-members-request",
+		Method: "group_conversations.members.add",
+		Payload: mustMarshalPayloadForTest(t, map[string]any{
+			"actor_user_id":      alice.ID,
+			"trigger_message_id": triggerMessage["id"],
+			"conversation_id":    group.ID,
+			"member_ids":         []string{carol.ID, dave.ID},
+		}),
+	})
+	var payload map[string]any
+	if err := json.Unmarshal(response.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal members add response: %v", err)
+	}
+	conversation := payload["conversation"].(map[string]any)
+	if conversation["id"] != group.ID {
+		t.Fatalf("conversation.id = %v, want %s", conversation["id"], group.ID)
+	}
+	if conversation["member_count"] != float64(4) {
+		t.Fatalf("conversation.member_count = %v, want 4", conversation["member_count"])
+	}
+	message := payload["message"].(map[string]any)
+	if message["summary"] != "Alice 邀请 Carol,Dave 加入群聊" {
+		t.Fatalf("message.summary = %v, want invite summary", message["summary"])
+	}
+
+	var members []store.ConversationMember
+	if err := db.Where("conversation_id = ?", group.ID).Find(&members).Error; err != nil {
+		t.Fatalf("find group members: %v", err)
+	}
+	if len(members) != 4 {
+		t.Fatalf("member count = %d, want 4", len(members))
+	}
+	for _, member := range members {
+		if member.MemberID == carol.ID || member.MemberID == dave.ID {
+			if member.HistoryVisibleFromSeq != 3 {
+				t.Fatalf("new member %s history_visible_from_seq = %d, want 3", member.MemberID, member.HistoryVisibleFromSeq)
+			}
+		}
+	}
+}
+
+func TestAppWebSocketGroupConversationsListReturnsTriggeringUserGroups(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	now := time.Date(2026, 7, 8, 10, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	carol := insertTestUser(t, db, "carol@example.com", "Carol", store.UserStatusActive, now)
+	matchedGroupLastMessageAt := now.Add(-10 * time.Minute)
+	matchedGroup := insertTestConversation(t, db, testConversationInput{
+		createdByUserID:    alice.ID,
+		kind:               store.ConversationKindGroup,
+		lastMessageAt:      &matchedGroupLastMessageAt,
+		lastMessageSeq:     7,
+		lastMessageSummary: "最近的项目消息",
+		memberIDs:          []string{alice.ID, bob.ID},
+		name:               "项目讨论组",
+		now:                now.Add(-2 * time.Hour),
+	})
+	_ = insertTestConversation(t, db, testConversationInput{
+		createdByUserID:    carol.ID,
+		kind:               store.ConversationKindGroup,
+		lastMessageSummary: "不应该看到",
+		memberIDs:          []string{carol.ID},
+		name:               "项目旁观组",
+		now:                now.Add(-90 * time.Minute),
+	})
+	_ = insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindGroup,
+		memberIDs:       []string{alice.ID, carol.ID},
+		name:            "其他小组",
+		now:             now.Add(-80 * time.Minute),
+	})
+	app := insertTestApp(t, db, store.App{
+		Name:             "女菩萨",
+		Enabled:          true,
+		Visibility:       store.AppVisibilityPublic,
+		ConnectionSecret: "assistant-secret",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	})
+	aliceCookie := loginAsUser(t, server, alice.Email)
+	appConn := dialAppWebSocket(t, server, app.ID, app.ConnectionSecret)
+
+	createConversationResp, createConversationBody := postJSON(t, server, "/api/client/conversations/apps", map[string]any{
+		"app_id": app.ID,
+	}, aliceCookie)
+	if createConversationResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create app conversation status = %d, want 201, body = %#v", createConversationResp.StatusCode, createConversationBody)
+	}
+	appConversation := requireSuccess(t, createConversationBody)["conversation"].(map[string]any)
+	triggerResp, triggerBody := postJSON(t, server, "/api/client/conversations/"+appConversation["id"].(string)+"/messages", map[string]any{
+		"client_message_id": "trigger-list-groups-1",
+		"body": map[string]any{
+			"type":    "text",
+			"content": "看看我有哪些项目群",
+		},
+	}, aliceCookie)
+	if triggerResp.StatusCode != http.StatusCreated {
+		t.Fatalf("trigger message status = %d, want 201, body = %#v", triggerResp.StatusCode, triggerBody)
+	}
+	triggerMessage := requireSuccess(t, triggerBody)["message"].(map[string]any)
+	triggerEvent := readRealtimeEvent(t, appConn)
+	if triggerEvent.Kind != realtime.KindEvent || triggerEvent.Event != realtime.EventMessageCreated {
+		t.Fatalf("trigger app event = %#v, want message.created", triggerEvent)
+	}
+
+	response := sendAppRequest(t, appConn, realtime.Envelope{
+		V:      realtime.ProtocolVersion,
+		Kind:   realtime.KindRequest,
+		ID:     "app-list-groups-request",
+		Method: "group_conversations.list",
+		Payload: mustMarshalPayloadForTest(t, map[string]any{
+			"actor_user_id":      alice.ID,
+			"trigger_message_id": triggerMessage["id"],
+			"keyword":            "项目",
+		}),
+	})
+	var payload map[string]any
+	if err := json.Unmarshal(response.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal groups list response: %v", err)
+	}
+	groups := payload["groups"].([]any)
+	if len(groups) != 1 {
+		t.Fatalf("group count = %d, want 1: %#v", len(groups), groups)
+	}
+	group := groups[0].(map[string]any)
+	if group["id"] != matchedGroup.ID {
+		t.Fatalf("group.id = %v, want %s", group["id"], matchedGroup.ID)
+	}
+	if group["type"] != store.ConversationKindGroup {
+		t.Fatalf("group.type = %v, want group", group["type"])
+	}
+	if group["name"] != "项目讨论组" {
+		t.Fatalf("group.name = %v, want 项目讨论组", group["name"])
+	}
+	if group["member_count"] != float64(2) {
+		t.Fatalf("group.member_count = %v, want 2", group["member_count"])
+	}
+	if group["last_message_summary"] != "最近的项目消息" {
+		t.Fatalf("group.last_message_summary = %v, want 最近的项目消息", group["last_message_summary"])
+	}
+}
+
+func TestAppWebSocketMessageSendAsUserCanSendToGroupConversation(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	now := time.Date(2026, 7, 8, 10, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	group := insertTestConversation(t, db, testConversationInput{
+		createdByUserID:    alice.ID,
+		kind:               store.ConversationKindGroup,
+		lastMessageSeq:     3,
+		lastMessageSummary: "旧群消息",
+		memberIDs:          []string{alice.ID, bob.ID},
+		name:               "项目讨论组",
+		now:                now,
+	})
+	app := insertTestApp(t, db, store.App{
+		Name:             "女菩萨",
+		Enabled:          true,
+		Visibility:       store.AppVisibilityPublic,
+		ConnectionSecret: "assistant-secret",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	})
+	aliceCookie := loginAsUser(t, server, alice.Email)
+	bobCookie := loginAsUser(t, server, bob.Email)
+	bobConn := dialClientWebSocket(t, server, bobCookie)
+	if ready := readRealtimeEvent(t, bobConn); ready.Kind != realtime.KindEvent || ready.Event != realtime.EventSystemReady {
+		t.Fatalf("ready envelope = %#v, want system.ready", ready)
+	}
+	appConn := dialAppWebSocket(t, server, app.ID, app.ConnectionSecret)
+
+	createConversationResp, createConversationBody := postJSON(t, server, "/api/client/conversations/apps", map[string]any{
+		"app_id": app.ID,
+	}, aliceCookie)
+	if createConversationResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create app conversation status = %d, want 201, body = %#v", createConversationResp.StatusCode, createConversationBody)
+	}
+	appConversation := requireSuccess(t, createConversationBody)["conversation"].(map[string]any)
+	triggerResp, triggerBody := postJSON(t, server, "/api/client/conversations/"+appConversation["id"].(string)+"/messages", map[string]any{
+		"client_message_id": "trigger-send-group-1",
+		"body": map[string]any{
+			"type":    "text",
+			"content": "替我发到项目讨论组",
+		},
+	}, aliceCookie)
+	if triggerResp.StatusCode != http.StatusCreated {
+		t.Fatalf("trigger message status = %d, want 201, body = %#v", triggerResp.StatusCode, triggerBody)
+	}
+	triggerMessage := requireSuccess(t, triggerBody)["message"].(map[string]any)
+	triggerEvent := readRealtimeEvent(t, appConn)
+	if triggerEvent.Kind != realtime.KindEvent || triggerEvent.Event != realtime.EventMessageCreated {
+		t.Fatalf("trigger app event = %#v, want message.created", triggerEvent)
+	}
+
+	response := sendAppRequest(t, appConn, realtime.Envelope{
+		V:      realtime.ProtocolVersion,
+		Kind:   realtime.KindRequest,
+		ID:     "app-send-as-user-group-request",
+		Method: appMethodMessageSendAsUser,
+		Payload: mustMarshalPayloadForTest(t, map[string]any{
+			"actor_user_id":      alice.ID,
+			"trigger_message_id": triggerMessage["id"],
+			"target": map[string]any{
+				"type":            "group",
+				"conversation_id": group.ID,
+			},
+			"message": map[string]any{
+				"type":    "markdown",
+				"content": "**群里同步一下**",
+			},
+		}),
+	})
+	payload := requireAppSendMessageResponsePayload(t, response)
+	conversation := payload["conversation"].(map[string]any)
+	if conversation["id"] != group.ID || conversation["type"] != store.ConversationKindGroup {
+		t.Fatalf("conversation = %#v, want group %s", conversation, group.ID)
+	}
+	message := payload["message"].(map[string]any)
+	messageBody := message["body"].(map[string]any)
+	if messageBody["type"] != messageTypeMarkdown || messageBody["content"] != "**群里同步一下**" {
+		t.Fatalf("message.body = %#v, want markdown group content", messageBody)
+	}
+	sender := message["sender"].(map[string]any)
+	if sender["type"] != store.MessageSenderTypeUser || sender["id"] != alice.ID {
+		t.Fatalf("message.sender = %#v, want Alice user sender", sender)
+	}
+	delegatedBy := message["delegated_by"].(map[string]any)
+	if delegatedBy["type"] != store.MessageSenderTypeApp || delegatedBy["id"] != app.ID || delegatedBy["name"] != app.Name {
+		t.Fatalf("message.delegated_by = %#v, want app delegate", delegatedBy)
+	}
+
+	pushedMessage := readMessageCreatedEvent(t, bobConn)
+	if pushedMessage["id"] != message["id"] {
+		t.Fatalf("pushed message id = %v, want %v", pushedMessage["id"], message["id"])
+	}
+	pushedDelegatedBy := pushedMessage["delegated_by"].(map[string]any)
+	if pushedDelegatedBy["type"] != store.MessageSenderTypeApp || pushedDelegatedBy["id"] != app.ID || pushedDelegatedBy["name"] != app.Name {
+		t.Fatalf("pushed delegated_by = %#v, want app delegate", pushedDelegatedBy)
+	}
+
+	var storedMessage store.Message
+	if err := db.First(&storedMessage, "id = ?", message["id"]).Error; err != nil {
+		t.Fatalf("find stored message: %v", err)
+	}
+	if storedMessage.ConversationID != group.ID || storedMessage.Seq != 4 {
+		t.Fatalf("stored message conversation/seq = %s/%d, want %s/4", storedMessage.ConversationID, storedMessage.Seq, group.ID)
+	}
+	if storedMessage.SenderType != store.MessageSenderTypeUser || storedMessage.SenderID == nil || *storedMessage.SenderID != alice.ID {
+		t.Fatalf("stored sender = %s/%v, want Alice", storedMessage.SenderType, storedMessage.SenderID)
+	}
+	if storedMessage.DelegatedByType == nil || *storedMessage.DelegatedByType != store.MessageSenderTypeApp {
+		t.Fatalf("stored delegated_by_type = %v, want app", storedMessage.DelegatedByType)
+	}
+	if storedMessage.DelegatedByID == nil || *storedMessage.DelegatedByID != app.ID {
+		t.Fatalf("stored delegated_by_id = %v, want %s", storedMessage.DelegatedByID, app.ID)
 	}
 }
 
@@ -2242,6 +2997,58 @@ func TestCreateConversationTextMessageReturnsExistingForSameClientMessageID(t *t
 	}
 }
 
+func TestCreateConversationTextMessageDoesNotLogRecordNotFoundForFreshClientMessageID(t *testing.T) {
+	var dbLogs bytes.Buffer
+	db, err := gorm.Open(sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"), &gorm.Config{
+		Logger: gormlogger.New(log.New(&dbLogs, "", 0), gormlogger.Config{LogLevel: gormlogger.Info}),
+	})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	if err := migrateTestSchema(db); err != nil {
+		t.Fatalf("migrate test schema: %v", err)
+	}
+
+	router := NewRouterWithRealtimeOptions(db, config.Config{
+		Server: config.ServerConfig{
+			Addr:           ":20080",
+			ClientHostname: "client.example.test",
+			AdminHostname:  "admin.example.test",
+		},
+		Database: config.DatabaseConfig{DSN: "sqlite-test"},
+		Admin:    config.AdminConfig{Password: "admin-secret"},
+		Apps:     config.AppsConfig{AIAssistantSecret: "test-ai-assistant-secret"},
+	}, realtime.Options{})
+	server := httptest.NewServer(router)
+	defer server.Close()
+
+	now := time.Date(2026, 7, 3, 9, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	conversation := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindDirect,
+		memberIDs:       []string{alice.ID, bob.ID},
+		now:             now,
+	})
+	cookie := loginAsUser(t, server, alice.Email)
+	dbLogs.Reset()
+
+	resp, body := postJSON(t, server, "/api/client/conversations/"+conversation.ID+"/messages", map[string]any{
+		"client_message_id": "fresh-client-message-1",
+		"body": map[string]any{
+			"type":    "text",
+			"content": "第一条",
+		},
+	}, cookie)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body = %#v", resp.StatusCode, body)
+	}
+	if strings.Contains(dbLogs.String(), "record not found") {
+		t.Fatalf("db logs contain record not found for fresh message:\n%s", dbLogs.String())
+	}
+}
+
 func TestCreateUserMessageTimestampsNewMessageAfterTransactionReads(t *testing.T) {
 	server, db := newTestRouter(t)
 	defer server.Close()
@@ -2646,6 +3453,442 @@ func TestCreateConversationTextMessagePushesMessageCreatedToConversationMembers(
 	}
 }
 
+func TestRevokeOwnConversationMessageMarksOriginalAndCreatesSystemMessage(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+	now := time.Date(2026, 7, 8, 10, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	conversation := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindDirect,
+		memberIDs:       []string{alice.ID, bob.ID},
+		now:             now,
+	})
+	original := insertTestMessage(t, db, conversation.ID, alice.ID, 1, "这条消息稍后撤回", now)
+	if err := db.Model(&store.Conversation{}).Where("id = ?", conversation.ID).Updates(map[string]any{
+		"last_message_at":      original.CreatedAt,
+		"last_message_id":      original.ID,
+		"last_message_seq":     original.Seq,
+		"last_message_summary": original.Summary,
+	}).Error; err != nil {
+		t.Fatalf("update conversation last message: %v", err)
+	}
+
+	bobCookie := loginAsUser(t, server, bob.Email)
+	bobConn := dialClientWebSocket(t, server, bobCookie)
+	if ready := readRealtimeEvent(t, bobConn); ready.Kind != realtime.KindEvent || ready.Event != realtime.EventSystemReady {
+		t.Fatalf("ready envelope = %#v, want system.ready", ready)
+	}
+
+	resp, body := postJSON(t, server, "/api/client/conversations/"+conversation.ID+"/messages/"+original.ID+"/revoke", map[string]any{}, loginAsUser(t, server, alice.Email))
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("revoke status = %d, want 200, body = %#v", resp.StatusCode, body)
+	}
+	data := requireSuccess(t, body)
+	revokedMessage := data["message"].(map[string]any)
+	if revokedMessage["id"] != original.ID {
+		t.Fatalf("revoked message id = %v, want %s", revokedMessage["id"], original.ID)
+	}
+	if _, ok := revokedMessage["body"]; ok {
+		t.Fatalf("revoked message body = %#v, want omitted", revokedMessage["body"])
+	}
+	if revokedMessage["revoked_at"] == "" || revokedMessage["revoked_at"] == nil {
+		t.Fatalf("revoked_at = %#v, want set", revokedMessage["revoked_at"])
+	}
+	if revokedMessage["revoked_by_user_id"] != alice.ID {
+		t.Fatalf("revoked_by_user_id = %v, want %s", revokedMessage["revoked_by_user_id"], alice.ID)
+	}
+	systemMessage := data["system_message"].(map[string]any)
+	if systemMessage["seq"] != float64(2) {
+		t.Fatalf("system message seq = %v, want 2", systemMessage["seq"])
+	}
+	if systemMessage["sender"].(map[string]any)["type"] != store.MessageSenderTypeSystem {
+		t.Fatalf("system message sender = %#v, want system", systemMessage["sender"])
+	}
+	systemBody := systemMessage["body"].(map[string]any)
+	if systemBody["type"] != "system_event" || systemBody["event"] != "message_revoked" {
+		t.Fatalf("system message body = %#v, want message_revoked event", systemBody)
+	}
+	if systemBody["actor"].(map[string]any)["display_name"] != "Alice" {
+		t.Fatalf("system actor = %#v, want Alice", systemBody["actor"])
+	}
+
+	var revokedRow struct {
+		RevokedAt       *time.Time
+		RevokedByUserID *string
+	}
+	if err := db.Raw("SELECT revoked_at, revoked_by_user_id FROM messages WHERE id = ?", original.ID).Scan(&revokedRow).Error; err != nil {
+		t.Fatalf("find revoked message row: %v", err)
+	}
+	if revokedRow.RevokedAt == nil {
+		t.Fatal("stored revoked_at = nil, want set")
+	}
+	if revokedRow.RevokedByUserID == nil || *revokedRow.RevokedByUserID != alice.ID {
+		t.Fatalf("stored revoked_by_user_id = %v, want %s", revokedRow.RevokedByUserID, alice.ID)
+	}
+
+	var storedSystemMessage store.Message
+	if err := db.First(&storedSystemMessage, "conversation_id = ? AND seq = ?", conversation.ID, int64(2)).Error; err != nil {
+		t.Fatalf("find stored system message: %v", err)
+	}
+	if storedSystemMessage.Summary != "Alice 撤回了一条消息" {
+		t.Fatalf("stored system summary = %v, want Alice 撤回了一条消息", storedSystemMessage.Summary)
+	}
+	requireMessageRevokedBody(t, storedSystemMessage.Body, alice.ID, "Alice")
+
+	updatedEventMessage := readMessageUpdatedEvent(t, bobConn)
+	if updatedEventMessage["id"] != original.ID {
+		t.Fatalf("updated event message id = %v, want %s", updatedEventMessage["id"], original.ID)
+	}
+	if _, ok := updatedEventMessage["body"]; ok {
+		t.Fatalf("updated event body = %#v, want omitted", updatedEventMessage["body"])
+	}
+	createdEventMessage := readMessageCreatedEvent(t, bobConn)
+	if createdEventMessage["id"] != storedSystemMessage.ID {
+		t.Fatalf("created event message id = %v, want %s", createdEventMessage["id"], storedSystemMessage.ID)
+	}
+
+	historyResp, historyBody := getJSON(t, server, "/api/client/conversations/"+conversation.ID+"/messages", loginAsUser(t, server, alice.Email))
+	if historyResp.StatusCode != http.StatusOK {
+		t.Fatalf("history status = %d, want 200, body = %#v", historyResp.StatusCode, historyBody)
+	}
+	messages := requireMessages(t, requireSuccess(t, historyBody))
+	if len(messages) != 2 {
+		t.Fatalf("history message count = %d, want 2", len(messages))
+	}
+	historyOriginal := messages[0].(map[string]any)
+	if historyOriginal["id"] != original.ID {
+		t.Fatalf("history original id = %v, want %s", historyOriginal["id"], original.ID)
+	}
+	if _, ok := historyOriginal["body"]; ok {
+		t.Fatalf("history original body = %#v, want omitted", historyOriginal["body"])
+	}
+	if historyOriginal["revoked_by_user_id"] != alice.ID {
+		t.Fatalf("history revoked_by_user_id = %v, want %s", historyOriginal["revoked_by_user_id"], alice.ID)
+	}
+}
+
+func TestGroupAdminCanRevokeAnotherMembersMessage(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+	now := time.Date(2026, 7, 8, 10, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	carol := insertTestUser(t, db, "carol@example.com", "Carol", store.UserStatusActive, now)
+	conversation := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindGroup,
+		memberIDs:       []string{alice.ID, bob.ID, carol.ID},
+		name:            "产品讨论组",
+		now:             now,
+	})
+	if err := db.Model(&store.ConversationMember{}).
+		Where("conversation_id = ? AND member_type = ? AND member_id = ?", conversation.ID, store.ConversationMemberTypeUser, bob.ID).
+		Update("role", store.ConversationMemberRoleAdmin).Error; err != nil {
+		t.Fatalf("set bob admin: %v", err)
+	}
+	original := insertTestMessage(t, db, conversation.ID, carol.ID, 1, "需要管理员撤回", now)
+	if err := db.Model(&store.Conversation{}).Where("id = ?", conversation.ID).Updates(map[string]any{
+		"last_message_at":      original.CreatedAt,
+		"last_message_id":      original.ID,
+		"last_message_seq":     original.Seq,
+		"last_message_summary": original.Summary,
+	}).Error; err != nil {
+		t.Fatalf("update conversation last message: %v", err)
+	}
+
+	resp, body := postJSON(t, server, "/api/client/conversations/"+conversation.ID+"/messages/"+original.ID+"/revoke", map[string]any{}, loginAsUser(t, server, bob.Email))
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("revoke status = %d, want 200, body = %#v", resp.StatusCode, body)
+	}
+	data := requireSuccess(t, body)
+	revokedMessage := data["message"].(map[string]any)
+	if revokedMessage["revoked_by_user_id"] != bob.ID {
+		t.Fatalf("revoked_by_user_id = %v, want %s", revokedMessage["revoked_by_user_id"], bob.ID)
+	}
+	systemMessage := data["system_message"].(map[string]any)
+	systemBody := systemMessage["body"].(map[string]any)
+	if systemBody["actor"].(map[string]any)["display_name"] != "Bob" {
+		t.Fatalf("system actor = %#v, want Bob", systemBody["actor"])
+	}
+
+	var storedSystemMessage store.Message
+	if err := db.First(&storedSystemMessage, "conversation_id = ? AND seq = ?", conversation.ID, int64(2)).Error; err != nil {
+		t.Fatalf("find stored system message: %v", err)
+	}
+	if storedSystemMessage.Summary != "Bob 撤回了一条消息" {
+		t.Fatalf("stored system summary = %v, want Bob 撤回了一条消息", storedSystemMessage.Summary)
+	}
+	requireMessageRevokedBody(t, storedSystemMessage.Body, bob.ID, "Bob")
+}
+
+func TestRevokeConversationMessageRejectsUnauthorizedUsers(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+	now := time.Date(2026, 7, 8, 10, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	carol := insertTestUser(t, db, "carol@example.com", "Carol", store.UserStatusActive, now)
+	direct := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindDirect,
+		memberIDs:       []string{alice.ID, bob.ID},
+		now:             now,
+	})
+	bobDirectMessage := insertTestMessage(t, db, direct.ID, bob.ID, 1, "Alice 不能撤回", now)
+
+	directResp, directBody := postJSON(t, server, "/api/client/conversations/"+direct.ID+"/messages/"+bobDirectMessage.ID+"/revoke", map[string]any{}, loginAsUser(t, server, alice.Email))
+	if directResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("direct revoke status = %d, want 403, body = %#v", directResp.StatusCode, directBody)
+	}
+	requireError(t, directBody, "forbidden")
+
+	group := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindGroup,
+		memberIDs:       []string{alice.ID, bob.ID, carol.ID},
+		name:            "产品讨论组",
+		now:             now,
+	})
+	bobGroupMessage := insertTestMessage(t, db, group.ID, bob.ID, 1, "Carol 不能撤回", now)
+
+	groupResp, groupBody := postJSON(t, server, "/api/client/conversations/"+group.ID+"/messages/"+bobGroupMessage.ID+"/revoke", map[string]any{}, loginAsUser(t, server, carol.Email))
+	if groupResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("group revoke status = %d, want 403, body = %#v", groupResp.StatusCode, groupBody)
+	}
+	requireError(t, groupBody, "forbidden")
+}
+
+func TestCreateConversationMessageStoresReplyToAndReturnsReference(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+	now := time.Date(2026, 7, 8, 9, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	conversation := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindDirect,
+		memberIDs:       []string{alice.ID, bob.ID},
+		now:             now,
+	})
+
+	quotedResp, quotedBody := postJSON(t, server, "/api/client/conversations/"+conversation.ID+"/messages", map[string]any{
+		"client_message_id": "client-message-quoted",
+		"body": map[string]any{
+			"type":    "text",
+			"content": "这条消息需要被引用",
+		},
+	}, loginAsUser(t, server, bob.Email))
+	if quotedResp.StatusCode != http.StatusCreated {
+		t.Fatalf("quoted status = %d, want 201, body = %#v", quotedResp.StatusCode, quotedBody)
+	}
+	quotedMessage := requireSuccess(t, quotedBody)["message"].(map[string]any)
+	quotedMessageID := quotedMessage["id"].(string)
+
+	resp, body := postJSON(t, server, "/api/client/conversations/"+conversation.ID+"/messages", map[string]any{
+		"client_message_id":   "client-message-reply",
+		"reply_to_message_id": quotedMessageID,
+		"body": map[string]any{
+			"type":    "markdown",
+			"content": "收到，我来处理",
+		},
+	}, loginAsUser(t, server, alice.Email))
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body = %#v", resp.StatusCode, body)
+	}
+	message := requireSuccess(t, body)["message"].(map[string]any)
+	if message["reply_to_message_id"] != quotedMessageID {
+		t.Fatalf("message.reply_to_message_id = %v, want %s", message["reply_to_message_id"], quotedMessageID)
+	}
+	replyTo := message["reply_to"].(map[string]any)
+	if replyTo["id"] != quotedMessageID {
+		t.Fatalf("reply_to.id = %v, want %s", replyTo["id"], quotedMessageID)
+	}
+	if replyTo["summary"] != "这条消息需要被引用" {
+		t.Fatalf("reply_to.summary = %v, want quoted summary", replyTo["summary"])
+	}
+	sender := replyTo["sender"].(map[string]any)
+	if sender["type"] != store.MessageSenderTypeUser || sender["id"] != bob.ID || sender["name"] != "Bob" {
+		t.Fatalf("reply_to.sender = %#v, want Bob user sender", sender)
+	}
+
+	var storedMessage store.Message
+	if err := db.First(&storedMessage, "id = ?", message["id"]).Error; err != nil {
+		t.Fatalf("find stored message: %v", err)
+	}
+	if storedMessage.ReplyToMessageID == nil || *storedMessage.ReplyToMessageID != quotedMessageID {
+		t.Fatalf("stored reply_to_message_id = %v, want %s", storedMessage.ReplyToMessageID, quotedMessageID)
+	}
+
+	historyResp, historyBody := getJSON(t, server, "/api/client/conversations/"+conversation.ID+"/messages", loginAsUser(t, server, alice.Email))
+	if historyResp.StatusCode != http.StatusOK {
+		t.Fatalf("history status = %d, want 200, body = %#v", historyResp.StatusCode, historyBody)
+	}
+	messages := requireMessages(t, requireSuccess(t, historyBody))
+	historyReply := messages[len(messages)-1].(map[string]any)
+	if historyReply["reply_to_message_id"] != quotedMessageID {
+		t.Fatalf("history reply_to_message_id = %v, want %s", historyReply["reply_to_message_id"], quotedMessageID)
+	}
+	if historyReply["reply_to"].(map[string]any)["summary"] != "这条消息需要被引用" {
+		t.Fatalf("history reply_to = %#v, want quoted summary", historyReply["reply_to"])
+	}
+}
+
+func TestListConversationMessagesKeepsReplySenderNameForDeletedApp(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+	now := time.Date(2026, 7, 8, 9, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	app := insertTestApp(t, db, store.App{
+		Name:             "知识库助手",
+		Enabled:          true,
+		Visibility:       store.AppVisibilityPublic,
+		ConnectionSecret: "kb-app-secret",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	})
+	aliceCookie := loginAsUser(t, server, alice.Email)
+	adminCookie := loginAsAdmin(t, server)
+
+	createConversationResp, createConversationBody := postJSON(t, server, "/api/client/conversations/apps", map[string]any{
+		"app_id": app.ID,
+	}, aliceCookie)
+	if createConversationResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create app conversation status = %d, want 201, body = %#v", createConversationResp.StatusCode, createConversationBody)
+	}
+	conversation := requireSuccess(t, createConversationBody)["conversation"].(map[string]any)
+	conversationID := conversation["id"].(string)
+
+	appClientMessageID := "app-message-quoted"
+	appSenderID := app.ID
+	appMessage := store.Message{
+		ID:              uuid.NewString(),
+		ConversationID:  conversationID,
+		Seq:             1,
+		SenderType:      store.MessageSenderTypeApp,
+		SenderID:        &appSenderID,
+		ClientMessageID: &appClientMessageID,
+		Body:            json.RawMessage(`{"type":"text","content":"引用这条应用消息"}`),
+		Summary:         "引用这条应用消息",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	if err := db.Create(&appMessage).Error; err != nil {
+		t.Fatalf("create app message: %v", err)
+	}
+	if err := db.Model(&store.Conversation{}).Where("id = ?", conversationID).Update("last_message_seq", int64(1)).Error; err != nil {
+		t.Fatalf("update conversation seq: %v", err)
+	}
+
+	replyResp, replyBody := postJSON(t, server, "/api/client/conversations/"+conversationID+"/messages", map[string]any{
+		"client_message_id":   "client-message-reply-to-app",
+		"reply_to_message_id": appMessage.ID,
+		"body": map[string]any{
+			"type":    "text",
+			"content": "收到",
+		},
+	}, aliceCookie)
+	if replyResp.StatusCode != http.StatusCreated {
+		t.Fatalf("reply status = %d, want 201, body = %#v", replyResp.StatusCode, replyBody)
+	}
+
+	deleteResp, deleteBody := requestJSON(t, server, http.MethodDelete, "/api/admin/apps/"+app.ID, map[string]any{}, adminCookie)
+	if deleteResp.StatusCode != http.StatusOK {
+		t.Fatalf("delete app status = %d, want 200, body = %#v", deleteResp.StatusCode, deleteBody)
+	}
+	var rawAppCount int64
+	if err := db.Raw("SELECT count(*) FROM apps WHERE id = ?", app.ID).Scan(&rawAppCount).Error; err != nil {
+		t.Fatalf("count raw app rows: %v", err)
+	}
+	if rawAppCount != 1 {
+		t.Fatalf("raw app row count = %d, want 1", rawAppCount)
+	}
+
+	historyResp, historyBody := getJSON(t, server, "/api/client/conversations/"+conversationID+"/messages", aliceCookie)
+	if historyResp.StatusCode != http.StatusOK {
+		t.Fatalf("history status = %d, want 200, body = %#v", historyResp.StatusCode, historyBody)
+	}
+	messages := requireMessages(t, requireSuccess(t, historyBody))
+	historyReply := messages[len(messages)-1].(map[string]any)
+	replyTo := historyReply["reply_to"].(map[string]any)
+	sender := replyTo["sender"].(map[string]any)
+	if sender["type"] != store.MessageSenderTypeApp || sender["id"] != app.ID || sender["name"] != app.Name {
+		t.Fatalf("reply_to.sender = %#v, want deleted app sender", sender)
+	}
+}
+
+func TestCreateConversationMessageRejectsReplyToOutsideCurrentConversation(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+	now := time.Date(2026, 7, 8, 9, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	carol := insertTestUser(t, db, "carol@example.com", "Carol", store.UserStatusActive, now)
+	currentConversation := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindDirect,
+		memberIDs:       []string{alice.ID, bob.ID},
+		now:             now,
+	})
+	otherConversation := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindDirect,
+		memberIDs:       []string{alice.ID, carol.ID},
+		now:             now,
+	})
+	otherMessage := insertTestMessage(t, db, otherConversation.ID, carol.ID, 1, "其他会话消息", now)
+
+	resp, body := postJSON(t, server, "/api/client/conversations/"+currentConversation.ID+"/messages", map[string]any{
+		"client_message_id":   "client-message-invalid-reply",
+		"reply_to_message_id": otherMessage.ID,
+		"body": map[string]any{
+			"type":    "text",
+			"content": "不能引用其他会话",
+		},
+	}, loginAsUser(t, server, alice.Email))
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body = %#v", resp.StatusCode, body)
+	}
+	requireError(t, body, "invalid_request")
+}
+
+func TestCreateConversationMessageRejectsReplyToHiddenByHistoryVisibility(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+	now := time.Date(2026, 7, 8, 9, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	conversation := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindDirect,
+		memberIDs:       []string{alice.ID, bob.ID},
+		now:             now,
+	})
+	hiddenMessage := insertTestMessage(t, db, conversation.ID, bob.ID, 1, "Alice 看不到这条", now)
+	if err := db.Model(&store.Conversation{}).Where("id = ?", conversation.ID).Update("last_message_seq", int64(1)).Error; err != nil {
+		t.Fatalf("update conversation seq: %v", err)
+	}
+	if err := db.Model(&store.ConversationMember{}).
+		Where("conversation_id = ? AND member_type = ? AND member_id = ?", conversation.ID, store.ConversationMemberTypeUser, alice.ID).
+		Update("history_visible_from_seq", int64(2)).Error; err != nil {
+		t.Fatalf("set history_visible_from_seq: %v", err)
+	}
+
+	resp, body := postJSON(t, server, "/api/client/conversations/"+conversation.ID+"/messages", map[string]any{
+		"client_message_id":   "client-message-hidden-reply",
+		"reply_to_message_id": hiddenMessage.ID,
+		"body": map[string]any{
+			"type":    "text",
+			"content": "不能引用不可见历史",
+		},
+	}, loginAsUser(t, server, alice.Email))
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body = %#v", resp.StatusCode, body)
+	}
+	requireError(t, body, "invalid_request")
+}
+
 func TestCreateConversationMarkdownMessageNormalizesAndSummarizes(t *testing.T) {
 	server, db := newTestRouter(t)
 	defer server.Close()
@@ -2702,6 +3945,143 @@ func TestCreateConversationMarkdownMessageNormalizesAndSummarizes(t *testing.T) 
 	}, "\n")
 	if storedMessage.Summary != wantSummary {
 		t.Fatalf("stored summary = %q, want %q", storedMessage.Summary, wantSummary)
+	}
+}
+
+func TestCreateConversationMarkdownMessageSummarizesTable(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+	now := time.Date(2026, 7, 8, 9, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	conversation := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindDirect,
+		memberIDs:       []string{alice.ID, bob.ID},
+		now:             now,
+	})
+
+	content := `
+| 姓名 | 年龄 |
+| --- | ---: |
+| 张三 | 18 |
+| 李四 | 20 |
+`
+	resp, body := postJSON(t, server, "/api/client/conversations/"+conversation.ID+"/messages", map[string]any{
+		"client_message_id": "client-markdown-table-message-1",
+		"body": map[string]any{
+			"type":    "markdown",
+			"content": content,
+		},
+	}, loginAsUser(t, server, alice.Email))
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body = %#v", resp.StatusCode, body)
+	}
+	createdMessage := requireSuccess(t, body)["message"].(map[string]any)
+
+	var storedMessage store.Message
+	if err := db.First(&storedMessage, "id = ?", createdMessage["id"]).Error; err != nil {
+		t.Fatalf("find stored message: %v", err)
+	}
+	wantSummary := strings.Join([]string{
+		"姓名 年龄",
+		"张三 18",
+		"李四 20",
+	}, "\n")
+	if storedMessage.Summary != wantSummary {
+		t.Fatalf("stored summary = %q, want %q", storedMessage.Summary, wantSummary)
+	}
+}
+
+func TestCreateConversationMarkdownMessageSummarizesStrikethroughAndThematicBreak(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+	now := time.Date(2026, 7, 8, 9, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	conversation := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindDirect,
+		memberIDs:       []string{alice.ID, bob.ID},
+		now:             now,
+	})
+
+	content := `
+这个计划~~废弃~~保留
+
+---
+
+继续推进
+`
+	resp, body := postJSON(t, server, "/api/client/conversations/"+conversation.ID+"/messages", map[string]any{
+		"client_message_id": "client-markdown-strike-hr-message-1",
+		"body": map[string]any{
+			"type":    "markdown",
+			"content": content,
+		},
+	}, loginAsUser(t, server, alice.Email))
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body = %#v", resp.StatusCode, body)
+	}
+	createdMessage := requireSuccess(t, body)["message"].(map[string]any)
+
+	var storedMessage store.Message
+	if err := db.First(&storedMessage, "id = ?", createdMessage["id"]).Error; err != nil {
+		t.Fatalf("find stored message: %v", err)
+	}
+	wantSummary := strings.Join([]string{
+		"这个计划废弃保留",
+		"继续推进",
+	}, "\n")
+	if storedMessage.Summary != wantSummary {
+		t.Fatalf("stored summary = %q, want %q", storedMessage.Summary, wantSummary)
+	}
+}
+
+func TestCreateConversationMarkdownMessageAllowsUnsupportedRenderSyntax(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+	now := time.Date(2026, 7, 3, 9, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	conversation := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindDirect,
+		memberIDs:       []string{alice.ID, bob.ID},
+		now:             now,
+	})
+
+	content := `
+[官网](https://example.com)
+
+<https://docs.example.com>
+
+<strong>HTML 由客户端决定是否渲染</strong>
+
+![图片](https://example.com/a.png)
+`
+	resp, body := postJSON(t, server, "/api/client/conversations/"+conversation.ID+"/messages", map[string]any{
+		"client_message_id": "client-markdown-message-1",
+		"body": map[string]any{
+			"type":    "markdown",
+			"content": content,
+		},
+	}, loginAsUser(t, server, alice.Email))
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body = %#v", resp.StatusCode, body)
+	}
+	createdMessage := requireSuccess(t, body)["message"].(map[string]any)
+	messageBody := createdMessage["body"].(map[string]any)
+	if messageBody["content"] != strings.TrimSpace(content) {
+		t.Fatalf("message.body.content = %q, want original markdown", messageBody["content"])
+	}
+
+	var storedMessage store.Message
+	if err := db.First(&storedMessage, "id = ?", createdMessage["id"]).Error; err != nil {
+		t.Fatalf("find stored message: %v", err)
+	}
+	if !strings.Contains(storedMessage.Summary, "官网") {
+		t.Fatalf("stored summary = %q, want link label", storedMessage.Summary)
 	}
 }
 
@@ -2905,30 +4285,6 @@ func TestCreateConversationTextMessageRejectsInvalidRequests(t *testing.T) {
 			name:       "unsupported body type",
 			path:       "/api/client/conversations/" + conversation.ID + "/messages",
 			body:       map[string]any{"client_message_id": "client-message-1", "body": map[string]any{"type": "image", "url": "https://example.com/a.png"}},
-			cookie:     cookie,
-			statusCode: http.StatusBadRequest,
-			errorCode:  "invalid_request",
-		},
-		{
-			name:       "markdown html",
-			path:       "/api/client/conversations/" + conversation.ID + "/messages",
-			body:       map[string]any{"client_message_id": "client-message-1", "body": map[string]any{"type": "markdown", "content": "<strong>不支持 HTML</strong>"}},
-			cookie:     cookie,
-			statusCode: http.StatusBadRequest,
-			errorCode:  "invalid_request",
-		},
-		{
-			name:       "markdown link",
-			path:       "/api/client/conversations/" + conversation.ID + "/messages",
-			body:       map[string]any{"client_message_id": "client-message-1", "body": map[string]any{"type": "markdown", "content": "[外链](https://example.com)"}},
-			cookie:     cookie,
-			statusCode: http.StatusBadRequest,
-			errorCode:  "invalid_request",
-		},
-		{
-			name:       "markdown image",
-			path:       "/api/client/conversations/" + conversation.ID + "/messages",
-			body:       map[string]any{"client_message_id": "client-message-1", "body": map[string]any{"type": "markdown", "content": "![图片](https://example.com/a.png)"}},
 			cookie:     cookie,
 			statusCode: http.StatusBadRequest,
 			errorCode:  "invalid_request",
@@ -3368,15 +4724,15 @@ func TestThirdPartyLoginCreatesUserSessionAndRedirectsToInit(t *testing.T) {
 	}
 }
 
-func TestThirdPartyLoginReusesExternalAccountWhenEmailIsMissing(t *testing.T) {
-	var userinfoCalls int
+func TestThirdPartyLoginRejectsProfileWithoutEmail(t *testing.T) {
+	var userinfoCalled bool
 	identityServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/token":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"access_token":"access-token","token_type":"Bearer"}`))
 		case "/userinfo":
-			userinfoCalls++
+			userinfoCalled = true
 			if r.Header.Get("Authorization") != "Bearer access-token" {
 				t.Fatalf("Authorization = %q, want Bearer access-token", r.Header.Get("Authorization"))
 			}
@@ -3418,56 +4774,51 @@ func TestThirdPartyLoginReusesExternalAccountWhenEmailIsMissing(t *testing.T) {
 		return http.ErrUseLastResponse
 	}
 
-	for attempt := 0; attempt < 2; attempt++ {
-		startResp := getResponseWithClient(t, noRedirectClient, server, "/api/client/auth/third-party/github/start?redirect=/init")
-		if startResp.StatusCode != http.StatusFound {
-			t.Fatalf("start status = %d, want 302", startResp.StatusCode)
-		}
-		parsedAuthorizeURL, err := url.Parse(startResp.Header.Get("Location"))
-		if err != nil {
-			t.Fatalf("parse authorize location: %v", err)
-		}
-		state := parsedAuthorizeURL.Query().Get("state")
-		if state == "" {
-			t.Fatal("state is empty")
-		}
-
-		callbackResp := getResponseWithClient(
-			t,
-			noRedirectClient,
-			server,
-			"/api/client/auth/third-party/github/callback?code=callback-code&state="+url.QueryEscape(state),
-			requireThirdPartyStateCookie(t, startResp),
-		)
-		if callbackResp.StatusCode != http.StatusFound {
-			t.Fatalf("callback status = %d, want 302", callbackResp.StatusCode)
-		}
-		requireUserSessionCookie(t, callbackResp)
+	startResp := getResponseWithClient(t, noRedirectClient, server, "/api/client/auth/third-party/github/start?redirect=/init")
+	if startResp.StatusCode != http.StatusFound {
+		t.Fatalf("start status = %d, want 302", startResp.StatusCode)
+	}
+	parsedAuthorizeURL, err := url.Parse(startResp.Header.Get("Location"))
+	if err != nil {
+		t.Fatalf("parse authorize location: %v", err)
+	}
+	state := parsedAuthorizeURL.Query().Get("state")
+	if state == "" {
+		t.Fatal("state is empty")
 	}
 
-	if userinfoCalls != 2 {
-		t.Fatalf("userinfo calls = %d, want 2", userinfoCalls)
+	callbackResp := getResponseWithClient(
+		t,
+		noRedirectClient,
+		server,
+		"/api/client/auth/third-party/github/callback?code=callback-code&state="+url.QueryEscape(state),
+		requireThirdPartyStateCookie(t, startResp),
+	)
+	if callbackResp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("callback status = %d, want 400", callbackResp.StatusCode)
 	}
+	var callbackBody map[string]any
+	if err := json.NewDecoder(callbackResp.Body).Decode(&callbackBody); err != nil {
+		t.Fatalf("decode callback response: %v", err)
+	}
+	requireError(t, callbackBody, "invalid_third_party_login")
+	if !userinfoCalled {
+		t.Fatal("userinfo endpoint was not called")
+	}
+
 	var userCount int64
 	if err := db.Model(&store.User{}).Count(&userCount).Error; err != nil {
 		t.Fatalf("count users: %v", err)
 	}
-	if userCount != 1 {
-		t.Fatalf("user count = %d, want 1", userCount)
+	if userCount != 0 {
+		t.Fatalf("user count = %d, want 0", userCount)
 	}
-	var account store.ThirdPartyAccount
-	if err := db.First(&account, "provider_id = ? AND external_user_id = ?", provider.ID, "42").Error; err != nil {
-		t.Fatalf("find third-party account: %v", err)
+	var accountCount int64
+	if err := db.Model(&store.ThirdPartyAccount{}).Where("provider_id = ? AND external_user_id = ?", provider.ID, "42").Count(&accountCount).Error; err != nil {
+		t.Fatalf("count third-party accounts: %v", err)
 	}
-	var user store.User
-	if err := db.First(&user, "id = ?", account.UserID).Error; err != nil {
-		t.Fatalf("find bound user: %v", err)
-	}
-	if user.Email == "" || !strings.HasSuffix(user.Email, "@third-party.local") {
-		t.Fatalf("generated user email = %q, want third-party.local address", user.Email)
-	}
-	if user.Name != "Octo Cat" {
-		t.Fatalf("user name = %q, want Octo Cat", user.Name)
+	if accountCount != 0 {
+		t.Fatalf("third-party account count = %d, want 0", accountCount)
 	}
 }
 
@@ -3517,7 +4868,7 @@ func TestDingTalkLoginUsesUserAccessTokenHeaderForUserInfo(t *testing.T) {
 			_, _ = w.Write([]byte(`{
 					"unionId": "ding-union-id",
 					"openId": "ding-open-id",
-					"email": "Ding.User@example.com",
+					"email": "Personal.User@example.com",
 					"mobile": "13900000000",
 					"nick": "Ding Nick",
 					"avatarUrl": "https://example.com/ding.webp"
@@ -3577,7 +4928,8 @@ func TestDingTalkLoginUsesUserAccessTokenHeaderForUserInfo(t *testing.T) {
 					"result": {
 						"userid": "ding-user-id",
 						"unionid": "ding-union-id",
-						"name": "Ding Real Name"
+						"name": "Ding Real Name",
+						"org_email": "Org.User@example.com"
 					}
 				}`))
 		default:
@@ -3673,8 +5025,8 @@ func TestDingTalkLoginUsesUserAccessTokenHeaderForUserInfo(t *testing.T) {
 	if err := db.First(&user, "id = ?", account.UserID).Error; err != nil {
 		t.Fatalf("find dingtalk user: %v", err)
 	}
-	if user.Email != "ding.user@example.com" {
-		t.Fatalf("user email = %q, want ding.user@example.com", user.Email)
+	if user.Email != "org.user@example.com" {
+		t.Fatalf("user email = %q, want org.user@example.com", user.Email)
 	}
 	if user.Name != "Ding Real Name" {
 		t.Fatalf("user name = %q, want Ding Real Name", user.Name)
@@ -3755,6 +5107,131 @@ func TestDingTalkLoginUpdatesExistingBoundUserName(t *testing.T) {
 	}
 	if storedUser.Nickname != "Ding Nick" {
 		t.Fatalf("stored user nickname = %q, want Ding Nick", storedUser.Nickname)
+	}
+}
+
+func TestDingTalkLoginUpdatesLegacySyntheticEmailForBoundUser(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+	now := time.Date(2026, 7, 8, 9, 0, 0, 0, time.UTC)
+	provider := insertTestThirdPartyLoginProvider(t, db, store.ThirdPartyLoginProvider{
+		Name:         "钉钉",
+		Key:          "dingtalk",
+		Type:         store.ThirdPartyLoginProviderTypeDingTalk,
+		Enabled:      true,
+		ClientID:     "ding-client-id",
+		ClientSecret: "ding-client-secret",
+		Scopes:       json.RawMessage(`["openid"]`),
+		Config: thirdPartyProviderConfig(t, map[string]any{
+			"authorize_url":     "https://login.example.com/oauth2/auth",
+			"token_url":         "https://api.example.com/v1.0/oauth2/userAccessToken",
+			"userinfo_url":      "https://api.example.com/v1.0/contact/users/me",
+			"external_id_field": "unionId",
+			"email_field":       "email",
+			"name_field":        "name",
+		}),
+	})
+	user := insertTestUser(t, db, "dingtalk.65e27bd85b300672@third-party.local", "Old Name", store.UserStatusActive, now)
+	account := store.ThirdPartyAccount{
+		ID:             uuid.NewString(),
+		ProviderID:     provider.ID,
+		ExternalUserID: "ding-union-id",
+		UserID:         user.ID,
+		Profile:        json.RawMessage(`{"unionId":"ding-union-id"}`),
+	}
+	if err := db.Create(&account).Error; err != nil {
+		t.Fatalf("create existing dingtalk account: %v", err)
+	}
+
+	resolvedUser, err := (&Server{db: db}).findOrCreateThirdPartyUser(provider, externalUserProfile{
+		ExternalUserID: "ding-union-id",
+		Email:          "Boyang.Lai@Chaitin.com",
+		Name:           "Boyang Lai",
+		Raw:            json.RawMessage(`{"unionId":"ding-union-id","org_email":"Boyang.Lai@Chaitin.com","name":"Boyang Lai"}`),
+	})
+	if err != nil {
+		t.Fatalf("find or create dingtalk user: %v", err)
+	}
+	if resolvedUser.ID != user.ID {
+		t.Fatalf("resolved user id = %q, want %q", resolvedUser.ID, user.ID)
+	}
+	if resolvedUser.Email != "boyang.lai@chaitin.com" {
+		t.Fatalf("resolved user email = %q, want boyang.lai@chaitin.com", resolvedUser.Email)
+	}
+
+	var storedUser store.User
+	if err := db.First(&storedUser, "id = ?", user.ID).Error; err != nil {
+		t.Fatalf("find stored user: %v", err)
+	}
+	if storedUser.Email != "boyang.lai@chaitin.com" {
+		t.Fatalf("stored user email = %q, want boyang.lai@chaitin.com", storedUser.Email)
+	}
+	if storedUser.Name != "Boyang Lai" {
+		t.Fatalf("stored user name = %q, want Boyang Lai", storedUser.Name)
+	}
+}
+
+func TestThirdPartyLoginRejectsBoundAccountWithoutEmail(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+	now := time.Date(2026, 7, 8, 10, 0, 0, 0, time.UTC)
+	provider := insertTestThirdPartyLoginProvider(t, db, store.ThirdPartyLoginProvider{
+		Name:         "Enterprise SSO",
+		Key:          "enterprise",
+		Type:         store.ThirdPartyLoginProviderTypeOIDC,
+		Enabled:      true,
+		ClientID:     "client-id",
+		ClientSecret: "client-secret",
+		Scopes:       json.RawMessage(`["openid","profile"]`),
+		Config: thirdPartyProviderConfig(t, map[string]any{
+			"authorize_url":     "https://sso.example.com/authorize",
+			"token_url":         "https://sso.example.com/token",
+			"userinfo_url":      "https://sso.example.com/userinfo",
+			"external_id_field": "sub",
+			"name_field":        "name",
+		}),
+	})
+	user := insertTestUser(t, db, "alice@example.com", "Old Name", store.UserStatusActive, now)
+	account := store.ThirdPartyAccount{
+		ID:             uuid.NewString(),
+		ProviderID:     provider.ID,
+		ExternalUserID: "alice-external-id",
+		UserID:         user.ID,
+		Profile:        json.RawMessage(`{"sub":"alice-external-id","name":"Old Name"}`),
+	}
+	if err := db.Create(&account).Error; err != nil {
+		t.Fatalf("create existing third-party account: %v", err)
+	}
+
+	_, err := (&Server{db: db}).findOrCreateThirdPartyUser(provider, externalUserProfile{
+		ExternalUserID: "alice-external-id",
+		Name:           "New Name",
+		Raw:            json.RawMessage(`{"sub":"alice-external-id","name":"New Name"}`),
+	})
+	if err == nil {
+		t.Fatal("find or create third-party user error = nil, want invalid_third_party_login")
+	}
+	userErr, ok := err.(thirdPartyUserError)
+	if !ok {
+		t.Fatalf("find or create third-party user error = %T %v, want thirdPartyUserError", err, err)
+	}
+	if userErr.status != http.StatusBadRequest || userErr.code != "invalid_third_party_login" {
+		t.Fatalf("third-party user error = status %d code %q, want 400 invalid_third_party_login", userErr.status, userErr.code)
+	}
+
+	var storedUser store.User
+	if err := db.First(&storedUser, "id = ?", user.ID).Error; err != nil {
+		t.Fatalf("find stored user: %v", err)
+	}
+	if storedUser.Name != "Old Name" {
+		t.Fatalf("stored user name = %q, want Old Name", storedUser.Name)
+	}
+	var storedAccount store.ThirdPartyAccount
+	if err := db.First(&storedAccount, "id = ?", account.ID).Error; err != nil {
+		t.Fatalf("find stored third-party account: %v", err)
+	}
+	if string(storedAccount.Profile) != string(account.Profile) {
+		t.Fatalf("stored account profile = %s, want %s", storedAccount.Profile, account.Profile)
 	}
 }
 
@@ -3941,7 +5418,8 @@ func TestFeishuLoginExchangesCodeWithJSONBody(t *testing.T) {
 				"data": {
 					"union_id": "feishu-union-id",
 					"open_id": "feishu-open-id",
-					"email": "Feishu.User@example.com",
+					"email": "Personal.Feishu@example.com",
+					"enterprise_email": "Enterprise.Feishu@example.com",
 					"mobile": "+8613800000000",
 					"name": "Feishu User",
 					"en_name": "Feishu",
@@ -4026,8 +5504,8 @@ func TestFeishuLoginExchangesCodeWithJSONBody(t *testing.T) {
 	if err := db.First(&user, "id = ?", account.UserID).Error; err != nil {
 		t.Fatalf("find feishu user: %v", err)
 	}
-	if user.Email != "feishu.user@example.com" {
-		t.Fatalf("user email = %q, want feishu.user@example.com", user.Email)
+	if user.Email != "enterprise.feishu@example.com" {
+		t.Fatalf("user email = %q, want enterprise.feishu@example.com", user.Email)
 	}
 	if user.Name != "Feishu User" {
 		t.Fatalf("user name = %q, want Feishu User", user.Name)
@@ -4234,12 +5712,13 @@ func TestWeComLoginUsesEnterpriseAccessTokenQueryForUserInfo(t *testing.T) {
 			_, _ = w.Write([]byte(`{
 				"errcode": 0,
 				"errmsg": "ok",
-				"userid": "zhangsan",
-				"name": "张三",
-				"mobile": "13800000000",
-				"email": "zhangsan@example.com",
-				"avatar": "https://example.com/wecom.webp"
-			}`))
+					"userid": "zhangsan",
+					"name": "张三",
+					"mobile": "13800000000",
+					"email": "personal.zhangsan@example.com",
+					"biz_mail": "zhangsan@example.com",
+					"avatar": "https://example.com/wecom.webp"
+				}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -4552,6 +6031,18 @@ func TestAdminCanManageApps(t *testing.T) {
 	if updatedAIAssistant["connection_secret"] != "test-ai-assistant-secret" {
 		t.Fatalf("updated AI assistant secret = %v, want configured secret", updatedAIAssistant["connection_secret"])
 	}
+	listAfterUpdateResp, listAfterUpdateBody := getJSON(t, server, "/api/admin/apps", adminCookie)
+	if listAfterUpdateResp.StatusCode != http.StatusOK {
+		t.Fatalf("list after update status = %d, want 200, body = %#v", listAfterUpdateResp.StatusCode, listAfterUpdateBody)
+	}
+	appsAfterUpdate := requireSuccess(t, listAfterUpdateBody)["apps"].([]any)
+	aiAssistantAfterUpdate := appsAfterUpdate[0].(map[string]any)
+	if aiAssistantAfterUpdate["name"] != "AI 女菩萨 Pro" {
+		t.Fatalf("listed AI assistant name = %v, want AI 女菩萨 Pro", aiAssistantAfterUpdate["name"])
+	}
+	if aiAssistantAfterUpdate["connection_secret"] != "test-ai-assistant-secret" {
+		t.Fatalf("listed AI assistant secret = %v, want configured secret", aiAssistantAfterUpdate["connection_secret"])
+	}
 
 	regenerateAIAssistantResp, _ := postJSON(t, server, "/api/admin/apps/"+appregistry.AIAssistantAppID+"/secret/regenerate", map[string]any{}, adminCookie)
 	if regenerateAIAssistantResp.StatusCode != http.StatusForbidden {
@@ -4813,6 +6304,10 @@ func TestDingTalkProviderStartsWithConsentPromptByDefault(t *testing.T) {
 	}
 	createdProvider := requireSuccess(t, createBody)["provider"].(map[string]any)
 	providerKey := createdProvider["key"].(string)
+	createdConfig := createdProvider["config"].(map[string]any)
+	if createdConfig["email_field"] != "org_email" {
+		t.Fatalf("dingtalk config.email_field = %#v, want org_email", createdConfig["email_field"])
+	}
 
 	noRedirectClient := server.Client()
 	noRedirectClient.CheckRedirect = func(*http.Request, []*http.Request) error {
@@ -4829,6 +6324,27 @@ func TestDingTalkProviderStartsWithConsentPromptByDefault(t *testing.T) {
 	}
 	if prompt := parsedAuthorizeURL.Query().Get("prompt"); prompt != "consent" {
 		t.Fatalf("prompt = %q, want consent", prompt)
+	}
+}
+
+func TestFeishuProviderDefaultsToEnterpriseEmail(t *testing.T) {
+	server, _ := newTestRouter(t)
+	defer server.Close()
+	adminCookie := loginAsAdmin(t, server)
+
+	createResp, createBody := postJSON(t, server, "/api/admin/third-party/providers", map[string]any{
+		"name":          "Feishu",
+		"type":          "feishu",
+		"client_id":     "feishu-client-id",
+		"client_secret": "feishu-client-secret",
+	}, adminCookie)
+	if createResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body = %#v", createResp.StatusCode, createBody)
+	}
+	createdProvider := requireSuccess(t, createBody)["provider"].(map[string]any)
+	createdConfig := createdProvider["config"].(map[string]any)
+	if createdConfig["email_field"] != "enterprise_email" {
+		t.Fatalf("feishu config.email_field = %#v, want enterprise_email", createdConfig["email_field"])
 	}
 }
 
@@ -5754,6 +7270,151 @@ func TestLeaveGroupConversationRejectsOwner(t *testing.T) {
 	}
 	if member.LeftAt != nil {
 		t.Fatalf("owner left_at = %v, want nil", member.LeftAt)
+	}
+}
+
+func TestRemoveGroupConversationMemberCreatesSystemMessage(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	now := time.Now().UTC()
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	carol := insertTestUser(t, db, "carol@example.com", "Carol", store.UserStatusActive, now)
+	dave := insertTestUser(t, db, "dave@example.com", "Dave", store.UserStatusActive, now)
+	conversation := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindGroup,
+		memberIDs:       []string{alice.ID, bob.ID, carol.ID, dave.ID},
+		name:            "产品讨论组",
+		now:             now,
+	})
+	if err := db.Model(&store.ConversationMember{}).
+		Where("conversation_id = ? AND member_type = ? AND member_id IN ?", conversation.ID, store.ConversationMemberTypeUser, []string{bob.ID, carol.ID}).
+		Update("role", store.ConversationMemberRoleAdmin).Error; err != nil {
+		t.Fatalf("set admin roles: %v", err)
+	}
+	setTestConversationMemberLastReadSeq(t, db, conversation.ID, bob.ID, 0)
+	carolCookie := loginAsUser(t, server, carol.Email)
+	carolConn := dialClientWebSocket(t, server, carolCookie)
+	if ready := readRealtimeEvent(t, carolConn); ready.Kind != realtime.KindEvent || ready.Event != realtime.EventSystemReady {
+		t.Fatalf("ready event = %#v", ready)
+	}
+
+	resp, body := requestJSON(t, server, http.MethodDelete, "/api/client/conversations/groups/"+conversation.ID+"/members/"+carol.ID, map[string]any{}, loginAsUser(t, server, bob.Email))
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %#v", resp.StatusCode, body)
+	}
+	data := requireSuccess(t, body)
+	updatedConversation := data["conversation"].(map[string]any)
+	createdMessage := data["message"].(map[string]any)
+	summary := "Bob 已将 Carol 移出群聊"
+	if updatedConversation["member_count"] != float64(3) {
+		t.Fatalf("conversation.member_count = %v, want 3", updatedConversation["member_count"])
+	}
+	if updatedConversation["last_message_summary"] != summary {
+		t.Fatalf("last_message_summary = %v, want %s", updatedConversation["last_message_summary"], summary)
+	}
+	if createdMessage["seq"] != float64(1) {
+		t.Fatalf("message.seq = %v, want 1", createdMessage["seq"])
+	}
+
+	var member store.ConversationMember
+	if err := db.First(&member, "conversation_id = ? AND member_type = ? AND member_id = ?", conversation.ID, store.ConversationMemberTypeUser, carol.ID).Error; err != nil {
+		t.Fatalf("find removed member: %v", err)
+	}
+	if member.LeftAt == nil {
+		t.Fatal("left_at = nil, want set")
+	}
+	if got := getTestConversationMemberLastReadSeq(t, db, conversation.ID, bob.ID); got != 1 {
+		t.Fatalf("bob last_read_seq = %d, want 1", got)
+	}
+
+	var storedMessage store.Message
+	if err := db.First(&storedMessage, "conversation_id = ? AND seq = ?", conversation.ID, int64(1)).Error; err != nil {
+		t.Fatalf("find stored system message: %v", err)
+	}
+	if storedMessage.Summary != summary {
+		t.Fatalf("stored summary = %v, want %s", storedMessage.Summary, summary)
+	}
+	requireGroupMemberRemovedBody(t, storedMessage.Body, bob.ID, "Bob", carol.ID, "Carol")
+
+	removedEvent := readRealtimeEvent(t, carolConn)
+	if removedEvent.Kind != realtime.KindEvent || removedEvent.Event != realtime.EventConversationRemoved {
+		t.Fatalf("removed event = %#v", removedEvent)
+	}
+	var removedPayload map[string]any
+	if err := json.Unmarshal(removedEvent.Payload, &removedPayload); err != nil {
+		t.Fatalf("unmarshal removed payload: %v", err)
+	}
+	if removedPayload["conversation_id"] != conversation.ID {
+		t.Fatalf("removed conversation_id = %v, want %s", removedPayload["conversation_id"], conversation.ID)
+	}
+}
+
+func TestRemoveGroupConversationMemberRejectsOwnerTarget(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	now := time.Now().UTC()
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	conversation := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindGroup,
+		memberIDs:       []string{alice.ID, bob.ID},
+		name:            "产品讨论组",
+		now:             now,
+	})
+	if err := db.Model(&store.ConversationMember{}).
+		Where("conversation_id = ? AND member_type = ? AND member_id = ?", conversation.ID, store.ConversationMemberTypeUser, bob.ID).
+		Update("role", store.ConversationMemberRoleAdmin).Error; err != nil {
+		t.Fatalf("set admin role: %v", err)
+	}
+
+	resp, body := requestJSON(t, server, http.MethodDelete, "/api/client/conversations/groups/"+conversation.ID+"/members/"+alice.ID, map[string]any{}, loginAsUser(t, server, bob.Email))
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403, body = %#v", resp.StatusCode, body)
+	}
+	requireError(t, body, "forbidden")
+
+	var member store.ConversationMember
+	if err := db.First(&member, "conversation_id = ? AND member_type = ? AND member_id = ?", conversation.ID, store.ConversationMemberTypeUser, alice.ID).Error; err != nil {
+		t.Fatalf("find owner member: %v", err)
+	}
+	if member.LeftAt != nil {
+		t.Fatalf("owner left_at = %v, want nil", member.LeftAt)
+	}
+}
+
+func TestRemoveGroupConversationMemberRejectsRegularMember(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	now := time.Now().UTC()
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	carol := insertTestUser(t, db, "carol@example.com", "Carol", store.UserStatusActive, now)
+	conversation := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindGroup,
+		memberIDs:       []string{alice.ID, bob.ID, carol.ID},
+		name:            "产品讨论组",
+		now:             now,
+	})
+
+	resp, body := requestJSON(t, server, http.MethodDelete, "/api/client/conversations/groups/"+conversation.ID+"/members/"+bob.ID, map[string]any{}, loginAsUser(t, server, carol.Email))
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403, body = %#v", resp.StatusCode, body)
+	}
+	requireError(t, body, "forbidden")
+
+	var member store.ConversationMember
+	if err := db.First(&member, "conversation_id = ? AND member_type = ? AND member_id = ?", conversation.ID, store.ConversationMemberTypeUser, bob.ID).Error; err != nil {
+		t.Fatalf("find target member: %v", err)
+	}
+	if member.LeftAt != nil {
+		t.Fatalf("target left_at = %v, want nil", member.LeftAt)
 	}
 }
 

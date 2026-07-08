@@ -3,6 +3,8 @@ package store
 import (
 	"encoding/json"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 const (
@@ -119,18 +121,24 @@ type ConversationMember struct {
 }
 
 type Message struct {
-	ID              string          `gorm:"type:uuid;primaryKey"`
-	ConversationID  string          `gorm:"type:uuid;not null;uniqueIndex:messages_conversation_seq_unique,priority:1;uniqueIndex:messages_client_message_unique,priority:1;index:messages_conversation_seq_index,priority:1"`
-	Conversation    Conversation    `gorm:"constraint:OnDelete:CASCADE;"`
-	Seq             int64           `gorm:"not null;uniqueIndex:messages_conversation_seq_unique,priority:2;index:messages_conversation_seq_index,priority:2,sort:desc"`
-	SenderType      string          `gorm:"size:32;not null;uniqueIndex:messages_client_message_unique,priority:2"`
-	SenderID        *string         `gorm:"type:uuid;uniqueIndex:messages_client_message_unique,priority:3"`
-	ClientMessageID *string         `gorm:"size:128;uniqueIndex:messages_client_message_unique,priority:4"`
-	Body            json.RawMessage `gorm:"type:jsonb;not null;serializer:json"`
-	Summary         string          `gorm:"not null;default:''"`
-	CreatedAt       time.Time       `gorm:"not null"`
-	UpdatedAt       time.Time       `gorm:"not null"`
-	DeletedAt       *time.Time      `gorm:"index"`
+	ID               string          `gorm:"type:uuid;primaryKey"`
+	ConversationID   string          `gorm:"type:uuid;not null;uniqueIndex:messages_conversation_seq_unique,priority:1;uniqueIndex:messages_client_message_unique,priority:1;index:messages_conversation_seq_index,priority:1"`
+	Conversation     Conversation    `gorm:"constraint:OnDelete:CASCADE;"`
+	Seq              int64           `gorm:"not null;uniqueIndex:messages_conversation_seq_unique,priority:2;index:messages_conversation_seq_index,priority:2,sort:desc"`
+	SenderType       string          `gorm:"size:32;not null;uniqueIndex:messages_client_message_unique,priority:2"`
+	SenderID         *string         `gorm:"type:uuid;uniqueIndex:messages_client_message_unique,priority:3"`
+	ClientMessageID  *string         `gorm:"size:128;uniqueIndex:messages_client_message_unique,priority:4"`
+	DelegatedByType  *string         `gorm:"size:32"`
+	DelegatedByID    *string         `gorm:"type:uuid"`
+	DelegatedByName  string          `gorm:"not null;default:''"`
+	ReplyToMessageID *string         `gorm:"type:uuid;index"`
+	Body             json.RawMessage `gorm:"type:jsonb;not null;serializer:json"`
+	Summary          string          `gorm:"not null;default:''"`
+	RevokedAt        *time.Time      `gorm:"index"`
+	RevokedByUserID  *string         `gorm:"type:uuid"`
+	CreatedAt        time.Time       `gorm:"not null"`
+	UpdatedAt        time.Time       `gorm:"not null"`
+	DeletedAt        *time.Time      `gorm:"index"`
 }
 
 type DirectConversation struct {
@@ -155,17 +163,18 @@ func (TemporaryFile) TableName() string {
 }
 
 type App struct {
-	ID               string    `gorm:"type:uuid;primaryKey"`
-	Name             string    `gorm:"size:120;not null"`
-	Avatar           string    `gorm:"size:512;not null;default:''"`
-	Description      string    `gorm:"not null;default:''"`
-	CreatorUserID    *string   `gorm:"type:uuid;index"`
-	CreatorUser      *User     `gorm:"foreignKey:CreatorUserID;constraint:OnDelete:SET NULL;"`
-	Enabled          bool      `gorm:"not null;default:true;index"`
-	Visibility       string    `gorm:"size:32;not null;index"`
-	ConnectionSecret string    `gorm:"not null;uniqueIndex"`
-	CreatedAt        time.Time `gorm:"not null"`
-	UpdatedAt        time.Time `gorm:"not null"`
+	ID               string         `gorm:"type:uuid;primaryKey"`
+	Name             string         `gorm:"size:120;not null"`
+	Avatar           string         `gorm:"size:512;not null;default:''"`
+	Description      string         `gorm:"not null;default:''"`
+	CreatorUserID    *string        `gorm:"type:uuid;index"`
+	CreatorUser      *User          `gorm:"foreignKey:CreatorUserID;constraint:OnDelete:SET NULL;"`
+	Enabled          bool           `gorm:"not null;default:true;index"`
+	Visibility       string         `gorm:"size:32;not null;index"`
+	ConnectionSecret string         `gorm:"not null;uniqueIndex"`
+	CreatedAt        time.Time      `gorm:"not null"`
+	UpdatedAt        time.Time      `gorm:"not null"`
+	DeletedAt        gorm.DeletedAt `gorm:"index"`
 }
 
 type AppConversation struct {

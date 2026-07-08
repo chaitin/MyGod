@@ -261,6 +261,9 @@ definitions:
       client_message_id:
         example: 9c08f2dd-0af6-4e99-b486-2f0c841822be
         type: string
+      reply_to_message_id:
+        example: 9c08f2dd-0af6-4e99-b486-2f0c841822be
+        type: string
     type: object
   httpserver.createMessageResponse:
     properties:
@@ -510,6 +513,44 @@ definitions:
         example: 0
         type: integer
     type: object
+  httpserver.messageDelegatedByResponse:
+    properties:
+      id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      name:
+        example: 女菩萨
+        type: string
+      type:
+        example: app
+        type: string
+    type: object
+  httpserver.messageReplyToResponse:
+    properties:
+      id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      sender:
+        $ref: '#/definitions/httpserver.messageReplyToSenderResponse'
+      seq:
+        example: 12
+        type: integer
+      summary:
+        example: 上一条消息摘要
+        type: string
+    type: object
+  httpserver.messageReplyToSenderResponse:
+    properties:
+      id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      name:
+        example: Alice
+        type: string
+      type:
+        example: user
+        type: string
+    type: object
   httpserver.messageResponse:
     properties:
       body:
@@ -523,7 +564,20 @@ definitions:
       created_at:
         format: date-time
         type: string
+      delegated_by:
+        $ref: '#/definitions/httpserver.messageDelegatedByResponse'
       id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      reply_to:
+        $ref: '#/definitions/httpserver.messageReplyToResponse'
+      reply_to_message_id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      revoked_at:
+        format: date-time
+        type: string
+      revoked_by_user_id:
         example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
         type: string
       sender:
@@ -571,6 +625,13 @@ definitions:
         type: string
       user:
         $ref: '#/definitions/httpserver.userResponse'
+    type: object
+  httpserver.revokeConversationMessageResponse:
+    properties:
+      message:
+        $ref: '#/definitions/httpserver.messageResponse'
+      system_message:
+        $ref: '#/definitions/httpserver.messageResponse'
     type: object
   httpserver.successEnvelope:
     properties:
@@ -2071,6 +2132,59 @@ paths:
       summary: 发送消息
       tags:
       - 客户端消息
+  /api/client/conversations/{conversation_id}/messages/{message_id}/revoke:
+    post:
+      description: 普通用户可以撤回自己的消息；群主和管理员可以撤回群内任意非系统消息。撤回后原消息只返回元信息，并创建一条系统消息。
+      parameters:
+      - description: 会话 ID
+        in: path
+        name: conversation_id
+        required: true
+        type: string
+      - description: 消息 ID
+        in: path
+        name: message_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httpserver.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/httpserver.revokeConversationMessageResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+      summary: 撤回会话消息
+      tags:
+      - 客户端消息
   /api/client/conversations/{conversation_id}/messages/files:
     post:
       consumes:
@@ -2481,6 +2595,55 @@ paths:
           schema:
             $ref: '#/definitions/httpserver.errorEnvelope'
       summary: 退出群聊
+      tags:
+      - 客户端会话
+  /api/client/conversations/groups/{conversation_id}/members/{member_id}:
+    delete:
+      description: 群主或管理员将成员移出 active 群聊，并生成系统消息。群主不能被移出。
+      parameters:
+      - description: 会话 ID
+        in: path
+        name: conversation_id
+        required: true
+        type: string
+      - description: 成员用户 ID
+        in: path
+        name: member_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/httpserver.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/httpserver.addGroupConversationMembersResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
+      summary: 移出群聊成员
       tags:
       - 客户端会话
   /api/client/conversations/groups/{conversation_id}/name:

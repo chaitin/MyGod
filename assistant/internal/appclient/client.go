@@ -31,14 +31,16 @@ const (
 )
 
 const (
-	protocolVersion     = 1
-	kindRequest         = "request"
-	kindResponse        = "response"
-	kindEvent           = "event"
-	eventMessageCreated = "message.created"
-	methodMessageSend   = "message.send"
+	protocolVersion         = 1
+	kindRequest             = "request"
+	kindResponse            = "response"
+	kindEvent               = "event"
+	eventMessageCreated     = "message.created"
+	methodMessageSend       = "message.send"
+	methodMessageSendAsUser = "message.send_as_user"
 
 	methodConversationMessagesList = "conversation.messages.list"
+	methodTemporaryFilesReadURLs   = "temporary_files.read_urls"
 
 	defaultConversationContextLimit = 30
 )
@@ -95,8 +97,11 @@ type messagePayload struct {
 }
 
 type messageBody struct {
-	Content string `json:"content"`
-	Type    string `json:"type"`
+	Content   string `json:"content"`
+	FileID    string `json:"file_id"`
+	Name      string `json:"name"`
+	SizeBytes int64  `json:"size_bytes"`
+	Type      string `json:"type"`
 }
 
 type sendMessageRequestPayload struct {
@@ -124,6 +129,21 @@ type appListConversationMessagesRequestPayload struct {
 
 type appListConversationMessagesResponsePayload struct {
 	Messages []historyMessagePayload `json:"messages"`
+}
+
+type readTemporaryFileURLsRequestPayload struct {
+	ConversationID string   `json:"conversation_id"`
+	FileIDs        []string `json:"file_ids"`
+}
+
+type readTemporaryFileURLsResponsePayload struct {
+	URLs []temporaryFileReadURLPayload `json:"urls"`
+}
+
+type temporaryFileReadURLPayload struct {
+	ExpiresAt time.Time `json:"expires_at"`
+	FileID    string    `json:"file_id"`
+	URL       string    `json:"url"`
 }
 
 type historyMessagePayload struct {
@@ -411,7 +431,7 @@ func handleParsedServerMessage(ctx context.Context, message envelope, requester 
 		log.Printf("ignore invalid message body: %v", err)
 		return
 	}
-	if body.Type != "text" && body.Type != "markdown" {
+	if !isSupportedIncomingMessageType(body.Type) {
 		return
 	}
 
@@ -432,6 +452,13 @@ func handleParsedServerMessage(ctx context.Context, message envelope, requester 
 		return sendMarkdownReply(writeJSON, payload.Conversation, content)
 	})
 	runner.Start(ctx, userAgentKey(payload.Sender), sink, func(ctx context.Context, sink agent.OutputSink) error {
+		content, err := buildAgentMessageContent(ctx, requester, payload.Conversation.ID, body)
+		if err != nil {
+			if !errors.Is(err, context.Canceled) {
+				log.Printf("prepare agent message content failed: %v", err)
+			}
+			return err
+		}
 		history, err := loadConversationHistory(ctx, requester, payload)
 		if err != nil {
 			if !errors.Is(err, context.Canceled) {
@@ -439,7 +466,14 @@ func handleParsedServerMessage(ctx context.Context, message envelope, requester 
 			}
 			return err
 		}
-		err = assistantAgent.Run(ctx, agent.Request{
+		agentCtx := builtintools.WithScope(ctx, builtintools.Scope{
+			ConversationID:   payload.Conversation.ID,
+			ConversationType: payload.Conversation.Type,
+			CurrentUserID:    payload.Sender.ID,
+			Requester:        requester,
+			TriggerMessageID: payload.Message.ID,
+		})
+		err = assistantAgent.Run(agentCtx, agent.Request{
 			Conversation: agent.Conversation{
 				ID:   payload.Conversation.ID,
 				Name: payload.Conversation.Name,
@@ -451,7 +485,7 @@ func handleParsedServerMessage(ctx context.Context, message envelope, requester 
 				Type: payload.Sender.Type,
 			},
 			MessageID: payload.Message.ID,
-			Content:   body.Content,
+			Content:   content,
 			History:   history,
 		}, sink)
 		if err != nil && !errors.Is(err, context.Canceled) {
@@ -459,6 +493,61 @@ func handleParsedServerMessage(ctx context.Context, message envelope, requester 
 		}
 		return err
 	})
+}
+
+func isSupportedIncomingMessageType(messageType string) bool {
+	switch messageType {
+	case "text", "markdown", "image", "file":
+		return true
+	default:
+		return false
+	}
+}
+
+func buildAgentMessageContent(ctx context.Context, requester appRequester, conversationID string, body messageBody) (string, error) {
+	switch body.Type {
+	case "text", "markdown":
+		return body.Content, nil
+	case "image":
+		readURL, err := readTemporaryFileURL(ctx, requester, conversationID, body.FileID)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("用户发送了一张图片。\n文件 ID：%s\n临时访问地址：%s", body.FileID, readURL.URL), nil
+	case "file":
+		readURL, err := readTemporaryFileURL(ctx, requester, conversationID, body.FileID)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("用户发送了一个文件。\n文件名：%s\n文件大小：%d 字节\n文件 ID：%s\n临时访问地址：%s", body.Name, body.SizeBytes, body.FileID, readURL.URL), nil
+	default:
+		return "", fmt.Errorf("unsupported message type %q", body.Type)
+	}
+}
+
+func readTemporaryFileURL(ctx context.Context, requester appRequester, conversationID string, fileID string) (temporaryFileReadURLPayload, error) {
+	if fileID == "" {
+		return temporaryFileReadURLPayload{}, fmt.Errorf("file_id is required")
+	}
+	raw, err := requester.Request(ctx, methodTemporaryFilesReadURLs, readTemporaryFileURLsRequestPayload{
+		ConversationID: conversationID,
+		FileIDs:        []string{fileID},
+	})
+	if err != nil {
+		return temporaryFileReadURLPayload{}, err
+	}
+
+	var response readTemporaryFileURLsResponsePayload
+	if err := json.Unmarshal(raw, &response); err != nil {
+		return temporaryFileReadURLPayload{}, err
+	}
+	for _, item := range response.URLs {
+		if item.FileID == fileID && item.URL != "" {
+			return item, nil
+		}
+	}
+
+	return temporaryFileReadURLPayload{}, fmt.Errorf("temporary file read URL not found for %s", fileID)
 }
 
 func userAgentKey(sender senderPayload) string {

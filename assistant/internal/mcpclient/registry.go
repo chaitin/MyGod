@@ -16,6 +16,7 @@ type Tool struct {
 
 type ToolResult struct {
 	Content string
+	Final   bool
 	IsError bool
 }
 

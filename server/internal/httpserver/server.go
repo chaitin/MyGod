@@ -79,6 +79,7 @@ func NewRouterWithRealtimeOptions(db *gorm.DB, cfg config.Config, realtimeOption
 	client.POST("/conversations/groups/:conversation_id/private", server.setGroupConversationPrivate)
 	client.POST("/conversations/groups/:conversation_id/join", server.joinPublicGroupConversation)
 	client.POST("/conversations/groups/:conversation_id/leave", server.leaveGroupConversation)
+	client.DELETE("/conversations/groups/:conversation_id/members/:member_id", server.removeGroupConversationMember)
 	client.POST("/conversations/:conversation_id/avatar", server.uploadGroupConversationAvatar)
 	client.POST("/conversations/:conversation_id/members", server.addGroupConversationMembers)
 	client.POST("/conversations/:conversation_id/read", server.markConversationRead)
@@ -86,6 +87,7 @@ func NewRouterWithRealtimeOptions(db *gorm.DB, cfg config.Config, realtimeOption
 	client.POST("/conversations/:conversation_id/messages", server.createConversationMessage)
 	client.POST("/conversations/:conversation_id/messages/files", server.createConversationFileMessage)
 	client.POST("/conversations/:conversation_id/messages/images", server.createConversationImageMessage)
+	client.POST("/conversations/:conversation_id/messages/:message_id/revoke", server.revokeConversationMessage)
 	client.GET("/ws", server.clientWebSocket)
 
 	admin := router.Group("/api/admin", server.requireAdminSession)

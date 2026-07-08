@@ -1,16 +1,23 @@
 import * as React from "react"
-import { useLocation } from "react-router"
+import { useLocation, useNavigate } from "react-router"
 
-import { normalizeMessageCreatedEventPayload } from "@/lib/client-data-api"
+import {
+  normalizeConversationRemovedEventPayload,
+  normalizeMessageCreatedEventPayload,
+  normalizeMessageUpdatedEventPayload,
+} from "@/lib/client-data-api"
 import { useClientData } from "@/lib/client-data-context"
 import { useRealtime } from "@/lib/realtime-context"
 
 export function ClientConversationRealtimeSync() {
   const location = useLocation()
+  const navigate = useNavigate()
   const { ready: realtimeReady, subscribeRealtimeEvent } = useRealtime()
   const {
     handleIncomingConversationMessage,
+    handleIncomingConversationMessageUpdate,
     refreshConversations,
+    removeConversation,
     syncLoadedConversationMessages,
   } = useClientData()
   const hasSeenRealtimeReadyRef = React.useRef(realtimeReady)
@@ -32,7 +39,8 @@ export function ClientConversationRealtimeSync() {
           message.body.type === "system_event" &&
           (message.body.event === "group_avatar_updated" ||
             message.body.event === "group_name_updated" ||
-            message.body.event === "group_member_left")
+            message.body.event === "group_member_left" ||
+            message.body.event === "group_member_removed")
         ) {
           void refreshConversations().catch(() => undefined)
         }
@@ -44,6 +52,36 @@ export function ClientConversationRealtimeSync() {
     activeConversationId,
     handleIncomingConversationMessage,
     refreshConversations,
+    subscribeRealtimeEvent,
+  ])
+
+  React.useEffect(() => {
+    return subscribeRealtimeEvent("message.updated", (payload) => {
+      try {
+        const message = normalizeMessageUpdatedEventPayload(payload)
+        handleIncomingConversationMessageUpdate(message)
+      } catch {
+        // Ignore malformed realtime events. The websocket remains usable.
+      }
+    })
+  }, [handleIncomingConversationMessageUpdate, subscribeRealtimeEvent])
+
+  React.useEffect(() => {
+    return subscribeRealtimeEvent("conversation.removed", (payload) => {
+      try {
+        const event = normalizeConversationRemovedEventPayload(payload)
+        removeConversation(event.conversationId)
+        if (activeConversationId === event.conversationId) {
+          navigate("/chat", { replace: true })
+        }
+      } catch {
+        // Ignore malformed realtime events. The websocket remains usable.
+      }
+    })
+  }, [
+    activeConversationId,
+    navigate,
+    removeConversation,
     subscribeRealtimeEvent,
   ])
 

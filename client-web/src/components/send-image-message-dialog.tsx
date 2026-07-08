@@ -24,7 +24,7 @@ type SendImageMessageDialogProps = {
 const imagePreviewBaseMaxWidth = 384
 const imagePreviewBaseMaxHeight = 288
 const minImagePreviewZoom = 0.5
-const maxImagePreviewZoom = 2
+const maxImagePreviewZoom = 3
 const imagePreviewZoomStep = 0.1
 
 export function SendImageMessageDialog({

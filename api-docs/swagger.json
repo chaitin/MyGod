@@ -2165,6 +2165,84 @@
                 }
             }
         },
+        "/api/client/conversations/groups/{conversation_id}/members/{member_id}": {
+            "delete": {
+                "description": "群主或管理员将成员移出 active 群聊，并生成系统消息。群主不能被移出。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端会话"
+                ],
+                "summary": "移出群聊成员",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "会话 ID",
+                        "name": "conversation_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "成员用户 ID",
+                        "name": "member_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/httpserver.addGroupConversationMembersResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
         "/api/client/conversations/groups/{conversation_id}/name": {
             "patch": {
                 "description": "群主或管理员修改 active 群聊名称，并生成系统消息。",
@@ -2947,6 +3025,90 @@
                     },
                     "413": {
                         "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/client/conversations/{conversation_id}/messages/{message_id}/revoke": {
+            "post": {
+                "description": "普通用户可以撤回自己的消息；群主和管理员可以撤回群内任意非系统消息。撤回后原消息只返回元信息，并创建一条系统消息。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端消息"
+                ],
+                "summary": "撤回会话消息",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "会话 ID",
+                        "name": "conversation_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "消息 ID",
+                        "name": "message_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/httpserver.revokeConversationMessageResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/httpserver.errorEnvelope"
                         }
@@ -3768,6 +3930,10 @@
                 "client_message_id": {
                     "type": "string",
                     "example": "9c08f2dd-0af6-4e99-b486-2f0c841822be"
+                },
+                "reply_to_message_id": {
+                    "type": "string",
+                    "example": "9c08f2dd-0af6-4e99-b486-2f0c841822be"
                 }
             }
         },
@@ -4133,6 +4299,60 @@
                 }
             }
         },
+        "httpserver.messageDelegatedByResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "女菩萨"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "app"
+                }
+            }
+        },
+        "httpserver.messageReplyToResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "sender": {
+                    "$ref": "#/definitions/httpserver.messageReplyToSenderResponse"
+                },
+                "seq": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "summary": {
+                    "type": "string",
+                    "example": "上一条消息摘要"
+                }
+            }
+        },
+        "httpserver.messageReplyToSenderResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Alice"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "user"
+                }
+            }
+        },
         "httpserver.messageResponse": {
             "type": "object",
             "properties": {
@@ -4151,7 +4371,25 @@
                     "type": "string",
                     "format": "date-time"
                 },
+                "delegated_by": {
+                    "$ref": "#/definitions/httpserver.messageDelegatedByResponse"
+                },
                 "id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "reply_to": {
+                    "$ref": "#/definitions/httpserver.messageReplyToResponse"
+                },
+                "reply_to_message_id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "revoked_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "revoked_by_user_id": {
                     "type": "string",
                     "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
                 },
@@ -4221,6 +4459,17 @@
                 },
                 "user": {
                     "$ref": "#/definitions/httpserver.userResponse"
+                }
+            }
+        },
+        "httpserver.revokeConversationMessageResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "$ref": "#/definitions/httpserver.messageResponse"
+                },
+                "system_message": {
+                    "$ref": "#/definitions/httpserver.messageResponse"
                 }
             }
         },

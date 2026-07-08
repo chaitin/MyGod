@@ -1,7 +1,6 @@
 import * as React from "react"
 import {
   FolderClosed,
-  Heading3,
   ImageIcon,
   LoaderCircle,
   MessageCircle,
@@ -9,6 +8,7 @@ import {
   Send,
   Settings,
   Smile,
+  X,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -29,6 +29,7 @@ import {
   type ExpressionItem,
 } from "@/components/expression-picker"
 import { GroupAvatar } from "@/components/group-avatar"
+import { MarkdownIcon } from "@/components/icons/markdown-icon"
 import { MessageAttachment } from "@/components/message-attachment"
 import { MessageImage } from "@/components/message-image"
 import { MessageLink } from "@/components/message-link"
@@ -67,8 +68,17 @@ export type ConversationPanelMessage = {
   author: string
   avatar: string
   body: ClientMessage["body"]
+  canRevoke: boolean
+  delegatedByName: string
+  replyTo?: ConversationPanelReplyTarget
   time: string
   senderUserId: string | null
+}
+
+export type ConversationPanelReplyTarget = {
+  id: string
+  author: string
+  summary: string
 }
 
 const maxFileMessageUploadBytes = 20 * 1024 * 1024
@@ -82,11 +92,15 @@ type ConversationPanelProps = {
   historyLoadingBefore: boolean
   messages: ConversationPanelMessage[]
   onDraftChange: (draft: string) => void
+  onCancelReply: () => void
+  onReplyToMessage: (message: ConversationPanelMessage) => void
+  onRevokeMessage: (message: ConversationPanelMessage) => void
   onSendFile: (file: File) => Promise<ClientMessage | null>
   onSendImage: (image: File) => Promise<ClientMessage | null>
   onLoadBeforeMessages: () => void
   onRichTextModeChange: (richTextMode: boolean) => void
   onSendMessage: () => void
+  replyTarget: ConversationPanelReplyTarget | null
   richTextMode: boolean
   sending: boolean
 }
@@ -100,11 +114,15 @@ export function ConversationPanel({
   historyLoadingBefore,
   messages,
   onDraftChange,
+  onCancelReply,
+  onReplyToMessage,
+  onRevokeMessage,
   onSendFile,
   onSendImage,
   onLoadBeforeMessages,
   onRichTextModeChange,
   onSendMessage,
+  replyTarget,
   richTextMode,
   sending,
 }: ConversationPanelProps) {
@@ -129,10 +147,14 @@ export function ConversationPanel({
             loadingBefore={historyLoadingBefore}
             messages={messages}
             onLoadBeforeMessages={onLoadBeforeMessages}
+            onReplyToMessage={onReplyToMessage}
+            onRevokeMessage={onRevokeMessage}
           />
           <ConversationPanelComposer
             conversationName={conversation.name}
             draft={draft}
+            replyTarget={replyTarget}
+            onCancelReply={onCancelReply}
             onDraftChange={onDraftChange}
             onSendFile={onSendFile}
             onSendImage={onSendImage}
@@ -253,6 +275,8 @@ function ConversationPanelHistory({
   loadingBefore,
   messages,
   onLoadBeforeMessages,
+  onReplyToMessage,
+  onRevokeMessage,
 }: {
   conversation: ClientConversation
   error: string | null
@@ -260,6 +284,8 @@ function ConversationPanelHistory({
   loadingBefore: boolean
   messages: ConversationPanelMessage[]
   onLoadBeforeMessages: () => void
+  onReplyToMessage: (message: ConversationPanelMessage) => void
+  onRevokeMessage: (message: ConversationPanelMessage) => void
 }) {
   const viewportRef = React.useRef<HTMLDivElement | null>(null)
   const previousConversationIdRef = React.useRef<string | null>(null)
@@ -408,6 +434,8 @@ function ConversationPanelHistory({
               key={message.id}
               message={message}
               conversation={conversation}
+              onReply={onReplyToMessage}
+              onRevoke={onRevokeMessage}
             />
           )
         )}
@@ -419,6 +447,8 @@ function ConversationPanelHistory({
 function ConversationPanelComposer({
   conversationName,
   draft,
+  replyTarget,
+  onCancelReply,
   onDraftChange,
   onSendFile,
   onSendImage,
@@ -429,6 +459,8 @@ function ConversationPanelComposer({
 }: {
   conversationName: string
   draft: string
+  replyTarget: ConversationPanelReplyTarget | null
+  onCancelReply: () => void
   onDraftChange: (draft: string) => void
   onSendFile: (file: File) => Promise<ClientMessage | null>
   onSendImage: (image: File) => Promise<ClientMessage | null>
@@ -668,6 +700,32 @@ function ConversationPanelComposer({
         className="flex w-full flex-col gap-2"
         data-testid="conversation-panel-composer-content"
       >
+        {replyTarget && (
+          <div
+            className="flex min-h-11 items-center justify-between gap-3 rounded-md border bg-muted/40 px-3 py-2"
+            data-testid="conversation-reply-preview"
+          >
+            <div className="min-w-0">
+              <div className="truncate text-xs font-medium">
+                回复 {replyTarget.author}
+              </div>
+              <div className="truncate text-xs text-muted-foreground">
+                {replyTarget.summary}
+              </div>
+            </div>
+            <Button
+              aria-label="取消回复"
+              disabled={sending}
+              onClick={onCancelReply}
+              size="icon-sm"
+              title="取消回复"
+              type="button"
+              variant="ghost"
+            >
+              <X className="size-4" />
+            </Button>
+          </div>
+        )}
         <div data-testid="conversation-panel-editor-row">
           <Textarea
             ref={textareaRef}
@@ -742,7 +800,7 @@ function ConversationPanelComposer({
               title="支持 markdown"
               type="button"
             >
-              <Heading3 className="size-4" />
+              <MarkdownIcon className="size-4" />
             </Toggle>
           </div>
           <Button
@@ -846,12 +904,17 @@ function SystemMessageBadge({
 function MessageBubble({
   message,
   conversation,
+  onReply,
+  onRevoke,
 }: {
   message: ConversationPanelMessage
   conversation: ClientConversation
+  onReply: (message: ConversationPanelMessage) => void
+  onRevoke: (message: ConversationPanelMessage) => void
 }) {
   const fromMe = message.role === "me"
   const fallback = fromMe ? "我" : getConversationInitial(conversation.name)
+  const copyText = getMessageCopyText(message)
 
   return (
     <div className={cn("flex gap-3", fromMe ? "justify-end" : "justify-start")}>
@@ -866,7 +929,13 @@ function MessageBubble({
           <span>{message.author}</span>
           <span>{message.time}</span>
         </div>
-        <MessageActionMenu>
+        <MessageActionMenu
+          canRevoke={message.canRevoke}
+          copyDisabled={!copyText}
+          onCopy={() => void copyMessageToClipboard(message)}
+          onReply={() => onReply(message)}
+          onRevoke={() => onRevoke(message)}
+        >
           <div
             className={cn(
               "max-w-full rounded-md p-3 text-sm leading-relaxed shadow-xs",
@@ -876,9 +945,17 @@ function MessageBubble({
             )}
             data-message-action-trigger
           >
+            {message.replyTo && (
+              <MessageReplyReference replyTo={message.replyTo} />
+            )}
             <MessageBodyRenderer body={message.body} />
           </div>
         </MessageActionMenu>
+        {message.delegatedByName && (
+          <div className="text-xs text-muted-foreground">
+            由 {message.delegatedByName} 代发
+          </div>
+        )}
       </div>
       {fromMe && (
         <MessageAvatar
@@ -887,6 +964,64 @@ function MessageBubble({
           message={message}
         />
       )}
+    </div>
+  )
+}
+
+async function copyMessageToClipboard(message: ConversationPanelMessage) {
+  const text = getMessageCopyText(message)
+  if (!text) {
+    toast.error("没有可复制内容")
+    return
+  }
+
+  try {
+    await writeClipboardText(text)
+    toast.success("已复制")
+  } catch {
+    toast.error("复制失败")
+  }
+}
+
+function getMessageCopyText(message: ConversationPanelMessage) {
+  switch (message.body.type) {
+    case "file":
+      return message.body.name
+    case "image":
+      return ""
+    case "revoked":
+      return ""
+    case "link":
+      return message.body.url
+    case "markdown":
+    case "text":
+      return message.body.content
+    case "system_event":
+      return formatClientMessageBodySummary(message.body)
+  }
+}
+
+async function writeClipboardText(text: string) {
+  if (!window.isSecureContext || !navigator.clipboard?.writeText) {
+    throw new Error("clipboard is unavailable")
+  }
+
+  await navigator.clipboard.writeText(text)
+}
+
+function MessageReplyReference({
+  replyTo,
+}: {
+  replyTo: ConversationPanelReplyTarget
+}) {
+  return (
+    <div className="mb-2 border-l-2 border-foreground/20 pl-2 text-xs">
+      <div className="truncate font-medium text-foreground/80">
+        {replyTo.author}
+      </div>
+      <div className="line-clamp-2 text-muted-foreground">
+        {replyTo.summary}
+      </div>
     </div>
   )
 }
@@ -938,6 +1073,8 @@ function MessageBodyRenderer({
       return <MessageMarkdown content={body.content} />
     case "text":
       return <TextMessageBody content={body.content} />
+    case "revoked":
+      return <span className="text-muted-foreground">该消息已被撤回</span>
     case "system_event":
       return <span>{formatClientMessageBodySummary(body)}</span>
   }

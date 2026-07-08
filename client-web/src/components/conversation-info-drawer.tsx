@@ -1,6 +1,7 @@
 import * as React from "react"
 
 import { useClientData } from "@/lib/client-data-context"
+import { AppConversationInfo } from "@/components/app-conversation-info"
 import { DirectConversationInfo } from "@/components/direct-conversation-info"
 import { GroupConversationInfo } from "@/components/group-conversation-info"
 import {
@@ -78,13 +79,5 @@ function ConversationInfoContent({
     return <GroupConversationInfo conversationId={conversationId} />
   }
 
-  return (
-    <>
-      <SheetHeader className="border-b">
-        <SheetTitle>会话信息</SheetTitle>
-        <SheetDescription>应用</SheetDescription>
-      </SheetHeader>
-      <div className="px-4 py-6 text-sm">{conversation.name}</div>
-    </>
-  )
+  return <AppConversationInfo conversationId={conversationId} />
 }

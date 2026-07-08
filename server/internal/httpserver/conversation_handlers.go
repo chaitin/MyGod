@@ -30,16 +30,20 @@ const (
 	systemEventGroupVisibilityChanged   = "group_visibility_changed"
 	systemEventGroupMemberJoined        = "group_member_joined"
 	systemEventGroupMemberLeft          = "group_member_left"
+	systemEventGroupMemberRemoved       = "group_member_removed"
 	systemEventGroupNameUpdated         = "group_name_updated"
+	systemEventMessageRevoked           = "message_revoked"
 	groupMembersInvitedSummarySeparator = ","
 )
 
 var (
-	errConversationNotGroup              = errors.New("conversation is not group")
-	errGroupConversationMemberCap        = errors.New("group conversation member cap exceeded")
-	errGroupConversationMemberMiss       = errors.New("group conversation member missing")
-	errGroupConversationAvatarForbidden  = errors.New("group conversation avatar forbidden")
-	errGroupConversationOwnerCannotLeave = errors.New("group conversation owner cannot leave")
+	errConversationNotGroup               = errors.New("conversation is not group")
+	errGroupConversationMemberCap         = errors.New("group conversation member cap exceeded")
+	errGroupConversationMemberMiss        = errors.New("group conversation member missing")
+	errGroupConversationAvatarForbidden   = errors.New("group conversation avatar forbidden")
+	errGroupConversationOwnerCannotLeave  = errors.New("group conversation owner cannot leave")
+	errGroupConversationOwnerCannotRemove = errors.New("group conversation owner cannot be removed")
+	errGroupConversationCannotRemoveSelf  = errors.New("group conversation member cannot remove self")
 )
 
 type createGroupConversationRequest struct {
@@ -190,10 +194,23 @@ type groupMemberLeftSystemEventBody struct {
 	Type  string             `json:"type"`
 }
 
+type groupMemberRemovedSystemEventBody struct {
+	Actor  systemEventUserRef `json:"actor"`
+	Event  string             `json:"event"`
+	Target systemEventUserRef `json:"target"`
+	Type   string             `json:"type"`
+}
+
 type groupNameUpdatedSystemEventBody struct {
 	Actor systemEventUserRef `json:"actor"`
 	Event string             `json:"event"`
 	Name  string             `json:"name"`
+	Type  string             `json:"type"`
+}
+
+type messageRevokedSystemEventBody struct {
+	Actor systemEventUserRef `json:"actor"`
+	Event string             `json:"event"`
 	Type  string             `json:"type"`
 }
 
@@ -694,12 +711,35 @@ func (s *Server) createGroupConversation(c echo.Context) error {
 		return failure(c, http.StatusBadRequest, "invalid_request", "群聊成员不能超过 100 人")
 	}
 
+	conversation, createdMessage, candidates, memberUserIDs, err := s.createUserGroupConversation(user, name, memberIDs)
+	if err != nil {
+		if errors.Is(err, errGroupConversationMemberMiss) {
+			return failure(c, http.StatusBadRequest, "invalid_request", "成员不存在或已禁用")
+		}
+		if errors.Is(err, errGroupConversationMemberCap) {
+			return failure(c, http.StatusBadRequest, "invalid_request", "群聊成员不能超过 100 人")
+		}
+		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
+	}
+
+	s.realtime.SendToUsers(memberUserIDs, realtimeMessageCreatedEvent(newMessageResponse(createdMessage)))
+
+	return success(c, http.StatusCreated, createGroupConversationResponse{
+		Conversation: newGroupConversationResponse(conversation, candidates, user.ID),
+	})
+}
+
+func (s *Server) createUserGroupConversation(user store.User, name string, memberIDs []string) (store.Conversation, store.Message, []conversationMemberCandidate, []string, error) {
+	if len(memberIDs)+1 > maxGroupConversationMembers {
+		return store.Conversation{}, store.Message{}, nil, nil, errGroupConversationMemberCap
+	}
+
 	members, err := s.loadActiveGroupMembers(memberIDs)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return failure(c, http.StatusBadRequest, "invalid_request", "成员不存在或已禁用")
+			return store.Conversation{}, store.Message{}, nil, nil, errGroupConversationMemberMiss
 		}
-		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
+		return store.Conversation{}, store.Message{}, nil, nil, err
 	}
 
 	now := time.Now().UTC()
@@ -763,14 +803,10 @@ func (s *Server) createGroupConversation(c echo.Context) error {
 		createdMessage = message
 		return nil
 	}); err != nil {
-		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
+		return store.Conversation{}, store.Message{}, nil, nil, err
 	}
 
-	s.realtime.SendToUsers(memberUserIDs, realtimeMessageCreatedEvent(newMessageResponse(createdMessage)))
-
-	return success(c, http.StatusCreated, createGroupConversationResponse{
-		Conversation: newGroupConversationResponse(conversation, candidates, user.ID),
-	})
+	return conversation, createdMessage, candidates, memberUserIDs, nil
 }
 
 // addGroupConversationMembers godoc
@@ -845,6 +881,76 @@ func (s *Server) addGroupConversationMembers(c echo.Context) error {
 		messageResponse = &response
 		s.realtime.SendToUsers(memberUserIDs, realtimeMessageCreatedEvent(response))
 	}
+
+	return success(c, http.StatusOK, addGroupConversationMembersResponse{
+		Conversation: newConversationListItemResponse(
+			conversation,
+			user.ID,
+			membersByConversationID[conversation.ID],
+			usersByID,
+		),
+		Message: messageResponse,
+	})
+}
+
+// removeGroupConversationMember godoc
+//
+// @Summary 移出群聊成员
+// @Description 群主或管理员将成员移出 active 群聊，并生成系统消息。群主不能被移出。
+// @Tags 客户端会话
+// @Produce json
+// @Param conversation_id path string true "会话 ID"
+// @Param member_id path string true "成员用户 ID"
+// @Success 200 {object} successEnvelope{data=addGroupConversationMembersResponse}
+// @Failure 400 {object} errorEnvelope
+// @Failure 401 {object} errorEnvelope
+// @Failure 403 {object} errorEnvelope
+// @Failure 404 {object} errorEnvelope
+// @Failure 500 {object} errorEnvelope
+// @Router /api/client/conversations/groups/{conversation_id}/members/{member_id} [delete]
+func (s *Server) removeGroupConversationMember(c echo.Context) error {
+	user, ok := currentUser(c)
+	if !ok {
+		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
+	}
+	conversationID, err := normalizeMessageConversationID(c.Param("conversation_id"))
+	if err != nil {
+		return failure(c, http.StatusBadRequest, "invalid_request", err.Error())
+	}
+	memberID, err := normalizeUUIDString(c.Param("member_id"), "成员 ID 格式错误")
+	if err != nil {
+		return failure(c, http.StatusBadRequest, "invalid_request", err.Error())
+	}
+
+	conversation, message, memberUserIDs, removedUserID, err := s.removeUserGroupConversationMember(user, conversationID, memberID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return failure(c, http.StatusNotFound, "not_found", "会话不存在或成员不在群聊中")
+		}
+		if errors.Is(err, errGroupConversationCannotRemoveSelf) {
+			return failure(c, http.StatusForbidden, "forbidden", "不能移出自己")
+		}
+		if errors.Is(err, errGroupConversationOwnerCannotRemove) {
+			return failure(c, http.StatusForbidden, "forbidden", "群主不能被移出群聊")
+		}
+		if errors.Is(err, errConversationAccessDenied) || errors.Is(err, errConversationNotGroup) {
+			return failure(c, http.StatusForbidden, "forbidden", "无权操作群聊")
+		}
+		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
+	}
+
+	membersByConversationID, usersByID, err := s.loadConversationListMembers([]string{conversation.ID})
+	if err != nil {
+		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
+	}
+
+	var messageResponse *messageResponse
+	if message != nil {
+		response := newMessageResponse(*message)
+		messageResponse = &response
+		s.realtime.SendToUsers(memberUserIDs, realtimeMessageCreatedEvent(response))
+	}
+	s.realtime.SendToUsers([]string{removedUserID}, realtimeConversationRemovedEvent(conversation.ID))
 
 	return success(c, http.StatusOK, addGroupConversationMembersResponse{
 		Conversation: newConversationListItemResponse(
@@ -1824,6 +1930,93 @@ func (s *Server) joinUserPublicGroupConversation(currentUser store.User, convers
 	return conversation, message, memberUserIDs, nil
 }
 
+func (s *Server) removeUserGroupConversationMember(currentUser store.User, conversationID string, targetUserID string) (store.Conversation, *store.Message, []string, string, error) {
+	var conversation store.Conversation
+	var message *store.Message
+	memberUserIDs := []string{}
+
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&conversation, "id = ?", conversationID).Error; err != nil {
+			return err
+		}
+		if conversation.Status != store.ConversationStatusActive {
+			return errConversationAccessDenied
+		}
+		if conversation.Kind != store.ConversationKindGroup {
+			return errConversationNotGroup
+		}
+		if currentUser.ID == targetUserID {
+			return errGroupConversationCannotRemoveSelf
+		}
+
+		var currentMember store.ConversationMember
+		if err := tx.First(
+			&currentMember,
+			"conversation_id = ? AND member_type = ? AND member_id = ? AND left_at IS NULL",
+			conversationID,
+			store.ConversationMemberTypeUser,
+			currentUser.ID,
+		).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errConversationAccessDenied
+			}
+			return err
+		}
+		if !canManageGroupConversation(currentMember.Role) {
+			return errConversationAccessDenied
+		}
+
+		var targetMember store.ConversationMember
+		if err := tx.First(
+			&targetMember,
+			"conversation_id = ? AND member_type = ? AND member_id = ? AND left_at IS NULL",
+			conversationID,
+			store.ConversationMemberTypeUser,
+			targetUserID,
+		).Error; err != nil {
+			return err
+		}
+		if targetMember.Role == store.ConversationMemberRoleOwner {
+			return errGroupConversationOwnerCannotRemove
+		}
+
+		var targetUser store.User
+		if err := tx.First(&targetUser, "id = ?", targetUserID).Error; err != nil {
+			return err
+		}
+
+		now := time.Now().UTC()
+		if err := tx.Model(&store.ConversationMember{}).
+			Where("conversation_id = ? AND member_type = ? AND member_id = ?", conversationID, store.ConversationMemberTypeUser, targetUserID).
+			Updates(map[string]any{
+				"left_at": now,
+			}).Error; err != nil {
+			return err
+		}
+
+		createdMessage, err := createGroupMemberRemovedSystemMessage(tx, &conversation, currentUser, targetUser, now)
+		if err != nil {
+			return err
+		}
+		message = &createdMessage
+		if err := advanceConversationMemberReadSeq(tx, conversationID, currentUser.ID, createdMessage.Seq); err != nil {
+			return err
+		}
+
+		ids, err := loadActiveConversationUserIDs(tx, conversationID)
+		if err != nil {
+			return err
+		}
+		memberUserIDs = ids
+		return nil
+	})
+	if err != nil {
+		return store.Conversation{}, nil, nil, "", err
+	}
+
+	return conversation, message, memberUserIDs, targetUserID, nil
+}
+
 func (s *Server) leaveUserGroupConversation(currentUser store.User, conversationID string) (store.Message, []string, error) {
 	var message store.Message
 	memberUserIDs := []string{}
@@ -2165,6 +2358,48 @@ func createGroupMemberLeftSystemMessage(db *gorm.DB, conversation *store.Convers
 	return message, nil
 }
 
+func createGroupMemberRemovedSystemMessage(db *gorm.DB, conversation *store.Conversation, actor store.User, target store.User, now time.Time) (store.Message, error) {
+	body, summary, err := newGroupMemberRemovedSystemEventBody(actor, target)
+	if err != nil {
+		return store.Message{}, err
+	}
+
+	message := store.Message{
+		ID:             uuid.NewString(),
+		ConversationID: conversation.ID,
+		Seq:            conversation.LastMessageSeq + 1,
+		SenderType:     store.MessageSenderTypeSystem,
+		Body:           body,
+		Summary:        summary,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := db.Create(&message).Error; err != nil {
+		return store.Message{}, err
+	}
+
+	if err := db.Model(&store.Conversation{}).
+		Where("id = ?", conversation.ID).
+		Updates(map[string]any{
+			"last_message_at":      message.CreatedAt,
+			"last_message_id":      message.ID,
+			"last_message_seq":     message.Seq,
+			"last_message_summary": message.Summary,
+			"updated_at":           now,
+		}).Error; err != nil {
+		return store.Message{}, err
+	}
+
+	lastMessageAt := message.CreatedAt
+	conversation.LastMessageAt = &lastMessageAt
+	conversation.LastMessageID = &message.ID
+	conversation.LastMessageSeq = message.Seq
+	conversation.LastMessageSummary = message.Summary
+	conversation.UpdatedAt = now
+
+	return message, nil
+}
+
 func createGroupNameUpdatedSystemMessage(db *gorm.DB, conversation *store.Conversation, actor store.User, name string, now time.Time) (store.Message, error) {
 	body, summary, err := newGroupNameUpdatedSystemEventBody(actor, name)
 	if err != nil {
@@ -2313,6 +2548,29 @@ func newGroupMemberLeftSystemEventBody(actor store.User) (json.RawMessage, strin
 	return body, summary, nil
 }
 
+func newGroupMemberRemovedSystemEventBody(actor store.User, target store.User) (json.RawMessage, string, error) {
+	actorDisplayName := userDisplayName(actor)
+	targetDisplayName := userDisplayName(target)
+	summary := actorDisplayName + " 已将 " + targetDisplayName + " 移出群聊"
+	body, err := json.Marshal(groupMemberRemovedSystemEventBody{
+		Actor: systemEventUserRef{
+			DisplayName: actorDisplayName,
+			ID:          actor.ID,
+		},
+		Event: systemEventGroupMemberRemoved,
+		Target: systemEventUserRef{
+			DisplayName: targetDisplayName,
+			ID:          target.ID,
+		},
+		Type: messageTypeSystemEvent,
+	})
+	if err != nil {
+		return nil, "", err
+	}
+
+	return body, summary, nil
+}
+
 func newGroupNameUpdatedSystemEventBody(actor store.User, name string) (json.RawMessage, string, error) {
 	actorDisplayName := userDisplayName(actor)
 	summary := actorDisplayName + " 修改群聊名称为 " + name
@@ -2330,6 +2588,28 @@ func newGroupNameUpdatedSystemEventBody(actor store.User, name string) (json.Raw
 	}
 
 	return body, summary, nil
+}
+
+func newMessageRevokedSystemEventBody(actor store.User) (json.RawMessage, string, error) {
+	actorDisplayName := userDisplayName(actor)
+	summary := actorDisplayName + " 撤回了一条消息"
+	body, err := json.Marshal(messageRevokedSystemEventBody{
+		Actor: systemEventUserRef{
+			DisplayName: actorDisplayName,
+			ID:          actor.ID,
+		},
+		Event: systemEventMessageRevoked,
+		Type:  messageTypeSystemEvent,
+	})
+	if err != nil {
+		return nil, "", err
+	}
+
+	return body, summary, nil
+}
+
+func revokedMessageSummary() string {
+	return "该消息已被撤回"
 }
 
 func orderDirectConversationUserIDs(first string, second string) (string, string) {

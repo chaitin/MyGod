@@ -148,6 +148,25 @@ type MessageSenderResponse = {
   type?: string
 }
 
+type MessageDelegatedByResponse = {
+  id?: string
+  name?: string
+  type?: string
+}
+
+type MessageReplyToSenderResponse = {
+  id?: string
+  name?: string
+  type?: string
+}
+
+type MessageReplyToResponse = {
+  id?: string
+  sender?: MessageReplyToSenderResponse
+  seq?: number
+  summary?: string
+}
+
 type TextMessageBodyResponse = {
   content?: string
   type?: "text"
@@ -213,10 +232,23 @@ type GroupMemberLeftSystemEventBodyResponse = {
   type?: "system_event"
 }
 
+type GroupMemberRemovedSystemEventBodyResponse = {
+  actor?: SystemEventUserRefResponse
+  event?: "group_member_removed"
+  target?: SystemEventUserRefResponse
+  type?: "system_event"
+}
+
 type GroupNameUpdatedSystemEventBodyResponse = {
   actor?: SystemEventUserRefResponse
   event?: "group_name_updated"
   name?: string
+  type?: "system_event"
+}
+
+type MessageRevokedSystemEventBodyResponse = {
+  actor?: SystemEventUserRefResponse
+  event?: "message_revoked"
   type?: "system_event"
 }
 
@@ -231,14 +263,21 @@ type MessageBodyResponse =
   | GroupVisibilityChangedSystemEventBodyResponse
   | GroupMemberJoinedSystemEventBodyResponse
   | GroupMemberLeftSystemEventBodyResponse
+  | GroupMemberRemovedSystemEventBodyResponse
   | GroupNameUpdatedSystemEventBodyResponse
+  | MessageRevokedSystemEventBodyResponse
 
 type MessageResponse = {
   body?: MessageBodyResponse
   client_message_id?: string
   conversation_id?: string
   created_at?: string
+  delegated_by?: MessageDelegatedByResponse | null
   id?: string
+  reply_to?: MessageReplyToResponse | null
+  reply_to_message_id?: string
+  revoked_at?: string
+  revoked_by_user_id?: string
   sender?: MessageSenderResponse
   seq?: number
 }
@@ -260,6 +299,11 @@ type CreateMessageResponse = {
   message?: MessageResponse
 }
 
+type RevokeConversationMessageResponse = {
+  message?: MessageResponse
+  system_message?: MessageResponse
+}
+
 type MarkConversationReadResponse = {
   conversation_id?: string
   last_read_seq?: number
@@ -268,6 +312,14 @@ type MarkConversationReadResponse = {
 
 type MessageCreatedEventPayloadResponse = {
   message?: MessageResponse
+}
+
+type MessageUpdatedEventPayloadResponse = {
+  message?: MessageResponse
+}
+
+type ConversationRemovedEventPayloadResponse = {
+  conversation_id?: string
 }
 
 type TemporaryFileReadURLResponse = {
@@ -362,6 +414,25 @@ export type ClientMessageSender = {
   type: "user" | "app" | "system"
 }
 
+export type ClientMessageDelegatedBy = {
+  id: string
+  name: string
+  type: "user" | "app"
+}
+
+export type ClientMessageReplyToSender = {
+  id: string
+  name: string
+  type: "user" | "app" | "system"
+}
+
+export type ClientMessageReplyTo = {
+  id: string
+  sender: ClientMessageReplyToSender
+  seq: number
+  summary: string
+}
+
 export type ClientTextMessageBody = {
   content: string
   type: "text"
@@ -388,6 +459,10 @@ export type ClientFileMessageBody = {
 export type ClientImageMessageBody = {
   fileId: string
   type: "image"
+}
+
+export type ClientRevokedMessageBody = {
+  type: "revoked"
 }
 
 export type ClientSystemEventUserRef = {
@@ -427,10 +502,23 @@ export type ClientGroupMemberLeftSystemEventBody = {
   type: "system_event"
 }
 
+export type ClientGroupMemberRemovedSystemEventBody = {
+  actor: ClientSystemEventUserRef
+  event: "group_member_removed"
+  target: ClientSystemEventUserRef
+  type: "system_event"
+}
+
 export type ClientGroupNameUpdatedSystemEventBody = {
   actor: ClientSystemEventUserRef
   event: "group_name_updated"
   name: string
+  type: "system_event"
+}
+
+export type ClientMessageRevokedSystemEventBody = {
+  actor: ClientSystemEventUserRef
+  event: "message_revoked"
   type: "system_event"
 }
 
@@ -440,19 +528,27 @@ export type ClientMessageBody =
   | ClientLinkMessageBody
   | ClientFileMessageBody
   | ClientImageMessageBody
+  | ClientRevokedMessageBody
   | ClientGroupMembersInvitedSystemEventBody
   | ClientGroupAvatarUpdatedSystemEventBody
   | ClientGroupVisibilityChangedSystemEventBody
   | ClientGroupMemberJoinedSystemEventBody
   | ClientGroupMemberLeftSystemEventBody
+  | ClientGroupMemberRemovedSystemEventBody
   | ClientGroupNameUpdatedSystemEventBody
+  | ClientMessageRevokedSystemEventBody
 
 export type ClientMessage = {
   body: ClientMessageBody
   clientMessageId: string
   conversationId: string
   createdAt: string
+  delegatedBy?: ClientMessageDelegatedBy
   id: string
+  replyTo?: ClientMessageReplyTo
+  replyToMessageId?: string
+  revokedAt?: string
+  revokedByUserId?: string
   sender: ClientMessageSender
   seq: number
 }
@@ -479,26 +575,31 @@ export type ListConversationMessagesOptions = {
 export type SendConversationTextMessageInput = {
   clientMessageId: string
   content: string
+  replyToMessageId?: string
 }
 
 export type SendConversationMarkdownMessageInput = {
   clientMessageId: string
   content: string
+  replyToMessageId?: string
 }
 
 export type SendConversationLinkMessageInput = {
   clientMessageId: string
+  replyToMessageId?: string
   url: string
 }
 
 export type SendConversationFileMessageInput = {
   clientMessageId: string
   file: File
+  replyToMessageId?: string
 }
 
 export type SendConversationImageMessageInput = {
   clientMessageId: string
   image: File
+  replyToMessageId?: string
 }
 
 export type TemporaryFileReadURL = {
@@ -909,6 +1010,42 @@ export async function leaveGroupConversation(
   }
 }
 
+export async function removeGroupConversationMember(
+  conversationId: string,
+  memberId: string,
+  fetcher: ClientDataFetch = fetch
+): Promise<GroupConversationActionResult> {
+  const response = await fetcher(
+    `/api/client/conversations/groups/${encodeURIComponent(conversationId)}/members/${encodeURIComponent(memberId)}`,
+    {
+      credentials: "include",
+      method: "DELETE",
+    }
+  )
+  const payload = await readJson<
+    | ClientDataErrorEnvelope
+    | ClientDataSuccessEnvelope<GroupConversationActionResponse>
+  >(response)
+
+  if (!response.ok || payload?.success === false) {
+    throw createRequestError(payload, response, "移出群聊成员失败")
+  }
+
+  const data = (
+    payload as
+      ClientDataSuccessEnvelope<GroupConversationActionResponse> | undefined
+  )?.data
+
+  if (!data?.conversation) {
+    throw new ClientDataRequestError("移出群聊成员响应格式不正确")
+  }
+
+  return {
+    conversation: normalizeConversation(data.conversation),
+    message: data.message ? normalizeMessage(data.message) : null,
+  }
+}
+
 async function postGroupConversationAction(
   url: string,
   fallbackMessage: string,
@@ -1082,6 +1219,7 @@ export async function sendConversationTextMessage(
     {
       body: JSON.stringify({
         client_message_id: input.clientMessageId,
+        reply_to_message_id: input.replyToMessageId,
         body: {
           type: "text",
           content: input.content,
@@ -1119,6 +1257,7 @@ export async function sendConversationMarkdownMessage(
     {
       body: JSON.stringify({
         client_message_id: input.clientMessageId,
+        reply_to_message_id: input.replyToMessageId,
         body: {
           type: "markdown",
           content: input.content,
@@ -1156,6 +1295,7 @@ export async function sendConversationLinkMessage(
     {
       body: JSON.stringify({
         client_message_id: input.clientMessageId,
+        reply_to_message_id: input.replyToMessageId,
         body: {
           type: "link",
           url: input.url,
@@ -1190,6 +1330,9 @@ export async function sendConversationFileMessage(
 ) {
   const formData = new FormData()
   formData.set("client_message_id", input.clientMessageId)
+  if (input.replyToMessageId) {
+    formData.set("reply_to_message_id", input.replyToMessageId)
+  }
   formData.set("file", input.file)
 
   const response = await fetcher(
@@ -1222,6 +1365,9 @@ export async function sendConversationImageMessage(
 ) {
   const formData = new FormData()
   formData.set("client_message_id", input.clientMessageId)
+  if (input.replyToMessageId) {
+    formData.set("reply_to_message_id", input.replyToMessageId)
+  }
   formData.set("image", input.image)
 
   const response = await fetcher(
@@ -1245,6 +1391,41 @@ export async function sendConversationImageMessage(
   )?.data?.message
 
   return normalizeMessage(message)
+}
+
+export async function revokeConversationMessage(
+  conversationId: string,
+  messageId: string,
+  fetcher: ClientDataFetch = fetch
+) {
+  const response = await fetcher(
+    `/api/client/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/revoke`,
+    {
+      credentials: "include",
+      method: "POST",
+    }
+  )
+  const payload = await readJson<
+    | ClientDataErrorEnvelope
+    | ClientDataSuccessEnvelope<RevokeConversationMessageResponse>
+  >(response)
+
+  if (!response.ok || payload?.success === false) {
+    throw createRequestError(payload, response, "撤回消息失败")
+  }
+
+  const data = (
+    payload as
+      ClientDataSuccessEnvelope<RevokeConversationMessageResponse> | undefined
+  )?.data
+  if (!data?.message || !data.system_message) {
+    throw new ClientDataRequestError("撤回消息响应格式不正确")
+  }
+
+  return {
+    message: normalizeMessage(data.message),
+    systemMessage: normalizeMessage(data.system_message),
+  }
 }
 
 export async function readTemporaryFileURLs(
@@ -1367,6 +1548,34 @@ export function normalizeMessageCreatedEventPayload(
   )
 }
 
+export function normalizeMessageUpdatedEventPayload(
+  payload: unknown
+): ClientMessage {
+  if (!isObject(payload)) {
+    throw new ClientDataRequestError("消息更新推送格式不正确")
+  }
+
+  return normalizeMessage(
+    (payload as MessageUpdatedEventPayloadResponse).message
+  )
+}
+
+export function normalizeConversationRemovedEventPayload(payload: unknown) {
+  if (!isObject(payload)) {
+    throw new ClientDataRequestError("会话移除推送格式不正确")
+  }
+
+  const conversationId = (payload as ConversationRemovedEventPayloadResponse)
+    .conversation_id
+  if (typeof conversationId !== "string" || conversationId.trim() === "") {
+    throw new ClientDataRequestError("会话移除推送格式不正确")
+  }
+
+  return {
+    conversationId,
+  }
+}
+
 export function formatClientMessageBodySummary(body: ClientMessageBody) {
   if (body.type === "text") {
     return body.content
@@ -1388,6 +1597,14 @@ export function formatClientMessageBodySummary(body: ClientMessageBody) {
     return "[图片]"
   }
 
+  if (body.type === "revoked") {
+    return "该消息已被撤回"
+  }
+
+  if (body.event === "message_revoked") {
+    return `${body.actor.displayName} 撤回了一条消息`
+  }
+
   if (body.event === "group_avatar_updated") {
     return `${body.actor.displayName} 修改了群头像`
   }
@@ -1406,6 +1623,10 @@ export function formatClientMessageBodySummary(body: ClientMessageBody) {
 
   if (body.event === "group_member_left") {
     return `${body.actor.displayName} 已退出群聊`
+  }
+
+  if (body.event === "group_member_removed") {
+    return `${body.actor.displayName} 已将 ${body.target.displayName} 移出群聊`
   }
 
   if (body.event === "group_name_updated") {
@@ -1437,7 +1658,9 @@ export function isClientMessageInitiatedByUser(
     message.body.event === "group_visibility_changed" ||
     message.body.event === "group_member_joined" ||
     message.body.event === "group_member_left" ||
-    message.body.event === "group_name_updated"
+    message.body.event === "group_member_removed" ||
+    message.body.event === "group_name_updated" ||
+    message.body.event === "message_revoked"
   ) {
     return message.body.actor.id === userId
   }
@@ -1604,28 +1827,96 @@ function normalizeConversationType(type: string | undefined) {
 function normalizeMessage(message: MessageResponse | undefined): ClientMessage {
   const senderType = normalizeMessageSenderType(message?.sender?.type)
   const senderId = message?.sender?.id ?? ""
+  const revokedAt = message?.revoked_at
   if (
     !message?.conversation_id ||
     !message.created_at ||
     !message.id ||
     !message.sender ||
     (senderType !== "system" && !senderId) ||
-    typeof message.seq !== "number"
+    typeof message.seq !== "number" ||
+    (revokedAt !== undefined && typeof revokedAt !== "string")
   ) {
     throw new ClientDataRequestError("消息响应格式不正确")
   }
 
-  return {
-    body: normalizeMessageBody(message.body),
+  const normalized: ClientMessage = {
+    body: revokedAt ? { type: "revoked" } : normalizeMessageBody(message.body),
     clientMessageId: message.client_message_id ?? "",
     conversationId: message.conversation_id,
     createdAt: message.created_at,
+    delegatedBy: normalizeMessageDelegatedBy(message.delegated_by),
     id: message.id,
+    replyTo: normalizeMessageReplyTo(message.reply_to),
     sender: {
       id: senderId,
       type: senderType,
     },
     seq: message.seq,
+  }
+  if (message.reply_to_message_id) {
+    normalized.replyToMessageId = message.reply_to_message_id
+  }
+  if (revokedAt) {
+    normalized.revokedAt = revokedAt
+    if (message.revoked_by_user_id) {
+      normalized.revokedByUserId = message.revoked_by_user_id
+    }
+  }
+
+  return normalized
+}
+
+function normalizeMessageDelegatedBy(
+  delegatedBy: MessageDelegatedByResponse | null | undefined
+): ClientMessageDelegatedBy | undefined {
+  if (!delegatedBy) {
+    return undefined
+  }
+  if (
+    !delegatedBy.id ||
+    !delegatedBy.name ||
+    (delegatedBy.type !== "user" && delegatedBy.type !== "app")
+  ) {
+    throw new ClientDataRequestError("消息代发信息响应格式不正确")
+  }
+
+  return {
+    id: delegatedBy.id,
+    name: delegatedBy.name,
+    type: delegatedBy.type,
+  }
+}
+
+function normalizeMessageReplyTo(
+  replyTo: MessageReplyToResponse | null | undefined
+): ClientMessageReplyTo | undefined {
+  if (!replyTo) {
+    return undefined
+  }
+
+  const senderType = normalizeMessageSenderType(replyTo.sender?.type)
+  const senderId = replyTo.sender?.id ?? ""
+  if (
+    !replyTo.id ||
+    !replyTo.sender ||
+    (senderType !== "system" && !senderId) ||
+    typeof replyTo.sender.name !== "string" ||
+    typeof replyTo.seq !== "number" ||
+    typeof replyTo.summary !== "string"
+  ) {
+    throw new ClientDataRequestError("消息引用信息响应格式不正确")
+  }
+
+  return {
+    id: replyTo.id,
+    sender: {
+      id: senderId,
+      name: replyTo.sender.name,
+      type: senderType,
+    },
+    seq: replyTo.seq,
+    summary: replyTo.summary,
   }
 }
 
@@ -1716,14 +2007,30 @@ function normalizeSystemEventMessageBody(
     | GroupVisibilityChangedSystemEventBodyResponse
     | GroupMemberJoinedSystemEventBodyResponse
     | GroupMemberLeftSystemEventBodyResponse
+    | GroupMemberRemovedSystemEventBodyResponse
     | GroupNameUpdatedSystemEventBodyResponse
+    | MessageRevokedSystemEventBodyResponse
 ):
   | ClientGroupMembersInvitedSystemEventBody
   | ClientGroupAvatarUpdatedSystemEventBody
   | ClientGroupVisibilityChangedSystemEventBody
   | ClientGroupMemberJoinedSystemEventBody
   | ClientGroupMemberLeftSystemEventBody
-  | ClientGroupNameUpdatedSystemEventBody {
+  | ClientGroupMemberRemovedSystemEventBody
+  | ClientGroupNameUpdatedSystemEventBody
+  | ClientMessageRevokedSystemEventBody {
+  if (body.event === "message_revoked") {
+    if (!("actor" in body) || !isSystemEventUserRefResponse(body.actor)) {
+      throw new ClientDataRequestError("消息响应格式不正确")
+    }
+
+    return {
+      actor: normalizeSystemEventUserRef(body.actor),
+      event: "message_revoked",
+      type: "system_event",
+    }
+  }
+
   if (body.event === "group_avatar_updated") {
     if (!("actor" in body) || !isSystemEventUserRefResponse(body.actor)) {
       throw new ClientDataRequestError("消息响应格式不正确")
@@ -1769,6 +2076,24 @@ function normalizeSystemEventMessageBody(
     return {
       actor: normalizeSystemEventUserRef(body.actor),
       event: "group_member_left",
+      type: "system_event",
+    }
+  }
+
+  if (body.event === "group_member_removed") {
+    if (
+      !("actor" in body) ||
+      !isSystemEventUserRefResponse(body.actor) ||
+      !("target" in body) ||
+      !isSystemEventUserRefResponse(body.target)
+    ) {
+      throw new ClientDataRequestError("消息响应格式不正确")
+    }
+
+    return {
+      actor: normalizeSystemEventUserRef(body.actor),
+      event: "group_member_removed",
+      target: normalizeSystemEventUserRef(body.target),
       type: "system_event",
     }
   }

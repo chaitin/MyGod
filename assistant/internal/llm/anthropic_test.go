@@ -103,8 +103,8 @@ func TestAnthropicClientGenerateUsesMessagesAPI(t *testing.T) {
 	if gotModel != "claude-sonnet" {
 		t.Fatalf("model = %q, want claude-sonnet", gotModel)
 	}
-	if gotMaxTokens != DefaultMaxTokens {
-		t.Fatalf("max_tokens = %d, want %d", gotMaxTokens, DefaultMaxTokens)
+	if gotMaxTokens != 4096 {
+		t.Fatalf("max_tokens = %d, want 4096", gotMaxTokens)
 	}
 	if gotSystem != "你是 MyGod 助手" {
 		t.Fatalf("system = %q, want system prompt", gotSystem)

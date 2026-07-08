@@ -136,15 +136,22 @@ export function MessageImage({ image }: MessageImageProps) {
         />
       </button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-[min(96vw,72rem)] gap-3 p-3">
+        <DialogContent
+          className="w-fit max-w-[80vw] gap-3 p-3 sm:max-w-[80vw]"
+          onContextMenu={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+          }}
+          showCloseButton={false}
+        >
           <DialogHeader className="sr-only">
             <DialogTitle>图片预览</DialogTitle>
             <DialogDescription>查看图片消息大图</DialogDescription>
           </DialogHeader>
-          <div className="flex max-h-[82vh] items-center justify-center overflow-hidden rounded-md bg-black/5 dark:bg-white/5">
+          <div className="flex max-h-[88vh] max-w-[80vw] items-center justify-center overflow-hidden rounded-md bg-black/5 dark:bg-white/5">
             <img
               alt="图片消息预览"
-              className="max-h-[82vh] max-w-full object-contain"
+              className="max-h-[88vh] max-w-[80vw] object-contain"
               onError={handleImageError}
               src={currentSource.url}
             />

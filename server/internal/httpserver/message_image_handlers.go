@@ -63,7 +63,12 @@ func (s *Server) createConversationImageMessage(c echo.Context) error {
 	if err != nil {
 		return failure(c, http.StatusBadRequest, "invalid_request", err.Error())
 	}
-	if existingMessage, ok, err := s.findExistingUserMessageBeforeFileUpload(user.ID, conversationID, clientMessageID); err != nil {
+	replyToMessageID, err := normalizeOptionalMessageID(c.FormValue("reply_to_message_id"), "引用消息 ID")
+	if err != nil {
+		return failure(c, http.StatusBadRequest, "invalid_request", err.Error())
+	}
+	existingMessage, ok, member, err := s.findExistingUserMessageBeforeFileUpload(user.ID, conversationID, clientMessageID)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return failure(c, http.StatusNotFound, "not_found", "会话不存在")
 		}
@@ -75,10 +80,21 @@ func (s *Server) createConversationImageMessage(c echo.Context) error {
 		}
 
 		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
-	} else if ok {
+	}
+	if ok {
+		messageResponse, err := s.newMessageResponseForUser(c.Request().Context(), existingMessage, user.ID)
+		if err != nil {
+			return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
+		}
 		return success(c, http.StatusOK, createMessageResponse{
-			Message: newMessageResponse(existingMessage),
+			Message: messageResponse,
 		})
+	}
+	if err := validateReplyToMessage(s.db, conversationID, member.HistoryVisibleFromSeq, replyToMessageID); err != nil {
+		if errors.Is(err, errReplyToMessageInvalid) {
+			return failure(c, http.StatusBadRequest, "invalid_request", "引用消息无效")
+		}
+		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
 	}
 
 	c.Request().Body = http.MaxBytesReader(c.Response().Writer, c.Request().Body, maxImageMessageRequestBytes)
@@ -153,13 +169,16 @@ func (s *Server) createConversationImageMessage(c echo.Context) error {
 		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
 	}
 
-	message, created, memberUserIDs, err := s.createUserMessage(
+	message, created, memberUserIDs, err := s.createUserMessageWithMetadata(
 		c.Request().Context(),
 		user.ID,
 		conversationID,
 		clientMessageID,
 		body,
 		staticMessageBodyFinalizer(imageMessageSummary()),
+		createMessageMetadata{
+			ReplyToMessageID: replyToMessageID,
+		},
 	)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -171,13 +190,22 @@ func (s *Server) createConversationImageMessage(c echo.Context) error {
 		if errors.Is(err, errConversationNotSendable) {
 			return failure(c, http.StatusForbidden, "forbidden", "当前会话不能发送消息")
 		}
+		if errors.Is(err, errReplyToMessageInvalid) {
+			return failure(c, http.StatusBadRequest, "invalid_request", "引用消息无效")
+		}
 
 		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
 	}
 
-	messageResponse := newMessageResponse(message)
+	messageResponse, err := s.newMessageResponseForUser(c.Request().Context(), message, user.ID)
+	if err != nil {
+		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
+	}
 	if created {
-		s.realtime.SendToUsers(memberUserIDs, realtimeMessageCreatedEvent(messageResponse))
+		s.sendRealtimeMessageCreatedToUsers(c.Request().Context(), memberUserIDs, message)
+		if err := s.dispatchAppMessageCreatedEvent(user, message); err != nil {
+			c.Logger().Warnf("dispatch app message event failed: %v", err)
+		}
 	}
 
 	status := http.StatusOK

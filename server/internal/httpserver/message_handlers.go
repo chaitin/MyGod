@@ -22,6 +22,8 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/extension"
+	extensionast "github.com/yuin/goldmark/extension/ast"
 	"github.com/yuin/goldmark/text"
 	nethtml "golang.org/x/net/html"
 	"gorm.io/gorm"
@@ -45,11 +47,13 @@ const (
 var (
 	errConversationAccessDenied = errors.New("conversation access denied")
 	errConversationNotSendable  = errors.New("conversation not sendable")
+	errReplyToMessageInvalid    = errors.New("reply_to_message_id invalid")
 )
 
 type createMessageRequest struct {
-	ClientMessageID string          `json:"client_message_id" example:"9c08f2dd-0af6-4e99-b486-2f0c841822be"`
-	Body            json.RawMessage `json:"body" swaggertype:"object"`
+	ClientMessageID  string          `json:"client_message_id" example:"9c08f2dd-0af6-4e99-b486-2f0c841822be"`
+	ReplyToMessageID string          `json:"reply_to_message_id,omitempty" example:"9c08f2dd-0af6-4e99-b486-2f0c841822be"`
+	Body             json.RawMessage `json:"body" swaggertype:"object"`
 }
 
 type messageSenderResponse struct {
@@ -57,14 +61,38 @@ type messageSenderResponse struct {
 	Type string `json:"type" example:"user"`
 }
 
+type messageDelegatedByResponse struct {
+	ID   string `json:"id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
+	Name string `json:"name" example:"女菩萨"`
+	Type string `json:"type" example:"app"`
+}
+
+type messageReplyToSenderResponse struct {
+	ID   string `json:"id,omitempty" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
+	Name string `json:"name" example:"Alice"`
+	Type string `json:"type" example:"user"`
+}
+
+type messageReplyToResponse struct {
+	ID      string                       `json:"id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
+	Sender  messageReplyToSenderResponse `json:"sender"`
+	Seq     int64                        `json:"seq" example:"12"`
+	Summary string                       `json:"summary" example:"上一条消息摘要"`
+}
+
 type messageResponse struct {
-	ClientMessageID string                `json:"client_message_id" example:"9c08f2dd-0af6-4e99-b486-2f0c841822be"`
-	Body            json.RawMessage       `json:"body" swaggertype:"object"`
-	ConversationID  string                `json:"conversation_id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
-	CreatedAt       time.Time             `json:"created_at" format:"date-time"`
-	ID              string                `json:"id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
-	Sender          messageSenderResponse `json:"sender"`
-	Seq             int64                 `json:"seq" example:"13"`
+	ClientMessageID  string                      `json:"client_message_id" example:"9c08f2dd-0af6-4e99-b486-2f0c841822be"`
+	Body             json.RawMessage             `json:"body,omitempty" swaggertype:"object"`
+	ConversationID   string                      `json:"conversation_id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
+	CreatedAt        time.Time                   `json:"created_at" format:"date-time"`
+	DelegatedBy      *messageDelegatedByResponse `json:"delegated_by,omitempty"`
+	ID               string                      `json:"id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
+	ReplyToMessageID string                      `json:"reply_to_message_id,omitempty" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
+	ReplyTo          *messageReplyToResponse     `json:"reply_to,omitempty"`
+	RevokedAt        *time.Time                  `json:"revoked_at,omitempty" format:"date-time"`
+	RevokedByUserID  string                      `json:"revoked_by_user_id,omitempty" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
+	Sender           messageSenderResponse       `json:"sender"`
+	Seq              int64                       `json:"seq" example:"13"`
 }
 
 type createMessageResponse struct {
@@ -123,6 +151,13 @@ type messageBodyFinalizer interface {
 
 type finalizeMessageBodyFunc func(ctx context.Context, body json.RawMessage) (json.RawMessage, string, error)
 
+type createMessageMetadata struct {
+	DelegatedByType  *string
+	DelegatedByID    *string
+	DelegatedByName  string
+	ReplyToMessageID *string
+}
+
 type textMessageBodyHandler struct{}
 type markdownMessageBodyHandler struct{}
 type linkMessageBodyHandler struct{}
@@ -133,7 +168,7 @@ var messageBodyHandlers = map[string]messageBodyHandler{
 	messageTypeText:     textMessageBodyHandler{},
 }
 
-var markdownParser = goldmark.New()
+var markdownParser = goldmark.New(goldmark.WithExtensions(extension.Table, extension.Strikethrough))
 var linkPreviewHTTPClient = newLinkPreviewHTTPClient()
 var fetchLinkPreviewTitle = fetchLinkPreviewTitleHTTP
 
@@ -184,7 +219,11 @@ func (s *Server) listConversationMessages(c echo.Context) error {
 
 	responses := make([]messageResponse, 0, len(messages))
 	for _, message := range messages {
-		responses = append(responses, newMessageResponse(message))
+		response, err := s.newMessageResponseForUser(c.Request().Context(), message, user.ID)
+		if err != nil {
+			return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
+		}
+		responses = append(responses, response)
 	}
 
 	return success(c, http.StatusOK, listConversationMessagesResponse{
@@ -226,18 +265,21 @@ func (s *Server) createConversationMessage(c echo.Context) error {
 		return failure(c, http.StatusBadRequest, "invalid_request", "请求格式错误")
 	}
 
-	clientMessageID, messageBody, err := normalizeCreateMessageRequest(c.Request().Context(), req)
+	clientMessageID, replyToMessageID, messageBody, err := normalizeCreateMessageRequest(c.Request().Context(), req)
 	if err != nil {
 		return failure(c, http.StatusBadRequest, "invalid_request", err.Error())
 	}
 
-	message, created, memberUserIDs, err := s.createUserMessage(
+	message, created, memberUserIDs, err := s.createUserMessageWithMetadata(
 		c.Request().Context(),
 		user.ID,
 		conversationID,
 		clientMessageID,
 		messageBody,
 		finalizeNormalizedMessageBody,
+		createMessageMetadata{
+			ReplyToMessageID: replyToMessageID,
+		},
 	)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -249,13 +291,19 @@ func (s *Server) createConversationMessage(c echo.Context) error {
 		if errors.Is(err, errConversationNotSendable) {
 			return failure(c, http.StatusForbidden, "forbidden", "当前会话不能发送消息")
 		}
+		if errors.Is(err, errReplyToMessageInvalid) {
+			return failure(c, http.StatusBadRequest, "invalid_request", "引用消息无效")
+		}
 
 		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
 	}
 
-	messageResponse := newMessageResponse(message)
+	messageResponse, err := s.newMessageResponseForUser(c.Request().Context(), message, user.ID)
+	if err != nil {
+		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
+	}
 	if created {
-		s.realtime.SendToUsers(memberUserIDs, realtimeMessageCreatedEvent(messageResponse))
+		s.sendRealtimeMessageCreatedToUsers(c.Request().Context(), memberUserIDs, message)
 		if err := s.dispatchAppMessageCreatedEvent(user, message); err != nil {
 			c.Logger().Warnf("dispatch app message event failed: %v", err)
 		}
@@ -330,22 +378,40 @@ func normalizeOptionalPositiveInt64(rawValue string, fieldName string) (*int64, 
 	return &parsedValue, nil
 }
 
-func normalizeCreateMessageRequest(ctx context.Context, req createMessageRequest) (string, json.RawMessage, error) {
+func normalizeCreateMessageRequest(ctx context.Context, req createMessageRequest) (string, *string, json.RawMessage, error) {
 	clientMessageID, err := normalizeClientMessageID(req.ClientMessageID)
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
+	}
+	replyToMessageID, err := normalizeOptionalMessageID(req.ReplyToMessageID, "引用消息 ID")
+	if err != nil {
+		return "", nil, nil, err
 	}
 
 	handler, err := findMessageBodyHandler(req.Body)
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 	normalizedBody, err := handler.Normalize(ctx, req.Body)
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 
-	return clientMessageID, normalizedBody, nil
+	return clientMessageID, replyToMessageID, normalizedBody, nil
+}
+
+func normalizeOptionalMessageID(rawID string, fieldName string) (*string, error) {
+	id := strings.TrimSpace(rawID)
+	if id == "" {
+		return nil, nil
+	}
+	parsedID, err := uuid.Parse(id)
+	if err != nil {
+		return nil, errors.New(fieldName + " 格式错误")
+	}
+	normalizedID := parsedID.String()
+
+	return &normalizedID, nil
 }
 
 func (s *Server) listUserConversationMessages(userID string, conversationID string, query listConversationMessagesQuery) ([]store.Message, listMessagesPageResponse, error) {
@@ -477,6 +543,10 @@ func reverseMessages(messages []store.Message) {
 }
 
 func (s *Server) createUserMessage(ctx context.Context, userID string, conversationID string, clientMessageID string, body json.RawMessage, finalizeBody finalizeMessageBodyFunc) (store.Message, bool, []string, error) {
+	return s.createUserMessageWithMetadata(ctx, userID, conversationID, clientMessageID, body, finalizeBody, createMessageMetadata{})
+}
+
+func (s *Server) createUserMessageWithMetadata(ctx context.Context, userID string, conversationID string, clientMessageID string, body json.RawMessage, finalizeBody finalizeMessageBodyFunc, metadata createMessageMetadata) (store.Message, bool, []string, error) {
 	var created bool
 	var message store.Message
 	memberUserIDs := []string{}
@@ -505,16 +575,17 @@ func (s *Server) createUserMessage(ctx context.Context, userID string, conversat
 			return err
 		}
 
-		var existing store.Message
-		err := tx.First(
-			&existing,
-			"conversation_id = ? AND sender_type = ? AND sender_id = ? AND client_message_id = ?",
+		existing, ok, err := findExistingMessageByClientMessageID(
+			tx,
 			conversationID,
 			store.MessageSenderTypeUser,
 			userID,
 			clientMessageID,
-		).Error
-		if err == nil {
+		)
+		if err != nil {
+			return err
+		}
+		if ok {
 			message = existing
 			if err := advanceConversationMemberReadSeq(tx, conversationID, userID, existing.Seq); err != nil {
 				return err
@@ -522,7 +593,8 @@ func (s *Server) createUserMessage(ctx context.Context, userID string, conversat
 			created = false
 			return nil
 		}
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
+
+		if err := validateReplyToMessage(tx, conversationID, member.HistoryVisibleFromSeq, metadata.ReplyToMessageID); err != nil {
 			return err
 		}
 
@@ -533,16 +605,20 @@ func (s *Server) createUserMessage(ctx context.Context, userID string, conversat
 
 		now := time.Now().UTC()
 		message = store.Message{
-			ID:              uuid.NewString(),
-			ConversationID:  conversationID,
-			Seq:             conversation.LastMessageSeq + 1,
-			SenderType:      store.MessageSenderTypeUser,
-			SenderID:        &userID,
-			ClientMessageID: &clientMessageID,
-			Body:            finalBody,
-			Summary:         summary,
-			CreatedAt:       now,
-			UpdatedAt:       now,
+			ID:               uuid.NewString(),
+			ConversationID:   conversationID,
+			Seq:              conversation.LastMessageSeq + 1,
+			SenderType:       store.MessageSenderTypeUser,
+			SenderID:         &userID,
+			ClientMessageID:  &clientMessageID,
+			DelegatedByType:  metadata.DelegatedByType,
+			DelegatedByID:    metadata.DelegatedByID,
+			DelegatedByName:  metadata.DelegatedByName,
+			ReplyToMessageID: metadata.ReplyToMessageID,
+			Body:             finalBody,
+			Summary:          summary,
+			CreatedAt:        now,
+			UpdatedAt:        now,
 		}
 		if err := tx.Create(&message).Error; err != nil {
 			return err
@@ -584,6 +660,53 @@ func advanceConversationMemberReadSeq(db *gorm.DB, conversationID string, userID
 		Update("last_read_seq", gorm.Expr("CASE WHEN last_read_seq > ? THEN last_read_seq ELSE ? END", seq, seq)).Error
 }
 
+func findExistingMessageByClientMessageID(db *gorm.DB, conversationID string, senderType string, senderID string, clientMessageID string) (store.Message, bool, error) {
+	var message store.Message
+	result := db.
+		Order("id ASC").
+		Limit(1).
+		Find(
+			&message,
+			"conversation_id = ? AND sender_type = ? AND sender_id = ? AND client_message_id = ?",
+			conversationID,
+			senderType,
+			senderID,
+			clientMessageID,
+		)
+	if result.Error != nil {
+		return store.Message{}, false, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return store.Message{}, false, nil
+	}
+
+	return message, true, nil
+}
+
+func validateReplyToMessage(db *gorm.DB, conversationID string, visibleFromSeq int64, replyToMessageID *string) error {
+	if replyToMessageID == nil {
+		return nil
+	}
+	if visibleFromSeq < 1 {
+		visibleFromSeq = 1
+	}
+
+	var message store.Message
+	err := db.
+		Select("id").
+		Where("id = ? AND conversation_id = ? AND deleted_at IS NULL AND seq >= ?", *replyToMessageID, conversationID, visibleFromSeq).
+		Limit(1).
+		Take(&message).Error
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return errReplyToMessageInvalid
+	}
+
+	return err
+}
+
 func newMessageResponse(message store.Message) messageResponse {
 	senderID := ""
 	if message.SenderID != nil {
@@ -594,9 +717,8 @@ func newMessageResponse(message store.Message) messageResponse {
 		clientMessageID = *message.ClientMessageID
 	}
 
-	return messageResponse{
+	response := messageResponse{
 		ClientMessageID: clientMessageID,
-		Body:            message.Body,
 		ConversationID:  message.ConversationID,
 		CreatedAt:       message.CreatedAt,
 		ID:              message.ID,
@@ -605,6 +727,129 @@ func newMessageResponse(message store.Message) messageResponse {
 			Type: message.SenderType,
 		},
 		Seq: message.Seq,
+	}
+	if message.RevokedAt == nil {
+		response.Body = message.Body
+	} else {
+		response.RevokedAt = message.RevokedAt
+		if message.RevokedByUserID != nil {
+			response.RevokedByUserID = *message.RevokedByUserID
+		}
+	}
+	if message.ReplyToMessageID != nil {
+		response.ReplyToMessageID = *message.ReplyToMessageID
+	}
+	if message.DelegatedByType != nil && message.DelegatedByID != nil {
+		response.DelegatedBy = &messageDelegatedByResponse{
+			ID:   *message.DelegatedByID,
+			Name: message.DelegatedByName,
+			Type: *message.DelegatedByType,
+		}
+	}
+
+	return response
+}
+
+func (s *Server) newMessageResponseForUser(ctx context.Context, message store.Message, userID string) (messageResponse, error) {
+	response := newMessageResponse(message)
+	if message.RevokedAt != nil || message.ReplyToMessageID == nil {
+		return response, nil
+	}
+
+	quotedMessage, ok, err := s.findVisibleReplyToMessageForUser(ctx, message.ConversationID, *message.ReplyToMessageID, userID)
+	if err != nil {
+		return messageResponse{}, err
+	}
+	if !ok {
+		return response, nil
+	}
+
+	replyTo, err := s.newMessageReplyToResponse(ctx, quotedMessage)
+	if err != nil {
+		return messageResponse{}, err
+	}
+	response.ReplyTo = &replyTo
+
+	return response, nil
+}
+
+func (s *Server) findVisibleReplyToMessageForUser(ctx context.Context, conversationID string, replyToMessageID string, userID string) (store.Message, bool, error) {
+	member, err := s.requireReadableConversationMember(userID, conversationID)
+	if err != nil {
+		return store.Message{}, false, err
+	}
+	visibleFromSeq := member.HistoryVisibleFromSeq
+	if visibleFromSeq < 1 {
+		visibleFromSeq = 1
+	}
+
+	var message store.Message
+	err = s.db.WithContext(ctx).
+		Where("id = ? AND conversation_id = ? AND deleted_at IS NULL AND seq >= ?", replyToMessageID, conversationID, visibleFromSeq).
+		Limit(1).
+		Take(&message).Error
+	if err == nil {
+		return message, true, nil
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return store.Message{}, false, nil
+	}
+
+	return store.Message{}, false, err
+}
+
+func (s *Server) newMessageReplyToResponse(ctx context.Context, message store.Message) (messageReplyToResponse, error) {
+	senderID := ""
+	if message.SenderID != nil {
+		senderID = *message.SenderID
+	}
+	senderName, err := s.messageSenderName(ctx, message.SenderType, senderID)
+	if err != nil {
+		return messageReplyToResponse{}, err
+	}
+
+	summary := message.Summary
+	if message.RevokedAt != nil {
+		summary = revokedMessageSummary()
+	}
+
+	return messageReplyToResponse{
+		ID: message.ID,
+		Sender: messageReplyToSenderResponse{
+			ID:   senderID,
+			Name: senderName,
+			Type: message.SenderType,
+		},
+		Seq:     message.Seq,
+		Summary: summary,
+	}, nil
+}
+
+func (s *Server) messageSenderName(ctx context.Context, senderType string, senderID string) (string, error) {
+	switch senderType {
+	case store.MessageSenderTypeUser:
+		var user store.User
+		if err := s.db.WithContext(ctx).Select("id", "name").First(&user, "id = ?", senderID).Error; err != nil {
+			return "", err
+		}
+		return user.Name, nil
+	case store.MessageSenderTypeApp:
+		var app store.App
+		err := s.db.WithContext(ctx).Unscoped().Select("id", "name").First(&app, "id = ?", senderID).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "应用", nil
+		}
+		if err != nil {
+			return "", err
+		}
+		if app.Name == "" {
+			return "应用", nil
+		}
+		return app.Name, nil
+	case store.MessageSenderTypeSystem:
+		return "系统", nil
+	default:
+		return "", nil
 	}
 }
 
@@ -731,9 +976,6 @@ func (handler markdownMessageBodyHandler) Validate(raw json.RawMessage) error {
 	}
 	if len([]rune(content)) > maxTextMessageContentLength {
 		return errors.New("消息内容不能超过 5000 个字符")
-	}
-	if err := validateMarkdownMessageContent(content); err != nil {
-		return err
 	}
 
 	return nil
@@ -1111,48 +1353,6 @@ func linkMessageFallbackTitle(linkURL string) string {
 	return strings.TrimSpace(linkURL)
 }
 
-func validateMarkdownMessageContent(content string) error {
-	source := []byte(content)
-	document := markdownParser.Parser().Parse(text.NewReader(source))
-	err := ast.Walk(document, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
-		if !entering {
-			return ast.WalkContinue, nil
-		}
-
-		if isAllowedMarkdownMessageNode(node.Kind()) {
-			return ast.WalkContinue, nil
-		}
-
-		return ast.WalkStop, errors.New("不支持的 Markdown 语法")
-	})
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func isAllowedMarkdownMessageNode(kind ast.NodeKind) bool {
-	switch kind {
-	case ast.KindBlockquote,
-		ast.KindCodeBlock,
-		ast.KindCodeSpan,
-		ast.KindDocument,
-		ast.KindEmphasis,
-		ast.KindFencedCodeBlock,
-		ast.KindHeading,
-		ast.KindList,
-		ast.KindListItem,
-		ast.KindParagraph,
-		ast.KindString,
-		ast.KindText,
-		ast.KindTextBlock:
-		return true
-	default:
-		return false
-	}
-}
-
 func extractMarkdownPlainTextSummary(content string) (string, error) {
 	source := []byte(content)
 	document := markdownParser.Parser().Parse(text.NewReader(source))
@@ -1164,6 +1364,9 @@ func extractMarkdownPlainTextSummary(content string) (string, error) {
 			return ast.WalkContinue, nil
 		}
 
+		if node.Kind() == extensionast.KindTableCell {
+			appendMarkdownSummaryCellBreak(&buffer)
+		}
 		if isMarkdownSummaryLineBoundary(node.Kind()) {
 			appendMarkdownSummaryLineBreak(&buffer)
 		}
@@ -1188,6 +1391,8 @@ func appendMarkdownSummaryNodeText(buffer *bytes.Buffer, node ast.Node, source [
 		buffer.Write(typedNode.Value)
 	case *ast.CodeSpan:
 		buffer.Write(typedNode.Text(source))
+	case *ast.AutoLink:
+		buffer.Write(typedNode.Label(source))
 	case *ast.CodeBlock:
 		appendMarkdownSummaryLineBreak(buffer)
 		buffer.Write(typedNode.Text(source))
@@ -1205,11 +1410,26 @@ func isMarkdownSummaryLineBoundary(kind ast.NodeKind) bool {
 		ast.KindHeading,
 		ast.KindListItem,
 		ast.KindParagraph,
-		ast.KindTextBlock:
+		ast.KindThematicBreak,
+		ast.KindTextBlock,
+		extensionast.KindTable,
+		extensionast.KindTableHeader,
+		extensionast.KindTableRow:
 		return true
 	default:
 		return false
 	}
+}
+
+func appendMarkdownSummaryCellBreak(buffer *bytes.Buffer) {
+	if buffer.Len() == 0 {
+		return
+	}
+	current := buffer.String()
+	if strings.HasSuffix(current, "\n") || strings.HasSuffix(current, " ") {
+		return
+	}
+	buffer.WriteByte(' ')
 }
 
 func appendMarkdownSummaryLineBreak(buffer *bytes.Buffer) {
@@ -1258,4 +1478,40 @@ func realtimeMessageCreatedEvent(message messageResponse) realtime.Envelope {
 	return realtime.NewEvent(realtime.EventMessageCreated, createMessageResponse{
 		Message: message,
 	})
+}
+
+func realtimeMessageUpdatedEvent(message messageResponse) realtime.Envelope {
+	return realtime.NewEvent(realtime.EventMessageUpdated, createMessageResponse{
+		Message: message,
+	})
+}
+
+type conversationRemovedEventPayload struct {
+	ConversationID string `json:"conversation_id"`
+}
+
+func realtimeConversationRemovedEvent(conversationID string) realtime.Envelope {
+	return realtime.NewEvent(realtime.EventConversationRemoved, conversationRemovedEventPayload{
+		ConversationID: conversationID,
+	})
+}
+
+func (s *Server) sendRealtimeMessageCreatedToUsers(ctx context.Context, userIDs []string, message store.Message) {
+	for _, userID := range userIDs {
+		response, err := s.newMessageResponseForUser(ctx, message, userID)
+		if err != nil {
+			response = newMessageResponse(message)
+		}
+		s.realtime.SendToUsers([]string{userID}, realtimeMessageCreatedEvent(response))
+	}
+}
+
+func (s *Server) sendRealtimeMessageUpdatedToUsers(ctx context.Context, userIDs []string, message store.Message) {
+	for _, userID := range userIDs {
+		response, err := s.newMessageResponseForUser(ctx, message, userID)
+		if err != nil {
+			response = newMessageResponse(message)
+		}
+		s.realtime.SendToUsers([]string{userID}, realtimeMessageUpdatedEvent(response))
+	}
 }

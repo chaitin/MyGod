@@ -278,7 +278,6 @@ function createGroupVisibilityResponse(visibility: "private" | "public") {
   )
 }
 
-
 function createConversationMessage({
   clientMessageId,
   content,
@@ -420,6 +419,104 @@ function createSendMessageResponse({
   )
 }
 
+function createRevokedConversationMessage({
+  clientMessageId = "client-message-12",
+  conversationId = "conversation-bob",
+  createdAt = "2026-07-03T08:00:00Z",
+  id = "message-12",
+  revokedAt = "2026-07-03T08:02:00Z",
+  revokedByUserId = "user-1",
+  senderId = "user-1",
+  seq = 12,
+}: {
+  clientMessageId?: string
+  conversationId?: string
+  createdAt?: string
+  id?: string
+  revokedAt?: string
+  revokedByUserId?: string
+  senderId?: string
+  seq?: number
+}) {
+  return {
+    id,
+    conversation_id: conversationId,
+    seq,
+    sender: {
+      type: "user",
+      id: senderId,
+    },
+    client_message_id: clientMessageId,
+    created_at: createdAt,
+    revoked_at: revokedAt,
+    revoked_by_user_id: revokedByUserId,
+  }
+}
+
+function createMessageRevokedSystemMessage({
+  actorDisplayName = "Al",
+  actorId = "user-1",
+  conversationId = "conversation-bob",
+  createdAt = "2026-07-03T08:02:00Z",
+  id = "message-13",
+  seq = 13,
+}: {
+  actorDisplayName?: string
+  actorId?: string
+  conversationId?: string
+  createdAt?: string
+  id?: string
+  seq?: number
+} = {}) {
+  return {
+    id,
+    conversation_id: conversationId,
+    seq,
+    sender: {
+      type: "system",
+    },
+    body: {
+      actor: {
+        display_name: actorDisplayName,
+        id: actorId,
+      },
+      event: "message_revoked",
+      type: "system_event",
+    },
+    client_message_id: "",
+    created_at: createdAt,
+  }
+}
+
+function createRevokeMessageResponse({
+  conversationId = "conversation-bob",
+  messageId = "message-12",
+}: {
+  conversationId?: string
+  messageId?: string
+} = {}) {
+  return new Response(
+    JSON.stringify({
+      success: true,
+      data: {
+        message: createRevokedConversationMessage({
+          conversationId,
+          id: messageId,
+        }),
+        system_message: createMessageRevokedSystemMessage({
+          conversationId,
+        }),
+      },
+    }),
+    {
+      headers: {
+        "content-type": "application/json",
+      },
+      status: 200,
+    }
+  )
+}
+
 function createClientConversationsResponse({
   teamCreatedByUserId = "user-1",
   teamCurrentUserRole = "owner",
@@ -482,8 +579,7 @@ function createClientConversationsResponse({
                 name: "Bob Li",
                 nickname: "",
                 phone: "+8613912345679",
-                role:
-                  teamCreatedByUserId === "user-2" ? "owner" : "member",
+                role: teamCreatedByUserId === "user-2" ? "owner" : "member",
               },
               {
                 avatar: "/assets/avatars/builtin/05.webp",
@@ -529,6 +625,7 @@ function createClientFetchMock({
   directConversationResponse,
   groupConversationResponse,
   logoutResponse,
+  revokeMessageResponse,
   thirdPartyProviders = [],
   loginStatus = 200,
   logoutStatus = 200,
@@ -542,6 +639,7 @@ function createClientFetchMock({
   directConversationResponse?: Promise<Response>
   groupConversationResponse?: Promise<Response>
   logoutResponse?: Promise<Response>
+  revokeMessageResponse?: Promise<Response>
   thirdPartyProviders?: Array<{ key: string; name: string }>
   loginStatus?: 200 | 401
   logoutStatus?: 200 | 500
@@ -791,6 +889,20 @@ function createClientFetchMock({
       }
 
       return createClientConversationsResponse()
+    }
+
+    const revokeMessageMatch = path.match(
+      /^\/api\/client\/conversations\/([^/]+)\/messages\/([^/]+)\/revoke$/
+    )
+    if (revokeMessageMatch && init?.method === "POST") {
+      if (revokeMessageResponse) {
+        return revokeMessageResponse
+      }
+
+      return createRevokeMessageResponse({
+        conversationId: decodeURIComponent(revokeMessageMatch[1]),
+        messageId: decodeURIComponent(revokeMessageMatch[2]),
+      })
     }
 
     const messagesMatch = path.match(
@@ -2498,11 +2610,7 @@ describe("App", () => {
     renderApp("/chat?conversation_id=conversation-bob")
 
     await openLatestAppWebSocket()
-    await screen.findByRole(
-      "heading",
-      { name: "Bob Li" },
-      { timeout: 4_000 }
-    )
+    await screen.findByRole("heading", { name: "Bob Li" }, { timeout: 4_000 })
     const editor = screen.getByPlaceholderText(
       "输入消息"
     ) as HTMLTextAreaElement
@@ -2526,11 +2634,7 @@ describe("App", () => {
     renderApp("/chat?conversation_id=conversation-bob")
 
     await openLatestAppWebSocket()
-    await screen.findByRole(
-      "heading",
-      { name: "Bob Li" },
-      { timeout: 4_000 }
-    )
+    await screen.findByRole("heading", { name: "Bob Li" }, { timeout: 4_000 })
     expect(screen.getByPlaceholderText("输入消息")).toBeInTheDocument()
 
     await user.click(screen.getByRole("button", { name: "支持 markdown" }))
@@ -2812,6 +2916,138 @@ describe("App", () => {
     await waitFor(() => expect(sendButton).not.toBeDisabled())
   }, 10_000)
 
+  it("右键回复消息时发送引用 ID 并在成功后清空引用预览", async () => {
+    const user = userEvent.setup()
+    let resolveSendMessage!: (response: Response) => void
+    const sendMessageResponse = new Promise<Response>((resolve) => {
+      resolveSendMessage = resolve
+    })
+    const fetcher = createClientFetchMock({ sendMessageResponse })
+    vi.stubGlobal("fetch", fetcher)
+
+    renderApp("/chat?conversation_id=conversation-bob")
+
+    await openLatestAppWebSocket()
+    const history = await screen.findByTestId("conversation-panel-history")
+    const quotedText = await within(history).findByText(
+      "好的，我看一下",
+      undefined,
+      {
+        timeout: 4_000,
+      }
+    )
+    const quotedTrigger =
+      quotedText.closest("[data-message-action-trigger]") ?? quotedText
+    fireEvent.contextMenu(quotedTrigger)
+    await user.click(await screen.findByRole("menuitem", { name: "回复" }))
+
+    expect(screen.getByText("回复 Bob Li")).toBeInTheDocument()
+    expect(screen.getByTestId("conversation-reply-preview")).toHaveTextContent(
+      "好的，我看一下"
+    )
+
+    const editor = screen.getByPlaceholderText(
+      "输入消息"
+    ) as HTMLTextAreaElement
+    await user.type(editor, "引用回复")
+    await user.click(screen.getByRole("button", { name: "发送消息" }))
+
+    const sendCall = fetcher.mock.calls.find(([input, init]) => {
+      return (
+        String(input) ===
+          "/api/client/conversations/conversation-bob/messages" &&
+        init?.method === "POST"
+      )
+    })
+    expect(sendCall).toBeDefined()
+    const requestBody = JSON.parse(String(sendCall?.[1]?.body ?? "{}")) as {
+      body?: {
+        content?: string
+        type?: string
+      }
+      client_message_id?: string
+      reply_to_message_id?: string
+    }
+    expect(requestBody.reply_to_message_id).toBe("message-12")
+    expect(requestBody.body).toEqual({
+      type: "text",
+      content: "引用回复",
+    })
+
+    resolveSendMessage(
+      createSendMessageResponse({
+        clientMessageId: requestBody.client_message_id,
+        content: "引用回复",
+      })
+    )
+
+    expect(await screen.findByText("引用回复")).toBeInTheDocument()
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("conversation-reply-preview")
+      ).not.toBeInTheDocument()
+    )
+  }, 10_000)
+
+  it("右键撤回自己的消息时调用撤回接口并更新消息气泡", async () => {
+    const user = userEvent.setup()
+    const fetcher = createClientFetchMock({
+      conversationMessagesHandler: (conversationId) => {
+        if (conversationId === "conversation-bob") {
+          return createConversationMessagesResponse({
+            conversationId,
+            messages: [
+              createConversationMessage({
+                clientMessageId: "client-message-own",
+                content: "我准备撤回",
+                conversationId,
+                createdAt: "2026-07-03T08:00:00Z",
+                id: "message-own",
+                senderId: "user-1",
+                seq: 12,
+              }),
+            ],
+          })
+        }
+
+        return createDefaultConversationMessagesResponse(conversationId)
+      },
+      revokeMessageResponse: Promise.resolve(
+        createRevokeMessageResponse({
+          conversationId: "conversation-bob",
+          messageId: "message-own",
+        })
+      ),
+    })
+    vi.stubGlobal("fetch", fetcher)
+
+    renderApp("/chat?conversation_id=conversation-bob")
+
+    await openLatestAppWebSocket()
+    const history = await screen.findByTestId("conversation-panel-history")
+    const ownMessage = await within(history).findByText("我准备撤回")
+    const ownMessageTrigger =
+      ownMessage.closest("[data-message-action-trigger]") ?? ownMessage
+
+    fireEvent.contextMenu(ownMessageTrigger)
+    await user.click(await screen.findByRole("menuitem", { name: "撤回" }))
+
+    await waitFor(() =>
+      expect(fetcher).toHaveBeenCalledWith(
+        "/api/client/conversations/conversation-bob/messages/message-own/revoke",
+        {
+          credentials: "include",
+          method: "POST",
+        }
+      )
+    )
+    await waitFor(() =>
+      expect(within(history).queryByText("我准备撤回")).not.toBeInTheDocument()
+    )
+    expect(within(history).getByText("该消息已被撤回")).toBeInTheDocument()
+    expect(within(history).getByText("Al 撤回了一条消息")).toBeInTheDocument()
+  }, 10_000)
+
   it("旧会话发送完成不会清空新会话正在输入的草稿", async () => {
     const user = userEvent.setup()
     let resolveSendMessage!: (response: Response) => void
@@ -2998,6 +3234,72 @@ describe("App", () => {
     expect(
       screen.getByRole("button", { name: /这是一条实时推送消息/ })
     ).toBeInTheDocument()
+  }, 10_000)
+
+  it("收到消息更新推送时将原消息显示为已撤回", async () => {
+    renderApp("/chat?conversation_id=conversation-bob")
+
+    const socket = await openLatestAppWebSocket()
+    const history = await screen.findByTestId("conversation-panel-history")
+
+    expect(within(history).getByText("好的，我看一下")).toBeInTheDocument()
+
+    socket.receive({
+      v: 1,
+      kind: "event",
+      event: "message.updated",
+      payload: {
+        message: createRevokedConversationMessage({
+          clientMessageId: "client-message-12",
+          conversationId: "conversation-bob",
+          id: "message-12",
+          revokedByUserId: "user-2",
+          senderId: "user-2",
+          seq: 12,
+        }),
+      },
+    })
+
+    await waitFor(() =>
+      expect(
+        within(history).queryByText("好的，我看一下")
+      ).not.toBeInTheDocument()
+    )
+    expect(within(history).getByText("该消息已被撤回")).toHaveClass(
+      "text-muted-foreground"
+    )
+  }, 10_000)
+
+  it("收到未加载消息更新推送时不插入当前历史窗口", async () => {
+    renderApp("/chat?conversation_id=conversation-bob")
+
+    const socket = await openLatestAppWebSocket()
+    const history = await screen.findByTestId("conversation-panel-history")
+
+    expect(within(history).getByText("好的，我看一下")).toBeInTheDocument()
+
+    socket.receive({
+      v: 1,
+      kind: "event",
+      event: "message.updated",
+      payload: {
+        message: createRevokedConversationMessage({
+          clientMessageId: "client-message-old",
+          conversationId: "conversation-bob",
+          id: "message-old",
+          revokedByUserId: "user-2",
+          senderId: "user-2",
+          seq: 1,
+        }),
+      },
+    })
+
+    await expect(
+      within(history).findByText("该消息已被撤回", undefined, {
+        timeout: 500,
+      })
+    ).rejects.toThrow()
+    expect(within(history).getByText("好的，我看一下")).toBeInTheDocument()
   }, 10_000)
 
   it("未开启浏览器通知时收到非当前会话消息会提示去设置开启", async () => {

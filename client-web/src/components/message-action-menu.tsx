@@ -6,15 +6,27 @@ import { cn } from "@/lib/utils"
 
 type MessageActionMenuProps = {
   children: React.ReactNode
+  canRevoke?: boolean
+  copyDisabled?: boolean
+  onCopy?: () => void
+  onReply?: () => void
+  onRevoke?: () => void
 }
 
 const messageActions = [
-  { label: "复制", icon: Copy },
-  { label: "回复", icon: Reply },
-  { label: "转发", icon: Forward },
+  { label: "复制", icon: Copy, type: "copy" },
+  { label: "回复", icon: Reply, type: "reply" },
+  { label: "转发", icon: Forward, type: "forward" },
 ] as const
 
-export function MessageActionMenu({ children }: MessageActionMenuProps) {
+export function MessageActionMenu({
+  canRevoke = false,
+  children,
+  copyDisabled = false,
+  onCopy,
+  onReply,
+  onRevoke,
+}: MessageActionMenuProps) {
   return (
     <ContextMenuPrimitive.Root>
       <ContextMenuPrimitive.Trigger asChild>
@@ -32,16 +44,34 @@ export function MessageActionMenu({ children }: MessageActionMenuProps) {
           data-slot="message-action-menu"
         >
           {messageActions.map((action) => (
-            <MessageActionMenuItem key={action.label}>
+            <MessageActionMenuItem
+              disabled={action.type === "copy" ? copyDisabled : false}
+              key={action.label}
+              onSelect={
+                action.type === "copy"
+                  ? onCopy
+                  : action.type === "reply"
+                    ? onReply
+                    : undefined
+              }
+            >
               <action.icon aria-hidden="true" className="size-4" />
               <span>{action.label}</span>
             </MessageActionMenuItem>
           ))}
-          <ContextMenuPrimitive.Separator className="-mx-1 my-1 h-px bg-border" />
-          <MessageActionMenuItem variant="destructive">
-            <Undo2 aria-hidden="true" className="size-4" />
-            <span>撤回</span>
-          </MessageActionMenuItem>
+          {canRevoke && (
+            <>
+              <ContextMenuPrimitive.Separator className="-mx-1 my-1 h-px bg-border" />
+              <MessageActionMenuItem
+                disabled={!onRevoke}
+                onSelect={onRevoke}
+                variant="destructive"
+              >
+                <Undo2 aria-hidden="true" className="size-4" />
+                <span>撤回</span>
+              </MessageActionMenuItem>
+            </>
+          )}
         </ContextMenuPrimitive.Content>
       </ContextMenuPrimitive.Portal>
     </ContextMenuPrimitive.Root>
@@ -51,16 +81,20 @@ export function MessageActionMenu({ children }: MessageActionMenuProps) {
 function MessageActionMenuItem({
   children,
   className,
+  disabled = false,
+  onSelect,
   variant = "default",
 }: {
   children: React.ReactNode
   className?: string
+  disabled?: boolean
+  onSelect?: () => void
   variant?: "default" | "destructive"
 }) {
   return (
     <ContextMenuPrimitive.Item
       className={cn(
-        "flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden",
+        "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none",
         "focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground",
         "data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0",
         variant === "destructive" &&
@@ -69,6 +103,8 @@ function MessageActionMenuItem({
       )}
       data-slot="message-action-menu-item"
       data-variant={variant}
+      disabled={disabled}
+      onSelect={onSelect}
     >
       {children}
     </ContextMenuPrimitive.Item>

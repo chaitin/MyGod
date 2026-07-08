@@ -6,11 +6,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"assistant/internal/agent"
+	"assistant/internal/builtintools"
 	"assistant/internal/config"
 	"assistant/internal/mcpclient"
 
@@ -252,6 +254,156 @@ func TestNewToolRegistryIncludesBuiltinSleepTool(t *testing.T) {
 	t.Fatalf("tools = %+v, want builtin__sleep", registry.Tools())
 }
 
+func TestHandleServerMessageReadsTemporaryFileURLForImageAndFileMessages(t *testing.T) {
+	tests := []struct {
+		name             string
+		body             map[string]any
+		expectedSnippets []string
+	}{
+		{
+			name: "image",
+			body: map[string]any{
+				"type":    "image",
+				"file_id": "file-image-1",
+			},
+			expectedSnippets: []string{"图片", "file-image-1", "https://assets.example.test/image.webp"},
+		},
+		{
+			name: "file",
+			body: map[string]any{
+				"type":       "file",
+				"file_id":    "file-report-1",
+				"name":       "report.pdf",
+				"size_bytes": 1234,
+			},
+			expectedSnippets: []string{"文件", "report.pdf", "1234", "file-report-1", "https://assets.example.test/report.pdf"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var readURLPayload struct {
+				ConversationID string   `json:"conversation_id"`
+				FileIDs        []string `json:"file_ids"`
+			}
+			var agentRequests []agent.Request
+			requester := appRequestFunc(func(ctx context.Context, method string, payload any) (json.RawMessage, error) {
+				switch method {
+				case "temporary_files.read_urls":
+					rawPayload, err := json.Marshal(payload)
+					if err != nil {
+						t.Fatalf("marshal read URL payload: %v", err)
+					}
+					if err := json.Unmarshal(rawPayload, &readURLPayload); err != nil {
+						t.Fatalf("unmarshal read URL payload: %v", err)
+					}
+					fileID := readURLPayload.FileIDs[0]
+					readURL := "https://assets.example.test/image.webp"
+					if tt.name == "file" {
+						readURL = "https://assets.example.test/report.pdf"
+					}
+					return json.Marshal(map[string]any{
+						"urls": []map[string]any{
+							{
+								"file_id":    fileID,
+								"url":        readURL,
+								"expires_at": "2026-07-08T12:00:00Z",
+							},
+						},
+					})
+				case methodConversationMessagesList:
+					return json.Marshal(appListConversationMessagesResponsePayload{})
+				default:
+					t.Fatalf("unexpected app request method %q", method)
+					return nil, nil
+				}
+			})
+			replyAgent := replyAgentFunc(func(ctx context.Context, request agent.Request, sink agent.OutputSink) error {
+				agentRequests = append(agentRequests, request)
+				return nil
+			})
+
+			handleParsedServerMessage(
+				context.Background(),
+				testMessageCreatedEnvelopeWithBody(t, "user-1", "message-"+tt.name, 1, tt.body),
+				requester,
+				replyAgent,
+				directAgentRunner{},
+				func(message envelope) error { return nil },
+			)
+
+			if readURLPayload.ConversationID != "conversation-1" {
+				t.Fatalf("read URL conversation_id = %q, want conversation-1", readURLPayload.ConversationID)
+			}
+			if len(readURLPayload.FileIDs) != 1 || readURLPayload.FileIDs[0] != tt.body["file_id"] {
+				t.Fatalf("read URL file_ids = %#v, want body file id", readURLPayload.FileIDs)
+			}
+			if len(agentRequests) != 1 {
+				t.Fatalf("agent request count = %d, want 1", len(agentRequests))
+			}
+			for _, snippet := range tt.expectedSnippets {
+				if !strings.Contains(agentRequests[0].Content, snippet) {
+					t.Fatalf("agent content = %q, want to contain %q", agentRequests[0].Content, snippet)
+				}
+			}
+		})
+	}
+}
+
+func TestHandleServerMessageProvidesBuiltinToolScope(t *testing.T) {
+	var toolMethod string
+	var toolPayload struct {
+		ActorUserID      string `json:"actor_user_id"`
+		TargetUserID     string `json:"target_user_id"`
+		TriggerMessageID string `json:"trigger_message_id"`
+		Message          struct {
+			Type    string `json:"type"`
+			Content string `json:"content"`
+		} `json:"message"`
+	}
+	requester := appRequestFunc(func(ctx context.Context, method string, payload any) (json.RawMessage, error) {
+		switch method {
+		case methodConversationMessagesList:
+			return json.Marshal(appListConversationMessagesResponsePayload{})
+		case methodMessageSendAsUser:
+			toolMethod = method
+			rawPayload, err := json.Marshal(payload)
+			if err != nil {
+				t.Fatalf("marshal tool payload: %v", err)
+			}
+			if err := json.Unmarshal(rawPayload, &toolPayload); err != nil {
+				t.Fatalf("unmarshal tool payload: %v", err)
+			}
+			return json.RawMessage(`{"sent":true}`), nil
+		default:
+			t.Fatalf("unexpected app request method %q", method)
+			return nil, nil
+		}
+	})
+	replyAgent := replyAgentFunc(func(ctx context.Context, request agent.Request, sink agent.OutputSink) error {
+		_, err := builtintools.NewSource().CallTool(ctx, "send_as_user", json.RawMessage(`{
+			"contact_id":"user-2",
+			"type":"markdown",
+			"content":"**收到**"
+		}`))
+		return err
+	})
+
+	handleParsedServerMessage(context.Background(), testMessageCreatedEnvelope(t, "user-1", "message-1", 1, "帮我发给 Bob"), requester, replyAgent, directAgentRunner{}, func(message envelope) error {
+		return nil
+	})
+
+	if toolMethod != methodMessageSendAsUser {
+		t.Fatalf("tool method = %q, want %s", toolMethod, methodMessageSendAsUser)
+	}
+	if toolPayload.ActorUserID != "user-1" || toolPayload.TargetUserID != "user-2" || toolPayload.TriggerMessageID != "message-1" {
+		t.Fatalf("tool payload context = %#v, want current user and trigger message", toolPayload)
+	}
+	if toolPayload.Message.Type != "markdown" || toolPayload.Message.Content != "**收到**" {
+		t.Fatalf("tool payload message = %#v, want markdown", toolPayload.Message)
+	}
+}
+
 func TestUserAgentRunnerCancelsPreviousMessageFromSameUser(t *testing.T) {
 	runner := newUserAgentRunner()
 	requester := appRequestFunc(func(ctx context.Context, method string, payload any) (json.RawMessage, error) {
@@ -451,6 +603,26 @@ func testMessageCreatedEnvelope(t *testing.T, userID string, messageID string, s
 	if err != nil {
 		t.Fatalf("marshal body: %v", err)
 	}
+	return testMessageCreatedEnvelopeWithRawBody(t, userID, messageID, seq, content, body)
+}
+
+func testMessageCreatedEnvelopeWithBody(t *testing.T, userID string, messageID string, seq int64, body map[string]any) envelope {
+	t.Helper()
+
+	rawBody, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal body: %v", err)
+	}
+	summary := ""
+	if value, ok := body["content"].(string); ok {
+		summary = value
+	}
+	return testMessageCreatedEnvelopeWithRawBody(t, userID, messageID, seq, summary, rawBody)
+}
+
+func testMessageCreatedEnvelopeWithRawBody(t *testing.T, userID string, messageID string, seq int64, summary string, body json.RawMessage) envelope {
+	t.Helper()
+
 	payload, err := json.Marshal(messageCreatedPayload{
 		Conversation: conversationPayload{
 			ID:   "conversation-1",
@@ -461,7 +633,7 @@ func testMessageCreatedEnvelope(t *testing.T, userID string, messageID string, s
 			Body:    body,
 			ID:      messageID,
 			Seq:     seq,
-			Summary: content,
+			Summary: summary,
 		},
 		Sender: senderPayload{
 			ID:   userID,

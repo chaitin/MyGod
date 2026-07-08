@@ -17,6 +17,8 @@ import {
   listConversationMessages,
   markConversationRead as markConversationReadRequest,
   openAppConversation as openAppConversationRequest,
+  removeGroupConversationMember as removeGroupConversationMemberRequest,
+  revokeConversationMessage as revokeConversationMessageRequest,
   sendConversationFileMessage,
   sendConversationImageMessage,
   sendConversationLinkMessage,
@@ -40,6 +42,7 @@ import {
   ClientDataContext,
   type ClientConversationMessageState,
   type ClientDataContextValue,
+  type SendConversationMessageOptions,
 } from "@/lib/client-data-context"
 import { createClientMessageId } from "@/lib/message-id"
 import { Button } from "@/components/ui/button"
@@ -300,6 +303,30 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     ]
   )
 
+  const handleIncomingConversationMessageUpdate = useCallback(
+    (message: ClientMessage) => {
+      setConversationMessageStates((currentStates) => {
+        const state = currentStates[message.conversationId]
+        if (!state?.messages.some((existing) => existing.id === message.id)) {
+          return currentStates
+        }
+
+        const messages = mergeConversationMessages(state.messages, [message])
+
+        return {
+          ...currentStates,
+          [message.conversationId]: {
+            ...state,
+            error: null,
+            messages,
+            page: updatePageWithMessage(state.page, messages),
+          },
+        }
+      })
+    },
+    []
+  )
+
   const markConversationRead = useCallback(
     async (
       conversationId: string,
@@ -502,7 +529,11 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
   }, [syncAfterConversationMessages])
 
   const sendConversationText = useCallback(
-    async (conversationId: string, content: string) => {
+    async (
+      conversationId: string,
+      content: string,
+      options: SendConversationMessageOptions = {}
+    ) => {
       const trimmedContent = content.trim()
       const state = conversationMessageStatesRef.current[conversationId]
       if (!conversationId || !trimmedContent || state?.sending) {
@@ -519,6 +550,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
         const message = await sendConversationTextMessage(conversationId, {
           clientMessageId,
           content: trimmedContent,
+          replyToMessageId: options.replyToMessageId,
         })
         mergeIncomingConversationMessage(message, { markLoaded: true })
         return message
@@ -536,7 +568,11 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
   )
 
   const sendConversationMarkdown = useCallback(
-    async (conversationId: string, content: string) => {
+    async (
+      conversationId: string,
+      content: string,
+      options: SendConversationMessageOptions = {}
+    ) => {
       const trimmedContent = content.trim()
       const state = conversationMessageStatesRef.current[conversationId]
       if (!conversationId || !trimmedContent || state?.sending) {
@@ -553,6 +589,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
         const message = await sendConversationMarkdownMessage(conversationId, {
           clientMessageId,
           content: trimmedContent,
+          replyToMessageId: options.replyToMessageId,
         })
         mergeIncomingConversationMessage(message, { markLoaded: true })
         return message
@@ -570,7 +607,11 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
   )
 
   const sendConversationLink = useCallback(
-    async (conversationId: string, url: string) => {
+    async (
+      conversationId: string,
+      url: string,
+      options: SendConversationMessageOptions = {}
+    ) => {
       const trimmedURL = url.trim()
       const state = conversationMessageStatesRef.current[conversationId]
       if (!conversationId || !trimmedURL || state?.sending) {
@@ -586,6 +627,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
       try {
         const message = await sendConversationLinkMessage(conversationId, {
           clientMessageId,
+          replyToMessageId: options.replyToMessageId,
           url: trimmedURL,
         })
         mergeIncomingConversationMessage(message, { markLoaded: true })
@@ -604,7 +646,11 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
   )
 
   const sendConversationFile = useCallback(
-    async (conversationId: string, file: File) => {
+    async (
+      conversationId: string,
+      file: File,
+      options: SendConversationMessageOptions = {}
+    ) => {
       const state = conversationMessageStatesRef.current[conversationId]
       if (!conversationId || state?.sending) {
         return null
@@ -620,6 +666,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
         const message = await sendConversationFileMessage(conversationId, {
           clientMessageId,
           file,
+          replyToMessageId: options.replyToMessageId,
         })
         mergeIncomingConversationMessage(message, { markLoaded: true })
         return message
@@ -637,7 +684,11 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
   )
 
   const sendConversationImage = useCallback(
-    async (conversationId: string, image: File) => {
+    async (
+      conversationId: string,
+      image: File,
+      options: SendConversationMessageOptions = {}
+    ) => {
       const state = conversationMessageStatesRef.current[conversationId]
       if (!conversationId || state?.sending) {
         return null
@@ -653,6 +704,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
         const message = await sendConversationImageMessage(conversationId, {
           clientMessageId,
           image,
+          replyToMessageId: options.replyToMessageId,
         })
         mergeIncomingConversationMessage(message, { markLoaded: true })
         return message
@@ -856,6 +908,15 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     [handleError, navigate, refreshContacts, removeConversation]
   )
 
+  const removeGroupConversationMember = useCallback(
+    async (conversationId: string, memberId: string) =>
+      applyGroupConversationAction(
+        () => removeGroupConversationMemberRequest(conversationId, memberId),
+        "移出群聊成员失败"
+      ),
+    [applyGroupConversationAction]
+  )
+
   const updateGroupConversationAvatar = useCallback(
     async (conversationId: string, file: File) => {
       try {
@@ -871,6 +932,27 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
       }
     },
     [handleError, mergeIncomingConversationMessage, upsertConversation]
+  )
+
+  const revokeConversationMessage = useCallback(
+    async (conversationId: string, messageId: string) => {
+      try {
+        const result = await revokeConversationMessageRequest(
+          conversationId,
+          messageId
+        )
+        mergeIncomingConversationMessage(result.message, {
+          markLoaded: true,
+          updateList: false,
+        })
+        mergeIncomingConversationMessage(result.systemMessage, {
+          markLoaded: true,
+        })
+      } catch (error) {
+        throw handleError(error, "撤回消息失败")
+      }
+    },
+    [handleError, mergeIncomingConversationMessage]
   )
 
   const bootstrap = useCallback(async () => {
@@ -999,6 +1081,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     loadBeforeConversationMessages,
     markConversationRead,
     handleIncomingConversationMessage,
+    handleIncomingConversationMessageUpdate,
     me,
     meError,
     meLoading,
@@ -1009,6 +1092,9 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     refreshConversations,
     refreshContacts,
     refreshMe,
+    removeConversation,
+    removeGroupConversationMember,
+    revokeConversationMessage,
     sendConversationFile,
     sendConversationImage,
     sendConversationLink,

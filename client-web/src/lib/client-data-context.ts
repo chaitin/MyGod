@@ -22,6 +22,10 @@ export type ClientConversationMessageState = {
   sending: boolean
 }
 
+export type SendConversationMessageOptions = {
+  replyToMessageId?: string
+}
+
 export type ClientDataContextValue = {
   contactApps: ContactApp[]
   contactGroups: ContactGroup[]
@@ -56,6 +60,7 @@ export type ClientDataContextValue = {
     message: ClientMessage,
     options?: { activeConversationId?: string; visible?: boolean }
   ) => void
+  handleIncomingConversationMessageUpdate: (message: ClientMessage) => void
   mergeIncomingConversationMessage: (
     message: ClientMessage,
     options?: { markLoaded?: boolean; updateList?: boolean }
@@ -64,6 +69,15 @@ export type ClientDataContextValue = {
   openAppConversation: (appId: string) => Promise<ClientConversation>
   joinGroupConversation: (conversationId: string) => Promise<ClientConversation>
   leaveGroupConversation: (conversationId: string) => Promise<void>
+  removeConversation: (conversationId: string) => void
+  removeGroupConversationMember: (
+    conversationId: string,
+    memberId: string
+  ) => Promise<ClientConversation>
+  revokeConversationMessage: (
+    conversationId: string,
+    messageId: string
+  ) => Promise<void>
   setGroupConversationPublic: (
     conversationId: string
   ) => Promise<ClientConversation>
@@ -79,23 +93,28 @@ export type ClientDataContextValue = {
   refreshMe: () => Promise<void>
   sendConversationText: (
     conversationId: string,
-    content: string
+    content: string,
+    options?: SendConversationMessageOptions
   ) => Promise<ClientMessage | null>
   sendConversationMarkdown: (
     conversationId: string,
-    content: string
+    content: string,
+    options?: SendConversationMessageOptions
   ) => Promise<ClientMessage | null>
   sendConversationLink: (
     conversationId: string,
-    url: string
+    url: string,
+    options?: SendConversationMessageOptions
   ) => Promise<ClientMessage | null>
   sendConversationFile: (
     conversationId: string,
-    file: File
+    file: File,
+    options?: SendConversationMessageOptions
   ) => Promise<ClientMessage | null>
   sendConversationImage: (
     conversationId: string,
-    image: File
+    image: File,
+    options?: SendConversationMessageOptions
   ) => Promise<ClientMessage | null>
   syncLoadedConversationMessages: () => void
   updateConversationLastMessage: (message: ClientMessage) => void

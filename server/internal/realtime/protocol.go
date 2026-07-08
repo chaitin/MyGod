@@ -13,8 +13,10 @@ const (
 	KindResponse = "response"
 	KindEvent    = "event"
 
-	EventMessageCreated = "message.created"
-	EventSystemReady    = "system.ready"
+	EventMessageCreated      = "message.created"
+	EventMessageUpdated      = "message.updated"
+	EventConversationRemoved = "conversation.removed"
+	EventSystemReady         = "system.ready"
 )
 
 type Envelope struct {

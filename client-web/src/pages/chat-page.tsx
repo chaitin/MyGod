@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils"
 import { sortContactsByDisplayName } from "@/lib/contact-sort"
 import { useClientData } from "@/lib/client-data-context"
 import {
+  formatClientMessageBodySummary,
   type ClientConversation,
   type ClientMessage,
   type ClientUser,
@@ -18,6 +19,7 @@ import { ConversationListItemMenu } from "@/components/conversation-list-item-me
 import {
   ConversationPanel,
   type ConversationPanelMessage,
+  type ConversationPanelReplyTarget,
 } from "@/components/conversation-panel"
 import { GroupAvatar } from "@/components/group-avatar"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -104,6 +106,7 @@ export function ChatPage() {
     loadBeforeConversationMessages,
     markConversationRead,
     me,
+    revokeConversationMessage,
     sendConversationFile,
     sendConversationImage,
     sendConversationLink,
@@ -115,6 +118,10 @@ export function ChatPage() {
     conversationId: "",
     value: "",
   })
+  const [replyTargetState, setReplyTargetState] = React.useState<{
+    conversationId: string
+    target: ConversationPanelReplyTarget
+  } | null>(null)
   const [richTextMode, setRichTextMode] = React.useState(false)
   const [createGroupDialogOpen, setCreateGroupDialogOpen] =
     React.useState(false)
@@ -130,6 +137,10 @@ export function ChatPage() {
   const activeConversationIdRef = React.useRef(activeConversationId)
   const draft =
     draftState.conversationId === activeConversationId ? draftState.value : ""
+  const replyTarget =
+    replyTargetState?.conversationId === activeConversationId
+      ? replyTargetState.target
+      : null
   const activeMessageState = activeConversationId
     ? getConversationMessageState(activeConversationId)
     : undefined
@@ -146,6 +157,10 @@ export function ChatPage() {
   )
   const activeClientMessages =
     activeMessageState?.messages ?? emptyClientMessages
+  const activeClientMessagesById = React.useMemo(
+    () => new Map(activeClientMessages.map((message) => [message.id, message])),
+    [activeClientMessages]
+  )
   const contactsById = React.useMemo(
     () => new Map(contacts.map((contact) => [contact.id, contact])),
     [contacts]
@@ -176,11 +191,18 @@ export function ChatPage() {
               message,
               activeConversation,
               me,
-              contactsById
+              contactsById,
+              activeClientMessagesById
             )
           )
         : [],
-    [activeClientMessages, activeConversation, contactsById, me]
+    [
+      activeClientMessages,
+      activeClientMessagesById,
+      activeConversation,
+      contactsById,
+      me,
+    ]
   )
 
   const setDraft = React.useCallback(
@@ -245,6 +267,43 @@ export function ChatPage() {
     loadBeforeConversationMessages(activeConversationId)
   }, [activeConversationId, loadBeforeConversationMessages])
 
+  const clearReplyTarget = React.useCallback(() => {
+    setReplyTargetState((currentReplyTargetState) =>
+      currentReplyTargetState?.conversationId === activeConversationId
+        ? null
+        : currentReplyTargetState
+    )
+  }, [activeConversationId])
+
+  const replyToMessage = React.useCallback(
+    (message: ConversationPanelMessage) => {
+      setReplyTargetState({
+        conversationId: activeConversationId,
+        target: {
+          id: message.id,
+          author: message.author,
+          summary: formatClientMessageBodySummary(message.body),
+        },
+      })
+    },
+    [activeConversationId]
+  )
+
+  const revokeMessage = React.useCallback(
+    (message: ConversationPanelMessage) => {
+      if (!activeConversationId || !message.canRevoke) {
+        return
+      }
+
+      void revokeConversationMessage(activeConversationId, message.id).catch(
+        () => {
+          toast.error("撤回消息失败")
+        }
+      )
+    },
+    [activeConversationId, revokeConversationMessage]
+  )
+
   function sendMessage() {
     const content = draft.trim()
     if (!content || !activeConversationId || activeMessageState?.sending) {
@@ -252,6 +311,7 @@ export function ChatPage() {
     }
 
     const sendingConversationId = activeConversationId
+    const sendingReplyToMessageId = replyTarget?.id
     const linkURL = normalizeSingleLinkMessageURL(content)
     const sendConversation = linkURL
       ? sendConversationLink
@@ -260,20 +320,26 @@ export function ChatPage() {
         : sendConversationText
     const sendContent = linkURL ?? content
 
-    void sendConversation(sendingConversationId, sendContent).then(
-      (message) => {
-        if (
-          message &&
-          activeConversationIdRef.current === sendingConversationId
-        ) {
-          setDraftState((currentDraftState) =>
-            currentDraftState.conversationId === sendingConversationId
-              ? { ...currentDraftState, value: "" }
-              : currentDraftState
-          )
-        }
+    void sendConversation(sendingConversationId, sendContent, {
+      replyToMessageId: sendingReplyToMessageId,
+    }).then((message) => {
+      if (
+        message &&
+        activeConversationIdRef.current === sendingConversationId
+      ) {
+        setDraftState((currentDraftState) =>
+          currentDraftState.conversationId === sendingConversationId
+            ? { ...currentDraftState, value: "" }
+            : currentDraftState
+        )
+        setReplyTargetState((currentReplyTargetState) =>
+          currentReplyTargetState?.conversationId === sendingConversationId &&
+          currentReplyTargetState.target.id === sendingReplyToMessageId
+            ? null
+            : currentReplyTargetState
+        )
       }
-    )
+    })
   }
 
   async function sendFileMessage(file: File) {
@@ -281,7 +347,21 @@ export function ChatPage() {
       return null
     }
 
-    return sendConversationFile(activeConversationId, file)
+    const sendingConversationId = activeConversationId
+    const sendingReplyToMessageId = replyTarget?.id
+    const message = await sendConversationFile(sendingConversationId, file, {
+      replyToMessageId: sendingReplyToMessageId,
+    })
+    if (message && activeConversationIdRef.current === sendingConversationId) {
+      setReplyTargetState((currentReplyTargetState) =>
+        currentReplyTargetState?.conversationId === sendingConversationId &&
+        currentReplyTargetState.target.id === sendingReplyToMessageId
+          ? null
+          : currentReplyTargetState
+      )
+    }
+
+    return message
   }
 
   async function sendImageMessage(image: File) {
@@ -289,7 +369,21 @@ export function ChatPage() {
       return null
     }
 
-    return sendConversationImage(activeConversationId, image)
+    const sendingConversationId = activeConversationId
+    const sendingReplyToMessageId = replyTarget?.id
+    const message = await sendConversationImage(sendingConversationId, image, {
+      replyToMessageId: sendingReplyToMessageId,
+    })
+    if (message && activeConversationIdRef.current === sendingConversationId) {
+      setReplyTargetState((currentReplyTargetState) =>
+        currentReplyTargetState?.conversationId === sendingConversationId &&
+        currentReplyTargetState.target.id === sendingReplyToMessageId
+          ? null
+          : currentReplyTargetState
+      )
+    }
+
+    return message
   }
 
   function selectConversation(conversationId: string) {
@@ -429,12 +523,16 @@ export function ChatPage() {
         historyLoading={historyLoading}
         historyLoadingBefore={Boolean(activeMessageState?.loadingBefore)}
         messages={activeMessages}
+        onCancelReply={clearReplyTarget}
         onDraftChange={setDraft}
+        onReplyToMessage={replyToMessage}
+        onRevokeMessage={revokeMessage}
         onRichTextModeChange={setRichTextMode}
         onSendFile={sendFileMessage}
         onSendImage={sendImageMessage}
         onLoadBeforeMessages={loadBeforeMessages}
         onSendMessage={sendMessage}
+        replyTarget={replyTarget}
         richTextMode={richTextMode}
         sending={Boolean(activeMessageState?.sending)}
       />
@@ -764,7 +862,8 @@ function toConversationPanelMessage(
   message: ClientMessage,
   conversation: ClientConversation,
   currentUser: Pick<ClientUser, "avatar" | "id" | "name" | "nickname">,
-  contactsById: ReadonlyMap<string, ContactUser>
+  contactsById: ReadonlyMap<string, ContactUser>,
+  messagesById: ReadonlyMap<string, ClientMessage>
 ): ConversationPanelMessage {
   const fromMe =
     message.sender.type === "user" && message.sender.id === currentUser.id
@@ -775,11 +874,111 @@ function toConversationPanelMessage(
     author: getMessageAuthor(message, conversation, currentUser, contactsById),
     avatar: getMessageAvatar(message, conversation, currentUser, contactsById),
     body: message.body,
+    canRevoke: canRevokeMessage(message, conversation, currentUser.id),
+    delegatedByName: message.delegatedBy?.name ?? "",
     id: message.id,
+    replyTo: getMessageReplyTarget(
+      message,
+      conversation,
+      currentUser,
+      contactsById,
+      messagesById
+    ),
     role,
     senderUserId: message.sender.type === "user" ? message.sender.id : null,
     time: getMessageTime(message.createdAt),
   }
+}
+
+function canRevokeMessage(
+  message: ClientMessage,
+  conversation: ClientConversation,
+  currentUserId: string
+) {
+  if (message.sender.type === "system" || message.body.type === "revoked") {
+    return false
+  }
+  if (message.sender.type === "user" && message.sender.id === currentUserId) {
+    return true
+  }
+  if (conversation.type !== "group") {
+    return false
+  }
+
+  const currentMember = conversation.members?.find(
+    (member) => member.id === currentUserId
+  )
+
+  return currentMember?.role === "owner" || currentMember?.role === "admin"
+}
+
+function getMessageReplyTarget(
+  message: ClientMessage,
+  conversation: ClientConversation,
+  currentUser: Pick<ClientUser, "avatar" | "id" | "name" | "nickname">,
+  contactsById: ReadonlyMap<string, ContactUser>,
+  messagesById: ReadonlyMap<string, ClientMessage>
+): ConversationPanelReplyTarget | undefined {
+  if (message.replyTo) {
+    return {
+      id: message.replyTo.id,
+      author: getReplyToSenderAuthor(
+        message.replyTo.sender,
+        conversation,
+        currentUser,
+        contactsById
+      ),
+      summary: message.replyTo.summary,
+    }
+  }
+
+  if (!message.replyToMessageId) {
+    return undefined
+  }
+
+  const replyMessage = messagesById.get(message.replyToMessageId)
+  if (!replyMessage) {
+    return undefined
+  }
+
+  return {
+    id: replyMessage.id,
+    author: getMessageAuthor(
+      replyMessage,
+      conversation,
+      currentUser,
+      contactsById
+    ),
+    summary: formatClientMessageBodySummary(replyMessage.body),
+  }
+}
+
+function getReplyToSenderAuthor(
+  sender: NonNullable<ClientMessage["replyTo"]>["sender"],
+  conversation: ClientConversation,
+  currentUser: Pick<ClientUser, "id" | "name" | "nickname">,
+  contactsById: ReadonlyMap<string, ContactUser>
+) {
+  if (sender.type === "system") {
+    return "系统"
+  }
+
+  if (sender.type === "app") {
+    return sender.name || conversation.name
+  }
+
+  if (sender.id === currentUser.id) {
+    return formatMessageUserName(currentUser)
+  }
+
+  const contact = contactsById.get(sender.id)
+  if (contact) {
+    return formatMessageUserName(contact)
+  }
+
+  return (
+    sender.name || (conversation.type === "direct" ? conversation.name : "成员")
+  )
 }
 
 function getMessageAuthor(

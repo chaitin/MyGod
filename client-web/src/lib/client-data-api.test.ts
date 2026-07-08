@@ -9,7 +9,13 @@ import {
   listClientContacts,
   listClientConversations,
   listConversationMessages,
+  normalizeMessageUpdatedEventPayload,
   openAppConversation,
+  revokeConversationMessage,
+  sendConversationFileMessage,
+  sendConversationImageMessage,
+  sendConversationLinkMessage,
+  sendConversationMarkdownMessage,
   sendConversationTextMessage,
   setGroupConversationPrivate,
   setGroupConversationPublic,
@@ -323,50 +329,51 @@ describe("client data API", () => {
   })
 
   it("creates a group conversation with credentials", async () => {
-    const fetcher = vi.fn().mockImplementation(() =>
-      new Response(
-        JSON.stringify({
-          success: true,
-          data: {
-            conversation: {
-              created_at: "2026-07-03T09:30:00Z",
-              created_by_user_id: "user-1",
-              id: "conversation-group-1",
-              member_count: 2,
-              members: [
-                {
-                  avatar: "/assets/avatars/builtin/17.webp",
-                  email: "alice@example.com",
-                  id: "user-1",
-                  name: "Alice",
-                  nickname: "Al",
-                  phone: "+8613912345678",
-                  role: "owner",
-                },
-                {
-                  avatar: "/assets/avatars/builtin/03.webp",
-                  email: "bob@example.com",
-                  id: "user-2",
-                  name: "Bob Li",
-                  nickname: "",
-                  phone: "+8613912345679",
-                  role: "member",
-                },
-              ],
-              name: "新品讨论组",
-              posting_policy: "open",
-              status: "active",
-              type: "group",
+    const fetcher = vi.fn().mockImplementation(
+      () =>
+        new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              conversation: {
+                created_at: "2026-07-03T09:30:00Z",
+                created_by_user_id: "user-1",
+                id: "conversation-group-1",
+                member_count: 2,
+                members: [
+                  {
+                    avatar: "/assets/avatars/builtin/17.webp",
+                    email: "alice@example.com",
+                    id: "user-1",
+                    name: "Alice",
+                    nickname: "Al",
+                    phone: "+8613912345678",
+                    role: "owner",
+                  },
+                  {
+                    avatar: "/assets/avatars/builtin/03.webp",
+                    email: "bob@example.com",
+                    id: "user-2",
+                    name: "Bob Li",
+                    nickname: "",
+                    phone: "+8613912345679",
+                    role: "member",
+                  },
+                ],
+                name: "新品讨论组",
+                posting_policy: "open",
+                status: "active",
+                type: "group",
+              },
             },
-          },
-        }),
-        {
-          headers: {
-            "content-type": "application/json",
-          },
-          status: 201,
-        }
-      )
+          }),
+          {
+            headers: {
+              "content-type": "application/json",
+            },
+            status: 201,
+          }
+        )
     )
 
     await expect(
@@ -519,30 +526,31 @@ describe("client data API", () => {
   })
 
   it("sets group conversation visibility with credentials", async () => {
-    const fetcher = vi.fn().mockImplementation(() =>
-      new Response(
-        JSON.stringify({
-          success: true,
-          data: {
-            conversation: {
-              avatar: "",
-              created_at: "2026-07-03T09:30:00Z",
-              id: "conversation-group-1",
-              member_count: 2,
-              name: "新品讨论组",
-              type: "group",
-              visibility: "public",
+    const fetcher = vi.fn().mockImplementation(
+      () =>
+        new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              conversation: {
+                avatar: "",
+                created_at: "2026-07-03T09:30:00Z",
+                id: "conversation-group-1",
+                member_count: 2,
+                name: "新品讨论组",
+                type: "group",
+                visibility: "public",
+              },
+              message: null,
             },
-            message: null,
-          },
-        }),
-        {
-          headers: {
-            "content-type": "application/json",
-          },
-          status: 200,
-        }
-      )
+          }),
+          {
+            headers: {
+              "content-type": "application/json",
+            },
+            status: 200,
+          }
+        )
     )
 
     await expect(
@@ -589,6 +597,11 @@ describe("client data API", () => {
                   type: "user",
                   id: "user-2",
                 },
+                delegated_by: {
+                  type: "app",
+                  id: "app-assistant",
+                  name: "女菩萨",
+                },
                 body: {
                   type: "text",
                   content: "好的，我看一下",
@@ -633,6 +646,11 @@ describe("client data API", () => {
           sender: {
             type: "user",
             id: "user-2",
+          },
+          delegatedBy: {
+            type: "app",
+            id: "app-assistant",
+            name: "女菩萨",
           },
           body: {
             type: "text",
@@ -732,6 +750,379 @@ describe("client data API", () => {
         method: "POST",
       }
     )
+  })
+
+  it("sends reply references for all conversation message create APIs", async () => {
+    const fetcher = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              message: {
+                id: "message-reply",
+                conversation_id: "conversation-1",
+                seq: 13,
+                sender: {
+                  type: "user",
+                  id: "user-1",
+                },
+                body: {
+                  type: "text",
+                  content: "回复内容",
+                },
+                client_message_id: "client-message-reply",
+                created_at: "2026-07-03T08:01:00Z",
+              },
+            },
+          }),
+          {
+            headers: {
+              "content-type": "application/json",
+            },
+            status: 201,
+          }
+        )
+      )
+    )
+
+    await sendConversationTextMessage(
+      "conversation-1",
+      {
+        clientMessageId: "client-text",
+        content: "文本回复",
+        replyToMessageId: "message-quoted",
+      },
+      fetcher
+    )
+    await sendConversationMarkdownMessage(
+      "conversation-1",
+      {
+        clientMessageId: "client-markdown",
+        content: "**富文本回复**",
+        replyToMessageId: "message-quoted",
+      },
+      fetcher
+    )
+    await sendConversationLinkMessage(
+      "conversation-1",
+      {
+        clientMessageId: "client-link",
+        url: "https://example.com",
+        replyToMessageId: "message-quoted",
+      },
+      fetcher
+    )
+    await sendConversationFileMessage(
+      "conversation-1",
+      {
+        clientMessageId: "client-file",
+        file: new File(["file"], "report.txt", { type: "text/plain" }),
+        replyToMessageId: "message-quoted",
+      },
+      fetcher
+    )
+    await sendConversationImageMessage(
+      "conversation-1",
+      {
+        clientMessageId: "client-image",
+        image: new File(["image"], "photo.webp", { type: "image/webp" }),
+        replyToMessageId: "message-quoted",
+      },
+      fetcher
+    )
+
+    const textBody = JSON.parse(String(fetcher.mock.calls[0][1]?.body))
+    expect(textBody.reply_to_message_id).toBe("message-quoted")
+    const markdownBody = JSON.parse(String(fetcher.mock.calls[1][1]?.body))
+    expect(markdownBody.reply_to_message_id).toBe("message-quoted")
+    const linkBody = JSON.parse(String(fetcher.mock.calls[2][1]?.body))
+    expect(linkBody.reply_to_message_id).toBe("message-quoted")
+
+    const fileBody = fetcher.mock.calls[3][1]?.body
+    expect(fileBody).toBeInstanceOf(FormData)
+    expect((fileBody as FormData).get("reply_to_message_id")).toBe(
+      "message-quoted"
+    )
+    const imageBody = fetcher.mock.calls[4][1]?.body
+    expect(imageBody).toBeInstanceOf(FormData)
+    expect((imageBody as FormData).get("reply_to_message_id")).toBe(
+      "message-quoted"
+    )
+  })
+
+  it("normalizes reply reference details on messages", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            messages: [
+              {
+                id: "message-reply",
+                conversation_id: "conversation-1",
+                seq: 13,
+                sender: {
+                  type: "user",
+                  id: "user-1",
+                },
+                body: {
+                  type: "text",
+                  content: "我回复一下",
+                },
+                client_message_id: "client-message-reply",
+                created_at: "2026-07-03T08:01:00Z",
+                reply_to_message_id: "message-quoted",
+                reply_to: {
+                  id: "message-quoted",
+                  seq: 12,
+                  sender: {
+                    type: "user",
+                    id: "user-2",
+                    name: "Bob",
+                  },
+                  summary: "需要被引用的消息",
+                },
+              },
+            ],
+            page: {
+              has_more_after: false,
+              has_more_before: false,
+              limit: 20,
+              newest_seq: 13,
+              oldest_seq: 13,
+            },
+          },
+        }),
+        {
+          headers: {
+            "content-type": "application/json",
+          },
+        }
+      )
+    )
+
+    await expect(
+      listConversationMessages("conversation-1", {}, fetcher)
+    ).resolves.toMatchObject({
+      messages: [
+        {
+          id: "message-reply",
+          replyToMessageId: "message-quoted",
+          replyTo: {
+            id: "message-quoted",
+            seq: 12,
+            sender: {
+              id: "user-2",
+              name: "Bob",
+              type: "user",
+            },
+            summary: "需要被引用的消息",
+          },
+        },
+      ],
+    })
+  })
+
+  it("normalizes revoked messages without exposing the original body", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            messages: [
+              {
+                id: "message-revoked",
+                conversation_id: "conversation-1",
+                seq: 12,
+                sender: {
+                  type: "user",
+                  id: "user-2",
+                },
+                client_message_id: "client-message-revoked",
+                created_at: "2026-07-03T08:00:00Z",
+                revoked_at: "2026-07-03T08:02:00Z",
+                revoked_by_user_id: "user-2",
+              },
+            ],
+            page: {
+              limit: 20,
+              oldest_seq: 12,
+              newest_seq: 12,
+              has_more_before: false,
+              has_more_after: false,
+            },
+          },
+        }),
+        {
+          headers: {
+            "content-type": "application/json",
+          },
+          status: 200,
+        }
+      )
+    )
+
+    await expect(
+      listConversationMessages("conversation-1", {}, fetcher)
+    ).resolves.toEqual({
+      messages: [
+        {
+          id: "message-revoked",
+          conversationId: "conversation-1",
+          seq: 12,
+          sender: {
+            type: "user",
+            id: "user-2",
+          },
+          body: {
+            type: "revoked",
+          },
+          clientMessageId: "client-message-revoked",
+          createdAt: "2026-07-03T08:00:00Z",
+          revokedAt: "2026-07-03T08:02:00Z",
+          revokedByUserId: "user-2",
+        },
+      ],
+      page: {
+        hasMoreAfter: false,
+        hasMoreBefore: false,
+        limit: 20,
+        newestSeq: 12,
+        oldestSeq: 12,
+      },
+    })
+  })
+
+  it("revokes a conversation message and normalizes both returned messages", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            message: {
+              id: "message-12",
+              conversation_id: "conversation-1",
+              seq: 12,
+              sender: {
+                type: "user",
+                id: "user-1",
+              },
+              client_message_id: "client-message-12",
+              created_at: "2026-07-03T08:00:00Z",
+              revoked_at: "2026-07-03T08:02:00Z",
+              revoked_by_user_id: "user-1",
+            },
+            system_message: {
+              id: "message-13",
+              conversation_id: "conversation-1",
+              seq: 13,
+              sender: {
+                type: "system",
+              },
+              body: {
+                actor: {
+                  display_name: "Al",
+                  id: "user-1",
+                },
+                event: "message_revoked",
+                type: "system_event",
+              },
+              client_message_id: "",
+              created_at: "2026-07-03T08:02:00Z",
+            },
+          },
+        }),
+        {
+          headers: {
+            "content-type": "application/json",
+          },
+          status: 200,
+        }
+      )
+    )
+
+    await expect(
+      revokeConversationMessage("conversation-1", "message-12", fetcher)
+    ).resolves.toEqual({
+      message: {
+        id: "message-12",
+        conversationId: "conversation-1",
+        seq: 12,
+        sender: {
+          type: "user",
+          id: "user-1",
+        },
+        body: {
+          type: "revoked",
+        },
+        clientMessageId: "client-message-12",
+        createdAt: "2026-07-03T08:00:00Z",
+        revokedAt: "2026-07-03T08:02:00Z",
+        revokedByUserId: "user-1",
+      },
+      systemMessage: {
+        id: "message-13",
+        conversationId: "conversation-1",
+        seq: 13,
+        sender: {
+          type: "system",
+          id: "",
+        },
+        body: {
+          actor: {
+            displayName: "Al",
+            id: "user-1",
+          },
+          event: "message_revoked",
+          type: "system_event",
+        },
+        clientMessageId: "",
+        createdAt: "2026-07-03T08:02:00Z",
+      },
+    })
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/client/conversations/conversation-1/messages/message-12/revoke",
+      {
+        credentials: "include",
+        method: "POST",
+      }
+    )
+  })
+
+  it("normalizes message.updated realtime payloads", () => {
+    expect(
+      normalizeMessageUpdatedEventPayload({
+        message: {
+          id: "message-12",
+          conversation_id: "conversation-1",
+          seq: 12,
+          sender: {
+            type: "user",
+            id: "user-2",
+          },
+          client_message_id: "client-message-12",
+          created_at: "2026-07-03T08:00:00Z",
+          revoked_at: "2026-07-03T08:02:00Z",
+          revoked_by_user_id: "user-2",
+        },
+      })
+    ).toEqual({
+      id: "message-12",
+      conversationId: "conversation-1",
+      seq: 12,
+      sender: {
+        type: "user",
+        id: "user-2",
+      },
+      body: {
+        type: "revoked",
+      },
+      clientMessageId: "client-message-12",
+      createdAt: "2026-07-03T08:00:00Z",
+      revokedAt: "2026-07-03T08:02:00Z",
+      revokedByUserId: "user-2",
+    })
   })
 
   it("updates the current client user profile with partial fields", async () => {

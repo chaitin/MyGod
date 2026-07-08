@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"app/internal/config"
+	"app/internal/realtime"
 	"app/internal/store"
 
 	"github.com/glebarez/sqlite"
@@ -109,6 +110,259 @@ func TestClientCanReadTemporaryFileURLs(t *testing.T) {
 	}
 	if readURL.Query().Get("X-Amz-Algorithm") == "" {
 		t.Fatalf("read URL query missing X-Amz-Algorithm: %s", readURL.RawQuery)
+	}
+}
+
+func TestAppWebSocketTemporaryFilesReadURLsReturnsConversationFileURLs(t *testing.T) {
+	s3Server, _ := newFakeS3Server(t)
+	defer s3Server.Close()
+
+	server, db := newTemporaryFileTestRouter(t, s3Server.URL, "assets.example.test")
+	defer server.Close()
+
+	now := time.Date(2026, 7, 8, 11, 30, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	app := insertTestApp(t, db, store.App{
+		Name:             "Echo App",
+		Enabled:          true,
+		Visibility:       store.AppVisibilityPublic,
+		ConnectionSecret: "echo-app-secret",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	})
+	aliceCookie := loginAsUser(t, server, alice.Email)
+	appConn := dialAppWebSocket(t, server, app.ID, app.ConnectionSecret)
+
+	createConversationResp, createConversationBody := postJSON(t, server, "/api/client/conversations/apps", map[string]any{
+		"app_id": app.ID,
+	}, aliceCookie)
+	if createConversationResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create app conversation status = %d, want 201, body = %#v", createConversationResp.StatusCode, createConversationBody)
+	}
+	conversation := requireSuccess(t, createConversationBody)["conversation"].(map[string]any)
+	conversationID := conversation["id"].(string)
+	temporaryFile := store.TemporaryFile{
+		ID:        uuid.NewString(),
+		ObjectKey: "temporary-files/2026/07/08/app-file",
+		SizeBytes: 123,
+		CreatedAt: now,
+	}
+	if err := db.Create(&temporaryFile).Error; err != nil {
+		t.Fatalf("create temporary file: %v", err)
+	}
+	body, err := json.Marshal(fileMessageBody{
+		Type:      messageTypeFile,
+		FileID:    temporaryFile.ID,
+		Name:      "report.txt",
+		SizeBytes: temporaryFile.SizeBytes,
+	})
+	if err != nil {
+		t.Fatalf("marshal file body: %v", err)
+	}
+	senderID := alice.ID
+	if err := db.Create(&store.Message{
+		ID:             uuid.NewString(),
+		ConversationID: conversationID,
+		Seq:            1,
+		SenderType:     store.MessageSenderTypeUser,
+		SenderID:       &senderID,
+		Body:           body,
+		Summary:        "[文件] report.txt",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}).Error; err != nil {
+		t.Fatalf("create file message: %v", err)
+	}
+
+	response := sendAppRequest(t, appConn, realtime.Envelope{
+		V:      realtime.ProtocolVersion,
+		Kind:   realtime.KindRequest,
+		ID:     "app-read-file-url",
+		Method: "temporary_files.read_urls",
+		Payload: mustMarshalPayloadForTest(t, map[string]any{
+			"conversation_id": conversationID,
+			"file_ids":        []string{temporaryFile.ID},
+		}),
+	})
+	var payload map[string]any
+	if err := json.Unmarshal(response.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal response payload: %v", err)
+	}
+	urls := payload["urls"].([]any)
+	if len(urls) != 1 {
+		t.Fatalf("url count = %d, want 1", len(urls))
+	}
+	item := urls[0].(map[string]any)
+	if item["file_id"] != temporaryFile.ID {
+		t.Fatalf("file_id = %v, want %s", item["file_id"], temporaryFile.ID)
+	}
+	readURL, err := url.Parse(item["url"].(string))
+	if err != nil {
+		t.Fatalf("parse read URL: %v", err)
+	}
+	if readURL.Scheme != "https" || readURL.Host != "assets.example.test" {
+		t.Fatalf("read URL = %s, want https assets host", readURL.String())
+	}
+	if readURL.Path != "/mygod-temporary/"+temporaryFile.ObjectKey {
+		t.Fatalf("read URL path = %q, want temporary file path", readURL.Path)
+	}
+	if readURL.Query().Get("X-Amz-Algorithm") == "" {
+		t.Fatalf("read URL query missing X-Amz-Algorithm: %s", readURL.RawQuery)
+	}
+	if item["expires_at"] == "" {
+		t.Fatalf("expires_at = %#v, want non-empty", item["expires_at"])
+	}
+}
+
+func TestAppWebSocketTemporaryFilesReadURLsReturnsConversationImageURLs(t *testing.T) {
+	s3Server, _ := newFakeS3Server(t)
+	defer s3Server.Close()
+
+	server, db := newTemporaryFileTestRouter(t, s3Server.URL, "assets.example.test")
+	defer server.Close()
+
+	now := time.Date(2026, 7, 8, 11, 30, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	app := insertTestApp(t, db, store.App{
+		Name:             "Echo App",
+		Enabled:          true,
+		Visibility:       store.AppVisibilityPublic,
+		ConnectionSecret: "echo-app-secret",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	})
+	aliceCookie := loginAsUser(t, server, alice.Email)
+	appConn := dialAppWebSocket(t, server, app.ID, app.ConnectionSecret)
+
+	createConversationResp, createConversationBody := postJSON(t, server, "/api/client/conversations/apps", map[string]any{
+		"app_id": app.ID,
+	}, aliceCookie)
+	if createConversationResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create app conversation status = %d, want 201, body = %#v", createConversationResp.StatusCode, createConversationBody)
+	}
+	conversation := requireSuccess(t, createConversationBody)["conversation"].(map[string]any)
+	conversationID := conversation["id"].(string)
+	temporaryFile := store.TemporaryFile{
+		ID:        uuid.NewString(),
+		ObjectKey: "temporary-files/2026/07/08/app-image",
+		SizeBytes: 456,
+		CreatedAt: now,
+	}
+	if err := db.Create(&temporaryFile).Error; err != nil {
+		t.Fatalf("create temporary file: %v", err)
+	}
+	body, err := json.Marshal(imageMessageBody{
+		Type:   messageTypeImage,
+		FileID: temporaryFile.ID,
+	})
+	if err != nil {
+		t.Fatalf("marshal image body: %v", err)
+	}
+	senderID := alice.ID
+	if err := db.Create(&store.Message{
+		ID:             uuid.NewString(),
+		ConversationID: conversationID,
+		Seq:            1,
+		SenderType:     store.MessageSenderTypeUser,
+		SenderID:       &senderID,
+		Body:           body,
+		Summary:        "[图片]",
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}).Error; err != nil {
+		t.Fatalf("create image message: %v", err)
+	}
+
+	response := sendAppRequest(t, appConn, realtime.Envelope{
+		V:      realtime.ProtocolVersion,
+		Kind:   realtime.KindRequest,
+		ID:     "app-read-image-url",
+		Method: "temporary_files.read_urls",
+		Payload: mustMarshalPayloadForTest(t, map[string]any{
+			"conversation_id": conversationID,
+			"file_ids":        []string{temporaryFile.ID},
+		}),
+	})
+	var payload map[string]any
+	if err := json.Unmarshal(response.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal response payload: %v", err)
+	}
+	urls := payload["urls"].([]any)
+	if len(urls) != 1 {
+		t.Fatalf("url count = %d, want 1", len(urls))
+	}
+	item := urls[0].(map[string]any)
+	if item["file_id"] != temporaryFile.ID {
+		t.Fatalf("file_id = %v, want %s", item["file_id"], temporaryFile.ID)
+	}
+	readURL, err := url.Parse(item["url"].(string))
+	if err != nil {
+		t.Fatalf("parse read URL: %v", err)
+	}
+	if readURL.Path != "/mygod-temporary/"+temporaryFile.ObjectKey {
+		t.Fatalf("read URL path = %q, want temporary image path", readURL.Path)
+	}
+}
+
+func TestAppWebSocketTemporaryFilesReadURLsRejectsUnreferencedFile(t *testing.T) {
+	s3Server, _ := newFakeS3Server(t)
+	defer s3Server.Close()
+
+	server, db := newTemporaryFileTestRouter(t, s3Server.URL, "assets.example.test")
+	defer server.Close()
+
+	now := time.Date(2026, 7, 8, 11, 30, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	app := insertTestApp(t, db, store.App{
+		Name:             "Echo App",
+		Enabled:          true,
+		Visibility:       store.AppVisibilityPublic,
+		ConnectionSecret: "echo-app-secret",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	})
+	aliceCookie := loginAsUser(t, server, alice.Email)
+	appConn := dialAppWebSocket(t, server, app.ID, app.ConnectionSecret)
+
+	createConversationResp, createConversationBody := postJSON(t, server, "/api/client/conversations/apps", map[string]any{
+		"app_id": app.ID,
+	}, aliceCookie)
+	if createConversationResp.StatusCode != http.StatusCreated {
+		t.Fatalf("create app conversation status = %d, want 201, body = %#v", createConversationResp.StatusCode, createConversationBody)
+	}
+	conversation := requireSuccess(t, createConversationBody)["conversation"].(map[string]any)
+	temporaryFile := store.TemporaryFile{
+		ID:        uuid.NewString(),
+		ObjectKey: "temporary-files/2026/07/08/unreferenced",
+		SizeBytes: 123,
+		CreatedAt: now,
+	}
+	if err := db.Create(&temporaryFile).Error; err != nil {
+		t.Fatalf("create temporary file: %v", err)
+	}
+
+	request := realtime.Envelope{
+		V:      realtime.ProtocolVersion,
+		Kind:   realtime.KindRequest,
+		ID:     "app-read-unreferenced-file-url",
+		Method: "temporary_files.read_urls",
+		Payload: mustMarshalPayloadForTest(t, map[string]any{
+			"conversation_id": conversation["id"].(string),
+			"file_ids":        []string{temporaryFile.ID},
+		}),
+	}
+	if err := appConn.WriteJSON(request); err != nil {
+		t.Fatalf("WriteJSON() error = %v", err)
+	}
+	response := readRealtimeEvent(t, appConn)
+	if response.Kind != realtime.KindResponse || response.ReplyTo != request.ID {
+		t.Fatalf("response = %#v, want matching response", response)
+	}
+	if response.OK == nil || *response.OK {
+		t.Fatalf("response ok = %#v, want false", response.OK)
+	}
+	if response.Error == nil || response.Error.Code != "forbidden" {
+		t.Fatalf("response error = %#v, want forbidden", response.Error)
 	}
 }
 

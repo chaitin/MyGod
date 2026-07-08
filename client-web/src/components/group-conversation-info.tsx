@@ -1,6 +1,15 @@
 import { useEffect, useId, useRef, useState } from "react"
 
-import { Camera, Check, Globe2, Lock, LogOut, Pencil, X } from "lucide-react"
+import {
+  Camera,
+  Check,
+  Globe2,
+  Lock,
+  LogOut,
+  MinusSquare,
+  Pencil,
+  X,
+} from "lucide-react"
 import { toast } from "sonner"
 
 import type { ClientConversationMember } from "@/lib/client-data-api"
@@ -50,6 +59,7 @@ export function GroupConversationInfo({
     getConversation,
     leaveGroupConversation,
     me,
+    removeGroupConversationMember,
     setGroupConversationPrivate,
     setGroupConversationPublic,
     updateGroupConversationName,
@@ -59,6 +69,9 @@ export function GroupConversationInfo({
   const [avatarPickerOpen, setAvatarPickerOpen] = useState(false)
   const [avatarSaving, setAvatarSaving] = useState(false)
   const [leaveSaving, setLeaveSaving] = useState(false)
+  const [memberRemovalSaving, setMemberRemovalSaving] = useState(false)
+  const [memberRemovalTarget, setMemberRemovalTarget] =
+    useState<ClientConversationMember | null>(null)
   const [nameSaving, setNameSaving] = useState(false)
   const [visibilitySaving, setVisibilitySaving] = useState(false)
   const [visibilityTarget, setVisibilityTarget] = useState<
@@ -90,6 +103,7 @@ export function GroupConversationInfo({
   )
   const currentMember = members.find((member) => member.id === me.id)
   const canChangeAvatar = canManageGroupAvatar(currentMember?.role)
+  const canManageMembers = canManageGroupMembers(currentMember?.role)
   const canChangeName = canManageGroupName(currentMember?.role)
   const canLeaveGroup = Boolean(currentMember && currentMember.role !== "owner")
   const canChangeVisibility = currentMember?.role === "owner"
@@ -160,6 +174,30 @@ export function GroupConversationInfo({
     }
   }
 
+  async function handleRemoveMember() {
+    if (
+      !canManageMembers ||
+      !memberRemovalTarget ||
+      memberRemovalSaving ||
+      memberRemovalTarget.id === me.id ||
+      memberRemovalTarget.role === "owner"
+    ) {
+      return
+    }
+
+    const target = memberRemovalTarget
+    setMemberRemovalSaving(true)
+    try {
+      await removeGroupConversationMember(activeConversation.id, target.id)
+      setMemberRemovalTarget(null)
+      toast.success("已移出群聊成员")
+    } catch (error) {
+      toast.error(getErrorMessage(error, "移出群聊成员失败"))
+    } finally {
+      setMemberRemovalSaving(false)
+    }
+  }
+
   async function handleVisibilityChange(target: "private" | "public") {
     if (!canChangeVisibility || visibilitySaving) {
       return
@@ -210,7 +248,16 @@ export function GroupConversationInfo({
             <Label>群成员（{activeConversation.memberCount}）</Label>
             <div className="grid gap-1">
               {members.map((member) => (
-                <GroupMemberItem key={member.id} member={member} />
+                <GroupMemberItem
+                  canRemove={
+                    canManageMembers &&
+                    member.id !== me.id &&
+                    member.role !== "owner"
+                  }
+                  key={member.id}
+                  member={member}
+                  onRemove={() => setMemberRemovalTarget(member)}
+                />
               ))}
               {members.length === 0 && (
                 <div className="rounded-md border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
@@ -323,6 +370,43 @@ export function GroupConversationInfo({
                 </span>
               )}
               确定
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={memberRemovalTarget !== null}
+        onOpenChange={(open) => {
+          if (!memberRemovalSaving && !open) {
+            setMemberRemovalTarget(null)
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>移出群聊</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要将 {memberRemovalTarget ? getMemberDisplayName(memberRemovalTarget) : "该成员"} 移出群聊吗？
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={memberRemovalSaving}>
+              取消
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={memberRemovalSaving}
+              onClick={(event) => {
+                event.preventDefault()
+                void handleRemoveMember()
+              }}
+              variant="destructive"
+            >
+              {memberRemovalSaving && (
+                <span className="mr-1 inline-flex">
+                  <span className="size-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                </span>
+              )}
+              移出
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -495,15 +579,44 @@ function GroupConversationAvatarControl({
   )
 }
 
-function GroupMemberItem({ member }: { member: ClientConversationMember }) {
+function GroupMemberItem({
+  canRemove,
+  member,
+  onRemove,
+}: {
+  canRemove: boolean
+  member: ClientConversationMember
+  onRemove: () => void
+}) {
+  const displayName = getMemberDisplayName(member)
+
   return (
-    <UserProfilePopover
-      fallbackProfile={member}
-      triggerClassName="flex w-full min-w-0 items-center gap-3 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
-      userId={member.id}
-    >
-      <GroupMemberItemContent member={member} />
-    </UserProfilePopover>
+    <div className="group/member flex min-w-0 items-center gap-1 rounded-md hover:bg-muted">
+      <UserProfilePopover
+        fallbackProfile={member}
+        triggerClassName="flex min-w-0 flex-1 items-center gap-3 px-2 py-1.5 text-sm"
+        userId={member.id}
+      >
+        <GroupMemberItemContent member={member} />
+      </UserProfilePopover>
+      {canRemove && (
+        <Button
+          aria-label={`移出 ${displayName}`}
+          className="pointer-events-none mr-1 opacity-0 transition-opacity group-hover/member:pointer-events-auto group-hover/member:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100"
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            onRemove()
+          }}
+          size="icon-sm"
+          title="移出群聊"
+          type="button"
+          variant="ghost"
+        >
+          <MinusSquare className="size-4" />
+        </Button>
+      )}
+    </div>
   )
 }
 
@@ -575,6 +688,12 @@ function canManageGroupAvatar(
 }
 
 function canManageGroupName(
+  role: ClientConversationMember["role"] | undefined
+) {
+  return role === "owner" || role === "admin"
+}
+
+function canManageGroupMembers(
   role: ClientConversationMember["role"] | undefined
 ) {
   return role === "owner" || role === "admin"

@@ -275,6 +275,40 @@ func TestAgentRunAsksAgainWhenModelReturnsNoConclusion(t *testing.T) {
 	}
 }
 
+func TestAgentRunStopsWhenToolAlreadyProducedVisibleOutput(t *testing.T) {
+	var requests []llm.Request
+	registry := &fakeToolRegistry{
+		results: map[string]mcpclient.ToolResult{
+			"builtin__reply": {Content: `{"sent":true}`, Final: true},
+		},
+		tools: []mcpclient.Tool{{Name: "builtin__reply"}},
+	}
+	agent := New(modelFunc(func(ctx context.Context, request llm.Request) (llm.Response, error) {
+		requests = append(requests, request)
+		return llm.Response{Blocks: []llm.Block{{
+			Type:      llm.BlockTypeToolUse,
+			ToolUseID: "tool-1",
+			ToolName:  "builtin__reply",
+			ToolInput: json.RawMessage(`{"type":"image","content":"https://example.com/a.png"}`),
+		}}}, nil
+	}), WithToolRegistry(registry))
+
+	var outputs []string
+	err := agent.Run(context.Background(), Request{Content: "发这张图"}, sinkFunc(func(ctx context.Context, content string) error {
+		outputs = append(outputs, content)
+		return nil
+	}))
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(requests) != 1 {
+		t.Fatalf("model request count = %d, want no follow-up after visible tool output", len(requests))
+	}
+	if len(outputs) != 0 {
+		t.Fatalf("outputs = %v, want no duplicate text output", outputs)
+	}
+}
+
 func TestAgentRunReportsLLMErrorToUser(t *testing.T) {
 	agent := New(modelFunc(func(ctx context.Context, request llm.Request) (llm.Response, error) {
 		return llm.Response{}, errors.New("model failed")

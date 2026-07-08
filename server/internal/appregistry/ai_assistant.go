@@ -68,10 +68,10 @@ func IsAIAssistantAppID(id string) bool {
 
 func ensureAIAssistantAppFields(db *gorm.DB, app *store.App, secret string, now time.Time) error {
 	updates := map[string]any{}
-	if app.Name != AIAssistantDefaultName {
+	if strings.TrimSpace(app.Name) == "" {
 		updates["name"] = AIAssistantDefaultName
 	}
-	if app.Avatar != AIAssistantDefaultAvatar {
+	if strings.TrimSpace(app.Avatar) == "" {
 		updates["avatar"] = AIAssistantDefaultAvatar
 	}
 	if strings.TrimSpace(app.Description) == "" {
