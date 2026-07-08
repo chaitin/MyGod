@@ -121,33 +121,6 @@ CREATE TABLE third_party_accounts (
 CREATE INDEX third_party_accounts_provider_id_index ON third_party_accounts (provider_id);
 CREATE INDEX third_party_accounts_user_id_index ON third_party_accounts (user_id);
 
-CREATE TABLE llm_models (
-  id uuid PRIMARY KEY,
-  display_name text NOT NULL,
-  model_name text NOT NULL,
-  base_url text NOT NULL,
-  api_key text NOT NULL,
-  protocol text NOT NULL DEFAULT 'anthropic',
-  enabled boolean NOT NULL DEFAULT true,
-  sort_order integer NOT NULL DEFAULT 0,
-  connectivity_status text NOT NULL DEFAULT 'unknown',
-  last_checked_at timestamptz,
-  last_connected_at timestamptz,
-  last_error_message text NOT NULL DEFAULT '',
-  last_response_duration_ms integer,
-  created_at timestamptz NOT NULL,
-  updated_at timestamptz NOT NULL,
-  CONSTRAINT llm_models_protocol_check CHECK (protocol IN ('anthropic')),
-  CONSTRAINT llm_models_connectivity_status_check CHECK (connectivity_status IN ('unknown', 'connected', 'failed')),
-  CONSTRAINT llm_models_last_response_duration_ms_check CHECK (last_response_duration_ms IS NULL OR last_response_duration_ms >= 0)
-);
-
-CREATE INDEX llm_models_enabled_sort_index ON llm_models (enabled, sort_order, display_name);
-CREATE INDEX llm_models_protocol_index ON llm_models (protocol);
-CREATE INDEX llm_models_connectivity_status_index ON llm_models (connectivity_status);
-CREATE INDEX llm_models_last_checked_at_index ON llm_models (last_checked_at);
-CREATE INDEX llm_models_last_connected_at_index ON llm_models (last_connected_at);
-
 CREATE TABLE conversations (
   id uuid PRIMARY KEY,
   kind text NOT NULL,
@@ -282,7 +255,6 @@ DROP TABLE direct_conversations;
 DROP TABLE messages;
 DROP TABLE conversation_members;
 DROP TABLE conversations;
-DROP TABLE llm_models;
 DROP TABLE third_party_accounts;
 DROP TABLE third_party_login_states;
 DROP TABLE third_party_login_providers;

@@ -8,8 +8,8 @@ describe("console pages", () => {
     expect(getConsolePage("/settings").page.title).toBe("系统设置")
   })
 
-  it("includes MyGod assistant in the console navigation", () => {
-    expect(consolePages.map((page) => page.path)).toContain("/assistant")
-    expect(getConsolePage("/assistant").page.title).toBe("MyGod 助手")
+  it("does not include MyGod assistant in the console navigation", () => {
+    expect(consolePages.map((page) => page.path)).not.toContain("/assistant")
+    expect(getConsolePage("/assistant").page.title).toBe("成员管理")
   })
 })

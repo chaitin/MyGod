@@ -73,7 +73,6 @@ func migrateTestSchema(db *gorm.DB) error {
 		&store.ThirdPartyLoginProvider{},
 		&store.ThirdPartyLoginState{},
 		&store.ThirdPartyAccount{},
-		&store.LLMModel{},
 	)
 }
 
@@ -2623,9 +2622,6 @@ func TestGeneratedSwaggerSpecIsServed(t *testing.T) {
 		"/api/admin/users/{id}/enable",
 		"/api/admin/users/{id}/reset-password",
 		"/api/admin/settings/info",
-		"/api/admin/assistant/models",
-		"/api/admin/assistant/models/discover",
-		"/api/admin/assistant/models/{id}/health-check",
 		"/api/client/auth/login",
 		"/api/client/auth/logout",
 		"/api/client/me",
@@ -2635,6 +2631,52 @@ func TestGeneratedSwaggerSpecIsServed(t *testing.T) {
 	} {
 		if _, ok := paths[path]; !ok {
 			t.Fatalf("swagger paths missing %s", path)
+		}
+	}
+	for _, path := range []string{
+		"/api/admin/assistant/models",
+		"/api/admin/assistant/models/discover",
+		"/api/admin/assistant/models/{id}",
+		"/api/admin/assistant/models/{id}/health-check",
+		"/api/client/assistant/models",
+	} {
+		if _, ok := paths[path]; ok {
+			t.Fatalf("swagger paths include removed assistant model API %s", path)
+		}
+	}
+}
+
+func TestAssistantModelAPIRoutesAreRemoved(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	adminCookie := loginAsAdmin(t, server)
+	user := insertTestUser(t, db, "assistant-route-user@example.com", "Assistant Route User", store.UserStatusActive, time.Now().UTC())
+	userCookie := loginAsUser(t, server, user.Email)
+
+	for _, tc := range []struct {
+		method string
+		path   string
+		cookie *http.Cookie
+	}{
+		{method: http.MethodGet, path: "/api/admin/assistant/models", cookie: adminCookie},
+		{method: http.MethodPost, path: "/api/admin/assistant/models/discover", cookie: adminCookie},
+		{method: http.MethodGet, path: "/api/client/assistant/models", cookie: userCookie},
+	} {
+		req, err := http.NewRequest(tc.method, server.URL+tc.path, strings.NewReader("{}"))
+		if err != nil {
+			t.Fatalf("new request %s %s: %v", tc.method, tc.path, err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(tc.cookie)
+
+		resp, err := server.Client().Do(req)
+		if err != nil {
+			t.Fatalf("%s %s: %v", tc.method, tc.path, err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound {
+			t.Fatalf("%s %s status = %d, want 404", tc.method, tc.path, resp.StatusCode)
 		}
 	}
 }

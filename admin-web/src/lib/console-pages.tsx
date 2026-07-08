@@ -1,6 +1,5 @@
 import {
   AppWindowIcon,
-  BotIcon,
   SettingsIcon,
   UsersRoundIcon,
 } from "lucide-react"
@@ -32,11 +31,6 @@ export const consolePages: ConsolePage[] = [
     path: "/settings",
     title: "系统设置",
     icon: <SettingsIcon />,
-  },
-  {
-    path: "/assistant",
-    title: "MyGod 助手",
-    icon: <BotIcon />,
   },
 ] as const
 

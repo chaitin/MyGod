@@ -33,7 +33,7 @@ const (
 	methodMessageSend   = "message.send"
 )
 
-const fallbackReplyContent = "还没配置大模型，我啥也回复不了你"
+const fallbackReplyContent = "助手服务暂时还没有接入回复能力，我先收到你的消息了"
 
 type Client struct {
 	cfg    config.Config

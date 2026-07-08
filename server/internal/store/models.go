@@ -29,12 +29,6 @@ const (
 	MessageSenderTypeApp    = "app"
 	MessageSenderTypeSystem = "system"
 
-	LLMModelProtocolAnthropic = "anthropic"
-
-	LLMConnectivityStatusUnknown   = "unknown"
-	LLMConnectivityStatusConnected = "connected"
-	LLMConnectivityStatusFailed    = "failed"
-
 	ThirdPartyLoginProviderTypeDingTalk = "dingtalk"
 	ThirdPartyLoginProviderTypeWeCom    = "wecom"
 	ThirdPartyLoginProviderTypeFeishu   = "feishu"
@@ -245,26 +239,4 @@ type ThirdPartyAccount struct {
 
 func (ThirdPartyAccount) TableName() string {
 	return "third_party_accounts"
-}
-
-type LLMModel struct {
-	ID                     string     `gorm:"type:uuid;primaryKey"`
-	DisplayName            string     `gorm:"size:120;not null"`
-	ModelName              string     `gorm:"size:160;not null"`
-	BaseURL                string     `gorm:"size:2048;not null"`
-	APIKey                 string     `gorm:"not null"`
-	Protocol               string     `gorm:"size:32;not null;default:anthropic;index"`
-	Enabled                bool       `gorm:"not null;default:true;index"`
-	SortOrder              int        `gorm:"not null;default:0;index"`
-	ConnectivityStatus     string     `gorm:"size:32;not null;default:unknown;index"`
-	LastCheckedAt          *time.Time `gorm:"index"`
-	LastConnectedAt        *time.Time `gorm:"index"`
-	LastErrorMessage       string     `gorm:"not null;default:''"`
-	LastResponseDurationMS *int       `gorm:"column:last_response_duration_ms"`
-	CreatedAt              time.Time  `gorm:"not null"`
-	UpdatedAt              time.Time  `gorm:"not null"`
-}
-
-func (LLMModel) TableName() string {
-	return "llm_models"
 }

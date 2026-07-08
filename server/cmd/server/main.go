@@ -40,10 +40,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	llmHealthChecker := httpserver.NewLLMHealthChecker(db)
-	llmHealthChecker.Start(context.Background())
-
-	router := httpserver.NewRouterWithLLMHealthChecker(db, cfg, llmHealthChecker)
+	router := httpserver.NewRouter(db, cfg)
 	logger.Info("server starting", "addr", cfg.Server.Addr)
 	if err := router.Start(cfg.Server.Addr); err != nil && err != http.ErrServerClosed {
 		logger.Error("server stopped", "error", err)

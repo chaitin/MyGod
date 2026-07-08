@@ -2,6 +2,7 @@ package appclient
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/gorilla/websocket"
@@ -84,5 +85,8 @@ func TestHandleServerMessageSendsFallbackReply(t *testing.T) {
 	}
 	if requestPayload.Message.Content != fallbackReplyContent {
 		t.Fatalf("message.content = %q, want fallback reply", requestPayload.Message.Content)
+	}
+	if strings.Contains(requestPayload.Message.Content, "大模型") {
+		t.Fatalf("message.content = %q, should not mention removed model configuration", requestPayload.Message.Content)
 	}
 }
