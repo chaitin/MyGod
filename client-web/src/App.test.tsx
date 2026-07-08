@@ -1384,10 +1384,18 @@ describe("App", () => {
     const history = await screen.findByTestId("conversation-panel-history")
     expect(history).toHaveAttribute("data-slot", "scroll-area")
     expect(within(history).getByText("帮我总结今天的消息")).toBeInTheDocument()
-    expect(within(history).getByAltText("Al | Alice")).toHaveAttribute(
+    expect(within(history).getByAltText("Al")).toHaveAttribute(
       "src",
       "/assets/avatars/builtin/17.webp"
     )
+    expect(within(history).queryByAltText("Al | Alice")).not.toBeInTheDocument()
+    await user.click(within(history).getByRole("button", { name: "Al" }))
+    const userProfilePopover = await screen.findByRole("dialog")
+    expect(within(userProfilePopover).getByText("用户资料")).toBeInTheDocument()
+    expect(within(userProfilePopover).getAllByText("Al")).toHaveLength(2)
+    expect(
+      within(userProfilePopover).queryByText("Al | Alice")
+    ).not.toBeInTheDocument()
     expect(
       screen.queryByText(/收到，我会先作为你的内置助手/)
     ).not.toBeInTheDocument()

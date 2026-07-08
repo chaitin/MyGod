@@ -199,15 +199,7 @@ function getUserDisplayName(user: Pick<UserProfile, "name" | "nickname">) {
   const name = user.name.trim()
   const nickname = user.nickname.trim()
 
-  if (!nickname) {
-    return name || "未命名用户"
-  }
-
-  if (!name || nickname === name) {
-    return nickname
-  }
-
-  return `${nickname} | ${name}`
+  return nickname || name || "未命名用户"
 }
 
 function getUserInitial(displayName: string) {

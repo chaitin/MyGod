@@ -152,9 +152,5 @@ function formatUserName(user: { name: string; nickname: string }) {
   const name = user.name.trim()
   const nickname = user.nickname.trim()
 
-  if (!nickname || nickname === name) {
-    return name
-  }
-
-  return `${nickname} | ${name}`
+  return nickname || name
 }
