@@ -1,6 +1,7 @@
 import * as React from "react"
 import {
   FolderClosed,
+  Heading3,
   ImageIcon,
   LoaderCircle,
   MessageCircle,
@@ -30,6 +31,8 @@ import {
 import { GroupAvatar } from "@/components/group-avatar"
 import { MessageAttachment } from "@/components/message-attachment"
 import { MessageImage } from "@/components/message-image"
+import { MessageLink } from "@/components/message-link"
+import { MessageMarkdown } from "@/components/message-markdown"
 import {
   Avatar,
   AvatarBadge,
@@ -56,6 +59,7 @@ import {
 } from "@/components/ui/popover"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
+import { Toggle } from "@/components/ui/toggle"
 
 export type ConversationPanelMessage = {
   id: string
@@ -81,7 +85,9 @@ type ConversationPanelProps = {
   onSendFile: (file: File) => Promise<ClientMessage | null>
   onSendImage: (image: File) => Promise<ClientMessage | null>
   onLoadBeforeMessages: () => void
+  onRichTextModeChange: (richTextMode: boolean) => void
   onSendMessage: () => void
+  richTextMode: boolean
   sending: boolean
 }
 
@@ -97,7 +103,9 @@ export function ConversationPanel({
   onSendFile,
   onSendImage,
   onLoadBeforeMessages,
+  onRichTextModeChange,
   onSendMessage,
+  richTextMode,
   sending,
 }: ConversationPanelProps) {
   return (
@@ -129,6 +137,8 @@ export function ConversationPanel({
             onSendFile={onSendFile}
             onSendImage={onSendImage}
             onSendMessage={onSendMessage}
+            onRichTextModeChange={onRichTextModeChange}
+            richTextMode={richTextMode}
             sending={sending}
           />
         </>
@@ -229,7 +239,9 @@ function ConversationAvatarBadge({ online }: { online: boolean }) {
   return (
     <AvatarBadge
       aria-label={online ? "在线" : "离线"}
-      className={online ? "bg-emerald-500" : "bg-neutral-400 dark:bg-neutral-500"}
+      className={
+        online ? "bg-emerald-500" : "bg-neutral-400 dark:bg-neutral-500"
+      }
     />
   )
 }
@@ -410,7 +422,9 @@ function ConversationPanelComposer({
   onDraftChange,
   onSendFile,
   onSendImage,
+  onRichTextModeChange,
   onSendMessage,
+  richTextMode,
   sending,
 }: {
   conversationName: string
@@ -418,7 +432,9 @@ function ConversationPanelComposer({
   onDraftChange: (draft: string) => void
   onSendFile: (file: File) => Promise<ClientMessage | null>
   onSendImage: (image: File) => Promise<ClientMessage | null>
+  onRichTextModeChange: (richTextMode: boolean) => void
   onSendMessage: () => void
+  richTextMode: boolean
   sending: boolean
 }) {
   const fileInputRef = React.useRef<HTMLInputElement | null>(null)
@@ -684,6 +700,18 @@ function ConversationPanelComposer({
                 <ImageIcon className="size-4" />
               )}
             </Button>
+            <Toggle
+              aria-label="支持 markdown"
+              className="size-8 p-0"
+              disabled={sending}
+              onPressedChange={onRichTextModeChange}
+              pressed={richTextMode}
+              size="sm"
+              title="支持 markdown"
+              type="button"
+            >
+              <Heading3 className="size-4" />
+            </Toggle>
           </div>
           <Button
             type="button"
@@ -872,6 +900,10 @@ function MessageBodyRenderer({
       return <MessageAttachment file={body} />
     case "image":
       return <MessageImage image={body} />
+    case "link":
+      return <MessageLink link={body} />
+    case "markdown":
+      return <MessageMarkdown content={body.content} />
     case "text":
       return <TextMessageBody content={body.content} />
     case "system_event":

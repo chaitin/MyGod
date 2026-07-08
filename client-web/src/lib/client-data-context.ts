@@ -81,6 +81,14 @@ export type ClientDataContextValue = {
     conversationId: string,
     content: string
   ) => Promise<ClientMessage | null>
+  sendConversationMarkdown: (
+    conversationId: string,
+    content: string
+  ) => Promise<ClientMessage | null>
+  sendConversationLink: (
+    conversationId: string,
+    url: string
+  ) => Promise<ClientMessage | null>
   sendConversationFile: (
     conversationId: string,
     file: File

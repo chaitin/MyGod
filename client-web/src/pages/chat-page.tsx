@@ -52,6 +52,31 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 
 const emptyClientMessages: ClientMessage[] = []
 
+function normalizeSingleLinkMessageURL(content: string) {
+  const value = content.trim()
+  if (!value || /\s/.test(value)) {
+    return null
+  }
+
+  const linkCandidate = value.toLowerCase().startsWith("www.")
+    ? `https://${value}`
+    : value
+
+  try {
+    const url = new URL(linkCandidate)
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return null
+    }
+    if (!url.hostname) {
+      return null
+    }
+
+    return url.toString()
+  } catch {
+    return null
+  }
+}
+
 function getMessageTime(createdAt: string) {
   const date = new Date(createdAt)
 
@@ -80,10 +105,16 @@ export function ChatPage() {
     me,
     sendConversationFile,
     sendConversationImage,
+    sendConversationLink,
+    sendConversationMarkdown,
     sendConversationText,
   } = useClientData()
   const [searchParams, setSearchParams] = useSearchParams()
-  const [draft, setDraft] = React.useState("")
+  const [draftState, setDraftState] = React.useState({
+    conversationId: "",
+    value: "",
+  })
+  const [richTextMode, setRichTextMode] = React.useState(false)
   const [createGroupDialogOpen, setCreateGroupDialogOpen] =
     React.useState(false)
   const requestedConversationId = searchParams.get("conversation_id") ?? ""
@@ -96,7 +127,8 @@ export function ChatPage() {
 
   const activeConversationId = activeConversation?.id ?? ""
   const activeConversationIdRef = React.useRef(activeConversationId)
-  activeConversationIdRef.current = activeConversationId
+  const draft =
+    draftState.conversationId === activeConversationId ? draftState.value : ""
   const activeMessageState = activeConversationId
     ? getConversationMessageState(activeConversationId)
     : undefined
@@ -150,8 +182,18 @@ export function ChatPage() {
     [activeClientMessages, activeConversation, contactsById, me]
   )
 
-  React.useLayoutEffect(() => {
-    setDraft("")
+  const setDraft = React.useCallback(
+    (nextDraft: string) => {
+      setDraftState({
+        conversationId: activeConversationId,
+        value: nextDraft,
+      })
+    },
+    [activeConversationId]
+  )
+
+  React.useEffect(() => {
+    activeConversationIdRef.current = activeConversationId
   }, [activeConversationId])
 
   React.useEffect(() => {
@@ -209,15 +251,28 @@ export function ChatPage() {
     }
 
     const sendingConversationId = activeConversationId
+    const linkURL = normalizeSingleLinkMessageURL(content)
+    const sendConversation = linkURL
+      ? sendConversationLink
+      : richTextMode
+        ? sendConversationMarkdown
+        : sendConversationText
+    const sendContent = linkURL ?? content
 
-    void sendConversationText(sendingConversationId, content).then((message) => {
-      if (
-        message &&
-        activeConversationIdRef.current === sendingConversationId
-      ) {
-        setDraft("")
+    void sendConversation(sendingConversationId, sendContent).then(
+      (message) => {
+        if (
+          message &&
+          activeConversationIdRef.current === sendingConversationId
+        ) {
+          setDraftState((currentDraftState) =>
+            currentDraftState.conversationId === sendingConversationId
+              ? { ...currentDraftState, value: "" }
+              : currentDraftState
+          )
+        }
       }
-    })
+    )
   }
 
   async function sendFileMessage(file: File) {
@@ -374,10 +429,12 @@ export function ChatPage() {
         historyLoadingBefore={Boolean(activeMessageState?.loadingBefore)}
         messages={activeMessages}
         onDraftChange={setDraft}
+        onRichTextModeChange={setRichTextMode}
         onSendFile={sendFileMessage}
         onSendImage={sendImageMessage}
         onLoadBeforeMessages={loadBeforeMessages}
         onSendMessage={sendMessage}
+        richTextMode={richTextMode}
         sending={Boolean(activeMessageState?.sending)}
       />
       <CreateGroupConversationDialog
@@ -765,7 +822,9 @@ function getConversationOnlineStatus(
       (member) => member.id !== currentUserId
     )
 
-    return otherMember ? contactsById.get(otherMember.id)?.online ?? false : false
+    return otherMember
+      ? (contactsById.get(otherMember.id)?.online ?? false)
+      : false
   }
 
   if (conversation.type === "app") {

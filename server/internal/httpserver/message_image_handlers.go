@@ -154,11 +154,12 @@ func (s *Server) createConversationImageMessage(c echo.Context) error {
 	}
 
 	message, created, memberUserIDs, err := s.createUserMessage(
+		c.Request().Context(),
 		user.ID,
 		conversationID,
 		clientMessageID,
 		body,
-		imageMessageSummary(),
+		staticMessageBodyFinalizer(imageMessageSummary()),
 	)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

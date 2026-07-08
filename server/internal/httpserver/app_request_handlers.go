@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -100,7 +101,7 @@ func (s *Server) handleAppSendMessage(appID string, request realtime.Envelope) (
 	if err != nil {
 		return appSendMessageResponse{}, err
 	}
-	body, summary, err := normalizeAppSendMessageBody(req.Message)
+	body, err := normalizeAppSendMessageBody(context.Background(), req.Message)
 	if err != nil {
 		return appSendMessageResponse{}, err
 	}
@@ -110,7 +111,7 @@ func (s *Server) handleAppSendMessage(appID string, request realtime.Envelope) (
 		return appSendMessageResponse{}, err
 	}
 
-	message, created, memberUserIDs, err := s.createAppMessage(appID, conversation.ID, request.ID, body, summary)
+	message, created, memberUserIDs, err := s.createAppMessage(appID, conversation.ID, request.ID, body, finalizeNormalizedMessageBody)
 	if err != nil {
 		return appSendMessageResponse{}, mapAppMessageError(err)
 	}
@@ -322,21 +323,17 @@ func normalizeAppSendMessageTarget(req appSendMessageRequest) (appSendMessageTar
 	return target, nil
 }
 
-func normalizeAppSendMessageBody(raw json.RawMessage) (json.RawMessage, string, error) {
+func normalizeAppSendMessageBody(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
 	handler, err := findMessageBodyHandler(raw)
 	if err != nil {
-		return nil, "", newAppRequestFailure("invalid_request", err.Error())
+		return nil, newAppRequestFailure("invalid_request", err.Error())
 	}
-	body, err := handler.Normalize(raw)
+	body, err := handler.Normalize(ctx, raw)
 	if err != nil {
-		return nil, "", newAppRequestFailure("invalid_request", err.Error())
-	}
-	summary, err := handler.Summary(body)
-	if err != nil {
-		return nil, "", err
+		return nil, newAppRequestFailure("invalid_request", err.Error())
 	}
 
-	return body, summary, nil
+	return body, nil
 }
 
 func (s *Server) findAppSendMessageConversation(appID string, target appSendMessageTarget) (store.Conversation, error) {
@@ -402,7 +399,7 @@ func (s *Server) findAppWritableConversation(appID string, conversationID string
 	return conversation, nil
 }
 
-func (s *Server) createAppMessage(appID string, conversationID string, clientMessageID string, body json.RawMessage, summary string) (store.Message, bool, []string, error) {
+func (s *Server) createAppMessage(appID string, conversationID string, clientMessageID string, body json.RawMessage, finalizeBody finalizeMessageBodyFunc) (store.Message, bool, []string, error) {
 	var created bool
 	var message store.Message
 	memberUserIDs := []string{}
@@ -449,6 +446,11 @@ func (s *Server) createAppMessage(appID string, conversationID string, clientMes
 			return err
 		}
 
+		finalBody, summary, err := finalizeBody(context.Background(), body)
+		if err != nil {
+			return err
+		}
+
 		now := time.Now().UTC()
 		message = store.Message{
 			ID:              uuid.NewString(),
@@ -457,7 +459,7 @@ func (s *Server) createAppMessage(appID string, conversationID string, clientMes
 			SenderType:      store.MessageSenderTypeApp,
 			SenderID:        &appID,
 			ClientMessageID: &clientMessageID,
-			Body:            body,
+			Body:            finalBody,
 			Summary:         summary,
 			CreatedAt:       now,
 			UpdatedAt:       now,

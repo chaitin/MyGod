@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -2268,11 +2269,12 @@ func TestCreateUserMessageTimestampsNewMessageAfterTransactionReads(t *testing.T
 	}
 
 	message, created, _, err := (&Server{db: db}).createUserMessage(
+		context.Background(),
 		alice.ID,
 		conversation.ID,
 		"client-message-1",
 		json.RawMessage(`{"type":"text","content":"hello"}`),
-		"hello",
+		staticMessageBodyFinalizer("hello"),
 	)
 	if err != nil {
 		t.Fatalf("createUserMessage() error = %v", err)
@@ -2644,6 +2646,214 @@ func TestCreateConversationTextMessagePushesMessageCreatedToConversationMembers(
 	}
 }
 
+func TestCreateConversationMarkdownMessageNormalizesAndSummarizes(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+	now := time.Date(2026, 7, 3, 9, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	conversation := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindDirect,
+		memberIDs:       []string{alice.ID, bob.ID},
+		now:             now,
+	})
+
+	content := `
+# 今日总结
+
+你好 **Bob**
+
+- 第一项
+- 第二项
+
+> 保持关注
+`
+	resp, body := postJSON(t, server, "/api/client/conversations/"+conversation.ID+"/messages", map[string]any{
+		"client_message_id": "client-markdown-message-1",
+		"body": map[string]any{
+			"type":    "markdown",
+			"content": content,
+		},
+	}, loginAsUser(t, server, alice.Email))
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body = %#v", resp.StatusCode, body)
+	}
+	createdMessage := requireSuccess(t, body)["message"].(map[string]any)
+	messageBody := createdMessage["body"].(map[string]any)
+	if messageBody["type"] != "markdown" {
+		t.Fatalf("message.body.type = %v, want markdown", messageBody["type"])
+	}
+	normalizedContent := strings.TrimSpace(content)
+	if messageBody["content"] != normalizedContent {
+		t.Fatalf("message.body.content = %q, want normalized markdown", messageBody["content"])
+	}
+
+	var storedMessage store.Message
+	if err := db.First(&storedMessage, "id = ?", createdMessage["id"]).Error; err != nil {
+		t.Fatalf("find stored message: %v", err)
+	}
+	wantSummary := strings.Join([]string{
+		"今日总结",
+		"你好 Bob",
+		"第一项",
+		"第二项",
+		"保持关注",
+	}, "\n")
+	if storedMessage.Summary != wantSummary {
+		t.Fatalf("stored summary = %q, want %q", storedMessage.Summary, wantSummary)
+	}
+}
+
+func TestCreateConversationLinkMessageNormalizesAndSummarizes(t *testing.T) {
+	previousFetch := fetchLinkPreviewTitle
+	fetchCount := 0
+	fetchLinkPreviewTitle = func(_ context.Context, linkURL string) (string, error) {
+		fetchCount++
+		if linkURL != "https://example.com/docs?tab=api" {
+			t.Fatalf("linkURL = %q, want normalized URL", linkURL)
+		}
+		return "  Example Docs  ", nil
+	}
+	defer func() {
+		fetchLinkPreviewTitle = previousFetch
+	}()
+
+	server, db := newTestRouter(t)
+	defer server.Close()
+	now := time.Date(2026, 7, 3, 9, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	conversation := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindDirect,
+		memberIDs:       []string{alice.ID, bob.ID},
+		now:             now,
+	})
+
+	resp, body := postJSON(t, server, "/api/client/conversations/"+conversation.ID+"/messages", map[string]any{
+		"client_message_id": "client-link-message-1",
+		"body": map[string]any{
+			"type": "link",
+			"url":  " https://example.com/docs?tab=api ",
+		},
+	}, loginAsUser(t, server, alice.Email))
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body = %#v", resp.StatusCode, body)
+	}
+	createdMessage := requireSuccess(t, body)["message"].(map[string]any)
+	messageBody := createdMessage["body"].(map[string]any)
+	if messageBody["type"] != "link" {
+		t.Fatalf("message.body.type = %v, want link", messageBody["type"])
+	}
+	if messageBody["url"] != "https://example.com/docs?tab=api" {
+		t.Fatalf("message.body.url = %v, want normalized URL", messageBody["url"])
+	}
+	if messageBody["title"] != "Example Docs" {
+		t.Fatalf("message.body.title = %v, want Example Docs", messageBody["title"])
+	}
+
+	var storedMessage store.Message
+	if err := db.First(&storedMessage, "id = ?", createdMessage["id"]).Error; err != nil {
+		t.Fatalf("find stored message: %v", err)
+	}
+	if storedMessage.Summary != "[链接] Example Docs" {
+		t.Fatalf("stored summary = %q, want link summary", storedMessage.Summary)
+	}
+
+	duplicateResp, duplicateBody := postJSON(t, server, "/api/client/conversations/"+conversation.ID+"/messages", map[string]any{
+		"client_message_id": "client-link-message-1",
+		"body": map[string]any{
+			"type": "link",
+			"url":  "https://example.com/docs?tab=api",
+		},
+	}, loginAsUser(t, server, alice.Email))
+	if duplicateResp.StatusCode != http.StatusOK {
+		t.Fatalf("duplicate status = %d, want 200, body = %#v", duplicateResp.StatusCode, duplicateBody)
+	}
+	duplicateMessage := requireSuccess(t, duplicateBody)["message"].(map[string]any)
+	if duplicateMessage["id"] != createdMessage["id"] {
+		t.Fatalf("duplicate message id = %v, want %v", duplicateMessage["id"], createdMessage["id"])
+	}
+	if fetchCount != 1 {
+		t.Fatalf("fetch count = %d, want 1", fetchCount)
+	}
+}
+
+func TestCreateConversationLinkMessageFallsBackToDomain(t *testing.T) {
+	previousFetch := fetchLinkPreviewTitle
+	fetchLinkPreviewTitle = func(_ context.Context, _ string) (string, error) {
+		return "", fmt.Errorf("preview failed")
+	}
+	defer func() {
+		fetchLinkPreviewTitle = previousFetch
+	}()
+
+	server, db := newTestRouter(t)
+	defer server.Close()
+	now := time.Date(2026, 7, 3, 9, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	conversation := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindDirect,
+		memberIDs:       []string{alice.ID, bob.ID},
+		now:             now,
+	})
+
+	resp, body := postJSON(t, server, "/api/client/conversations/"+conversation.ID+"/messages", map[string]any{
+		"client_message_id": "client-link-message-1",
+		"body": map[string]any{
+			"type": "link",
+			"url":  "https://docs.example.com/guide",
+		},
+	}, loginAsUser(t, server, alice.Email))
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body = %#v", resp.StatusCode, body)
+	}
+	createdMessage := requireSuccess(t, body)["message"].(map[string]any)
+	messageBody := createdMessage["body"].(map[string]any)
+	if messageBody["title"] != "docs.example.com" {
+		t.Fatalf("message.body.title = %v, want docs.example.com", messageBody["title"])
+	}
+}
+
+func TestCreateConversationLinkMessageDoesNotFetchPreviewBeforeAccessCheck(t *testing.T) {
+	previousFetch := fetchLinkPreviewTitle
+	fetchLinkPreviewTitle = func(_ context.Context, linkURL string) (string, error) {
+		t.Fatalf("fetchLinkPreviewTitle(%q) should not be called before access check", linkURL)
+		return "", nil
+	}
+	defer func() {
+		fetchLinkPreviewTitle = previousFetch
+	}()
+
+	server, db := newTestRouter(t)
+	defer server.Close()
+	now := time.Date(2026, 7, 3, 9, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	carol := insertTestUser(t, db, "carol@example.com", "Carol", store.UserStatusActive, now)
+	conversation := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindDirect,
+		memberIDs:       []string{alice.ID, bob.ID},
+		now:             now,
+	})
+
+	resp, body := postJSON(t, server, "/api/client/conversations/"+conversation.ID+"/messages", map[string]any{
+		"client_message_id": "client-link-message-1",
+		"body": map[string]any{
+			"type": "link",
+			"url":  "https://example.com/docs",
+		},
+	}, loginAsUser(t, server, carol.Email))
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403, body = %#v", resp.StatusCode, body)
+	}
+	requireError(t, body, "forbidden")
+}
+
 func TestCreateConversationTextMessageRejectsInvalidRequests(t *testing.T) {
 	server, db := newTestRouter(t)
 	defer server.Close()
@@ -2695,6 +2905,30 @@ func TestCreateConversationTextMessageRejectsInvalidRequests(t *testing.T) {
 			name:       "unsupported body type",
 			path:       "/api/client/conversations/" + conversation.ID + "/messages",
 			body:       map[string]any{"client_message_id": "client-message-1", "body": map[string]any{"type": "image", "url": "https://example.com/a.png"}},
+			cookie:     cookie,
+			statusCode: http.StatusBadRequest,
+			errorCode:  "invalid_request",
+		},
+		{
+			name:       "markdown html",
+			path:       "/api/client/conversations/" + conversation.ID + "/messages",
+			body:       map[string]any{"client_message_id": "client-message-1", "body": map[string]any{"type": "markdown", "content": "<strong>不支持 HTML</strong>"}},
+			cookie:     cookie,
+			statusCode: http.StatusBadRequest,
+			errorCode:  "invalid_request",
+		},
+		{
+			name:       "markdown link",
+			path:       "/api/client/conversations/" + conversation.ID + "/messages",
+			body:       map[string]any{"client_message_id": "client-message-1", "body": map[string]any{"type": "markdown", "content": "[外链](https://example.com)"}},
+			cookie:     cookie,
+			statusCode: http.StatusBadRequest,
+			errorCode:  "invalid_request",
+		},
+		{
+			name:       "markdown image",
+			path:       "/api/client/conversations/" + conversation.ID + "/messages",
+			body:       map[string]any{"client_message_id": "client-message-1", "body": map[string]any{"type": "markdown", "content": "![图片](https://example.com/a.png)"}},
 			cookie:     cookie,
 			statusCode: http.StatusBadRequest,
 			errorCode:  "invalid_request",

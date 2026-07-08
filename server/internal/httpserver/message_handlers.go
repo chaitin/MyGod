@@ -1,9 +1,16 @@
 package httpserver
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
+	stdhtml "html"
+	"io"
+	"net"
 	"net/http"
+	"net/netip"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -13,6 +20,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/text"
+	nethtml "golang.org/x/net/html"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -21,7 +32,13 @@ const (
 	defaultMessageHistoryLimit  = 20
 	maxMessageHistoryLimit      = 20
 	maxClientMessageIDLength    = 128
+	maxLinkMessageURLLength     = 2048
+	maxLinkPreviewReadBytes     = 1024
 	maxTextMessageContentLength = 5000
+	linkPreviewFetchTimeout     = 2 * time.Second
+	linkPreviewMaxRedirects     = 3
+	messageTypeLink             = "link"
+	messageTypeMarkdown         = "markdown"
 	messageTypeText             = "text"
 )
 
@@ -78,6 +95,17 @@ type textMessageBody struct {
 	Content string `json:"content"`
 }
 
+type markdownMessageBody struct {
+	Type    string `json:"type"`
+	Content string `json:"content"`
+}
+
+type linkMessageBody struct {
+	Type  string `json:"type"`
+	URL   string `json:"url"`
+	Title string `json:"title"`
+}
+
 type messageBodyEnvelope struct {
 	Type string `json:"type"`
 }
@@ -85,15 +113,29 @@ type messageBodyEnvelope struct {
 type messageBodyHandler interface {
 	Type() string
 	Validate(body json.RawMessage) error
-	Normalize(body json.RawMessage) (json.RawMessage, error)
+	Normalize(ctx context.Context, body json.RawMessage) (json.RawMessage, error)
 	Summary(body json.RawMessage) (string, error)
 }
 
+type messageBodyFinalizer interface {
+	Finalize(ctx context.Context, body json.RawMessage) (json.RawMessage, error)
+}
+
+type finalizeMessageBodyFunc func(ctx context.Context, body json.RawMessage) (json.RawMessage, string, error)
+
 type textMessageBodyHandler struct{}
+type markdownMessageBodyHandler struct{}
+type linkMessageBodyHandler struct{}
 
 var messageBodyHandlers = map[string]messageBodyHandler{
-	messageTypeText: textMessageBodyHandler{},
+	messageTypeLink:     linkMessageBodyHandler{},
+	messageTypeMarkdown: markdownMessageBodyHandler{},
+	messageTypeText:     textMessageBodyHandler{},
 }
+
+var markdownParser = goldmark.New()
+var linkPreviewHTTPClient = newLinkPreviewHTTPClient()
+var fetchLinkPreviewTitle = fetchLinkPreviewTitleHTTP
 
 // listConversationMessages godoc
 //
@@ -184,12 +226,19 @@ func (s *Server) createConversationMessage(c echo.Context) error {
 		return failure(c, http.StatusBadRequest, "invalid_request", "请求格式错误")
 	}
 
-	clientMessageID, messageBody, summary, err := normalizeCreateMessageRequest(req)
+	clientMessageID, messageBody, err := normalizeCreateMessageRequest(c.Request().Context(), req)
 	if err != nil {
 		return failure(c, http.StatusBadRequest, "invalid_request", err.Error())
 	}
 
-	message, created, memberUserIDs, err := s.createUserMessage(user.ID, conversationID, clientMessageID, messageBody, summary)
+	message, created, memberUserIDs, err := s.createUserMessage(
+		c.Request().Context(),
+		user.ID,
+		conversationID,
+		clientMessageID,
+		messageBody,
+		finalizeNormalizedMessageBody,
+	)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return failure(c, http.StatusNotFound, "not_found", "会话不存在")
@@ -207,8 +256,8 @@ func (s *Server) createConversationMessage(c echo.Context) error {
 	messageResponse := newMessageResponse(message)
 	if created {
 		s.realtime.SendToUsers(memberUserIDs, realtimeMessageCreatedEvent(messageResponse))
-		if err := s.dispatchAppTextMessageCreatedEvent(user, message); err != nil {
-			c.Logger().Warnf("dispatch app text message event failed: %v", err)
+		if err := s.dispatchAppMessageCreatedEvent(user, message); err != nil {
+			c.Logger().Warnf("dispatch app message event failed: %v", err)
 		}
 	}
 
@@ -281,26 +330,22 @@ func normalizeOptionalPositiveInt64(rawValue string, fieldName string) (*int64, 
 	return &parsedValue, nil
 }
 
-func normalizeCreateMessageRequest(req createMessageRequest) (string, json.RawMessage, string, error) {
+func normalizeCreateMessageRequest(ctx context.Context, req createMessageRequest) (string, json.RawMessage, error) {
 	clientMessageID, err := normalizeClientMessageID(req.ClientMessageID)
 	if err != nil {
-		return "", nil, "", err
+		return "", nil, err
 	}
 
 	handler, err := findMessageBodyHandler(req.Body)
 	if err != nil {
-		return "", nil, "", err
+		return "", nil, err
 	}
-	normalizedBody, err := handler.Normalize(req.Body)
+	normalizedBody, err := handler.Normalize(ctx, req.Body)
 	if err != nil {
-		return "", nil, "", err
-	}
-	summary, err := handler.Summary(normalizedBody)
-	if err != nil {
-		return "", nil, "", err
+		return "", nil, err
 	}
 
-	return clientMessageID, normalizedBody, summary, nil
+	return clientMessageID, normalizedBody, nil
 }
 
 func (s *Server) listUserConversationMessages(userID string, conversationID string, query listConversationMessagesQuery) ([]store.Message, listMessagesPageResponse, error) {
@@ -431,7 +476,7 @@ func reverseMessages(messages []store.Message) {
 	}
 }
 
-func (s *Server) createUserMessage(userID string, conversationID string, clientMessageID string, body json.RawMessage, summary string) (store.Message, bool, []string, error) {
+func (s *Server) createUserMessage(ctx context.Context, userID string, conversationID string, clientMessageID string, body json.RawMessage, finalizeBody finalizeMessageBodyFunc) (store.Message, bool, []string, error) {
 	var created bool
 	var message store.Message
 	memberUserIDs := []string{}
@@ -481,6 +526,11 @@ func (s *Server) createUserMessage(userID string, conversationID string, clientM
 			return err
 		}
 
+		finalBody, summary, err := finalizeBody(ctx, body)
+		if err != nil {
+			return err
+		}
+
 		now := time.Now().UTC()
 		message = store.Message{
 			ID:              uuid.NewString(),
@@ -489,7 +539,7 @@ func (s *Server) createUserMessage(userID string, conversationID string, clientM
 			SenderType:      store.MessageSenderTypeUser,
 			SenderID:        &userID,
 			ClientMessageID: &clientMessageID,
-			Body:            body,
+			Body:            finalBody,
 			Summary:         summary,
 			CreatedAt:       now,
 			UpdatedAt:       now,
@@ -601,7 +651,7 @@ func (handler textMessageBodyHandler) Validate(raw json.RawMessage) error {
 	return nil
 }
 
-func (handler textMessageBodyHandler) Normalize(raw json.RawMessage) (json.RawMessage, error) {
+func (handler textMessageBodyHandler) Normalize(_ context.Context, raw json.RawMessage) (json.RawMessage, error) {
 	if err := handler.Validate(raw); err != nil {
 		return nil, err
 	}
@@ -636,6 +686,555 @@ func decodeTextMessageBody(raw json.RawMessage) (textMessageBody, error) {
 	}
 
 	return body, nil
+}
+
+func finalizeNormalizedMessageBody(ctx context.Context, body json.RawMessage) (json.RawMessage, string, error) {
+	handler, err := findMessageBodyHandler(body)
+	if err != nil {
+		return nil, "", err
+	}
+	if finalizer, ok := handler.(messageBodyFinalizer); ok {
+		body, err = finalizer.Finalize(ctx, body)
+		if err != nil {
+			return nil, "", err
+		}
+	}
+	summary, err := handler.Summary(body)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return body, summary, nil
+}
+
+func staticMessageBodyFinalizer(summary string) finalizeMessageBodyFunc {
+	return func(_ context.Context, body json.RawMessage) (json.RawMessage, string, error) {
+		return body, summary, nil
+	}
+}
+
+func (markdownMessageBodyHandler) Type() string {
+	return messageTypeMarkdown
+}
+
+func (handler markdownMessageBodyHandler) Validate(raw json.RawMessage) error {
+	body, err := decodeMarkdownMessageBody(raw)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(body.Type) != handler.Type() {
+		return errors.New("消息类型错误")
+	}
+	content := strings.TrimSpace(body.Content)
+	if content == "" {
+		return errors.New("消息内容不能为空")
+	}
+	if len([]rune(content)) > maxTextMessageContentLength {
+		return errors.New("消息内容不能超过 5000 个字符")
+	}
+	if err := validateMarkdownMessageContent(content); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (handler markdownMessageBodyHandler) Normalize(_ context.Context, raw json.RawMessage) (json.RawMessage, error) {
+	if err := handler.Validate(raw); err != nil {
+		return nil, err
+	}
+	body, err := decodeMarkdownMessageBody(raw)
+	if err != nil {
+		return nil, err
+	}
+	normalizedBody, err := json.Marshal(markdownMessageBody{
+		Type:    handler.Type(),
+		Content: strings.TrimSpace(body.Content),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return normalizedBody, nil
+}
+
+func (markdownMessageBodyHandler) Summary(raw json.RawMessage) (string, error) {
+	body, err := decodeMarkdownMessageBody(raw)
+	if err != nil {
+		return "", err
+	}
+
+	return extractMarkdownPlainTextSummary(strings.TrimSpace(body.Content))
+}
+
+func decodeMarkdownMessageBody(raw json.RawMessage) (markdownMessageBody, error) {
+	var body markdownMessageBody
+	if err := json.Unmarshal(raw, &body); err != nil {
+		return markdownMessageBody{}, errors.New("消息体格式错误")
+	}
+
+	return body, nil
+}
+
+func (linkMessageBodyHandler) Type() string {
+	return messageTypeLink
+}
+
+func (handler linkMessageBodyHandler) Validate(raw json.RawMessage) error {
+	body, err := decodeLinkMessageBody(raw)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(body.Type) != handler.Type() {
+		return errors.New("消息类型错误")
+	}
+	if _, err := normalizeLinkMessageURL(body.URL); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (handler linkMessageBodyHandler) Normalize(_ context.Context, raw json.RawMessage) (json.RawMessage, error) {
+	if err := handler.Validate(raw); err != nil {
+		return nil, err
+	}
+	body, err := decodeLinkMessageBody(raw)
+	if err != nil {
+		return nil, err
+	}
+	normalizedURL, err := normalizeLinkMessageURL(body.URL)
+	if err != nil {
+		return nil, err
+	}
+	normalizedBody, err := json.Marshal(linkMessageBody{
+		Type: handler.Type(),
+		URL:  normalizedURL,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return normalizedBody, nil
+}
+
+func (handler linkMessageBodyHandler) Finalize(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
+	body, err := decodeLinkMessageBody(raw)
+	if err != nil {
+		return nil, err
+	}
+	normalizedURL, err := normalizeLinkMessageURL(body.URL)
+	if err != nil {
+		return nil, err
+	}
+	title := fetchLinkMessageTitle(ctx, normalizedURL)
+	if title == "" {
+		title = linkMessageFallbackTitle(normalizedURL)
+	}
+	finalBody, err := json.Marshal(linkMessageBody{
+		Type:  handler.Type(),
+		URL:   normalizedURL,
+		Title: title,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return finalBody, nil
+}
+
+func (linkMessageBodyHandler) Summary(raw json.RawMessage) (string, error) {
+	body, err := decodeLinkMessageBody(raw)
+	if err != nil {
+		return "", err
+	}
+	title := strings.TrimSpace(body.Title)
+	if title == "" {
+		title = linkMessageFallbackTitle(strings.TrimSpace(body.URL))
+	}
+
+	return "[链接] " + title, nil
+}
+
+func decodeLinkMessageBody(raw json.RawMessage) (linkMessageBody, error) {
+	var body linkMessageBody
+	if err := json.Unmarshal(raw, &body); err != nil {
+		return linkMessageBody{}, errors.New("消息体格式错误")
+	}
+
+	return body, nil
+}
+
+func normalizeLinkMessageURL(rawURL string) (string, error) {
+	linkURL := strings.TrimSpace(rawURL)
+	if linkURL == "" {
+		return "", errors.New("链接不能为空")
+	}
+	if len([]rune(linkURL)) > maxLinkMessageURLLength {
+		return "", errors.New("链接不能超过 2048 个字符")
+	}
+	if strings.ContainsAny(linkURL, " \t\r\n") {
+		return "", errors.New("链接格式错误")
+	}
+	if strings.HasPrefix(strings.ToLower(linkURL), "www.") {
+		linkURL = "https://" + linkURL
+	}
+
+	parsedURL, err := url.Parse(linkURL)
+	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
+		return "", errors.New("链接格式错误")
+	}
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return "", errors.New("只支持 http 或 https 链接")
+	}
+	if strings.TrimSpace(parsedURL.Hostname()) == "" {
+		return "", errors.New("链接格式错误")
+	}
+
+	return parsedURL.String(), nil
+}
+
+func fetchLinkMessageTitle(ctx context.Context, linkURL string) string {
+	title, err := fetchLinkPreviewTitle(ctx, linkURL)
+	if err != nil {
+		return ""
+	}
+
+	return normalizeLinkMessageTitle(title)
+}
+
+func fetchLinkPreviewTitleHTTP(ctx context.Context, linkURL string) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	requestCtx, cancel := context.WithTimeout(ctx, linkPreviewFetchTimeout)
+	defer cancel()
+
+	parsedURL, err := url.Parse(linkURL)
+	if err != nil {
+		return "", err
+	}
+	if err := validateLinkFetchURL(requestCtx, parsedURL); err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, linkURL, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "text/html,application/xhtml+xml")
+	req.Header.Set("User-Agent", "MyGod Link Preview")
+
+	resp, err := linkPreviewHTTPClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return "", errors.New("link preview response status is not successful")
+	}
+
+	content, err := io.ReadAll(io.LimitReader(resp.Body, maxLinkPreviewReadBytes))
+	if err != nil {
+		return "", err
+	}
+
+	return extractHTMLTitle(content), nil
+}
+
+func newLinkPreviewHTTPClient() *http.Client {
+	dialer := &net.Dialer{Timeout: linkPreviewFetchTimeout}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	transport.DialContext = func(ctx context.Context, network string, address string) (net.Conn, error) {
+		return dialLinkPreviewAddress(ctx, dialer, network, address)
+	}
+
+	return &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= linkPreviewMaxRedirects {
+				return errors.New("link preview redirect limit exceeded")
+			}
+
+			return validateLinkFetchURL(req.Context(), req.URL)
+		},
+		Timeout:   linkPreviewFetchTimeout,
+		Transport: transport,
+	}
+}
+
+func dialLinkPreviewAddress(ctx context.Context, dialer *net.Dialer, network string, address string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, err
+	}
+
+	addrs, err := resolveAllowedLinkFetchAddrs(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+
+	var lastErr error
+	for _, addr := range addrs {
+		conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(addr.String(), port))
+		if err == nil {
+			return conn, nil
+		}
+		lastErr = err
+	}
+	if lastErr != nil {
+		return nil, lastErr
+	}
+
+	return nil, errors.New("link preview host has no address")
+}
+
+func validateLinkFetchURL(ctx context.Context, parsedURL *url.URL) error {
+	if parsedURL == nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") || parsedURL.Host == "" {
+		return errors.New("link preview url is not allowed")
+	}
+
+	return validateLinkFetchHost(ctx, parsedURL.Hostname())
+}
+
+func validateLinkFetchHost(ctx context.Context, host string) error {
+	_, err := resolveAllowedLinkFetchAddrs(ctx, host)
+
+	return err
+}
+
+func resolveAllowedLinkFetchAddrs(ctx context.Context, host string) ([]netip.Addr, error) {
+	normalizedHost := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	if normalizedHost == "" || normalizedHost == "localhost" || strings.HasSuffix(normalizedHost, ".localhost") {
+		return nil, errors.New("link preview host is not allowed")
+	}
+
+	if addr, err := netip.ParseAddr(normalizedHost); err == nil {
+		if err := validateLinkFetchAddr(addr); err != nil {
+			return nil, err
+		}
+
+		return []netip.Addr{addr.Unmap()}, nil
+	}
+
+	ips, err := net.DefaultResolver.LookupIPAddr(ctx, normalizedHost)
+	if err != nil {
+		return nil, err
+	}
+	if len(ips) == 0 {
+		return nil, errors.New("link preview host has no address")
+	}
+	addrs := make([]netip.Addr, 0, len(ips))
+	for _, ip := range ips {
+		addr, ok := netip.AddrFromSlice(ip.IP)
+		if !ok {
+			return nil, errors.New("link preview host has invalid address")
+		}
+		if err := validateLinkFetchAddr(addr); err != nil {
+			return nil, err
+		}
+		addrs = append(addrs, addr.Unmap())
+	}
+
+	return addrs, nil
+}
+
+func validateLinkFetchAddr(addr netip.Addr) error {
+	addr = addr.Unmap()
+	if !addr.IsValid() ||
+		addr.IsUnspecified() ||
+		addr.IsLoopback() ||
+		addr.IsPrivate() ||
+		addr.IsLinkLocalUnicast() ||
+		addr.IsMulticast() ||
+		linkPreviewCarrierGradeNATPrefix().Contains(addr) {
+		return errors.New("link preview address is not allowed")
+	}
+
+	return nil
+}
+
+func linkPreviewCarrierGradeNATPrefix() netip.Prefix {
+	return netip.MustParsePrefix("100.64.0.0/10")
+}
+
+func extractHTMLTitle(content []byte) string {
+	document, err := nethtml.Parse(bytes.NewReader(content))
+	if err != nil {
+		return ""
+	}
+
+	return normalizeLinkMessageTitle(findHTMLTitleText(document))
+}
+
+func findHTMLTitleText(node *nethtml.Node) string {
+	if node == nil {
+		return ""
+	}
+	if node.Type == nethtml.ElementNode && strings.EqualFold(node.Data, "title") {
+		var buffer strings.Builder
+		collectHTMLText(node, &buffer)
+		return buffer.String()
+	}
+	for child := node.FirstChild; child != nil; child = child.NextSibling {
+		if title := findHTMLTitleText(child); title != "" {
+			return title
+		}
+	}
+
+	return ""
+}
+
+func collectHTMLText(node *nethtml.Node, buffer *strings.Builder) {
+	for child := node.FirstChild; child != nil; child = child.NextSibling {
+		if child.Type == nethtml.TextNode {
+			buffer.WriteString(child.Data)
+		}
+		collectHTMLText(child, buffer)
+	}
+}
+
+func normalizeLinkMessageTitle(title string) string {
+	return strings.Join(strings.Fields(stdhtml.UnescapeString(title)), " ")
+}
+
+func linkMessageFallbackTitle(linkURL string) string {
+	parsedURL, err := url.Parse(linkURL)
+	if err != nil {
+		return strings.TrimSpace(linkURL)
+	}
+	host := strings.TrimSpace(parsedURL.Hostname())
+	if host != "" {
+		return host
+	}
+
+	return strings.TrimSpace(linkURL)
+}
+
+func validateMarkdownMessageContent(content string) error {
+	source := []byte(content)
+	document := markdownParser.Parser().Parse(text.NewReader(source))
+	err := ast.Walk(document, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+
+		if isAllowedMarkdownMessageNode(node.Kind()) {
+			return ast.WalkContinue, nil
+		}
+
+		return ast.WalkStop, errors.New("不支持的 Markdown 语法")
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func isAllowedMarkdownMessageNode(kind ast.NodeKind) bool {
+	switch kind {
+	case ast.KindBlockquote,
+		ast.KindCodeBlock,
+		ast.KindCodeSpan,
+		ast.KindDocument,
+		ast.KindEmphasis,
+		ast.KindFencedCodeBlock,
+		ast.KindHeading,
+		ast.KindList,
+		ast.KindListItem,
+		ast.KindParagraph,
+		ast.KindString,
+		ast.KindText,
+		ast.KindTextBlock:
+		return true
+	default:
+		return false
+	}
+}
+
+func extractMarkdownPlainTextSummary(content string) (string, error) {
+	source := []byte(content)
+	document := markdownParser.Parser().Parse(text.NewReader(source))
+	var buffer bytes.Buffer
+
+	err := ast.Walk(document, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
+		if entering {
+			appendMarkdownSummaryNodeText(&buffer, node, source)
+			return ast.WalkContinue, nil
+		}
+
+		if isMarkdownSummaryLineBoundary(node.Kind()) {
+			appendMarkdownSummaryLineBreak(&buffer)
+		}
+
+		return ast.WalkContinue, nil
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return normalizeMarkdownSummaryText(buffer.String()), nil
+}
+
+func appendMarkdownSummaryNodeText(buffer *bytes.Buffer, node ast.Node, source []byte) {
+	switch typedNode := node.(type) {
+	case *ast.Text:
+		buffer.Write(typedNode.Value(source))
+		if typedNode.SoftLineBreak() || typedNode.HardLineBreak() {
+			appendMarkdownSummaryLineBreak(buffer)
+		}
+	case *ast.String:
+		buffer.Write(typedNode.Value)
+	case *ast.CodeSpan:
+		buffer.Write(typedNode.Text(source))
+	case *ast.CodeBlock:
+		appendMarkdownSummaryLineBreak(buffer)
+		buffer.Write(typedNode.Text(source))
+	case *ast.FencedCodeBlock:
+		appendMarkdownSummaryLineBreak(buffer)
+		buffer.Write(typedNode.Text(source))
+	}
+}
+
+func isMarkdownSummaryLineBoundary(kind ast.NodeKind) bool {
+	switch kind {
+	case ast.KindBlockquote,
+		ast.KindCodeBlock,
+		ast.KindFencedCodeBlock,
+		ast.KindHeading,
+		ast.KindListItem,
+		ast.KindParagraph,
+		ast.KindTextBlock:
+		return true
+	default:
+		return false
+	}
+}
+
+func appendMarkdownSummaryLineBreak(buffer *bytes.Buffer) {
+	if buffer.Len() == 0 {
+		return
+	}
+	current := buffer.String()
+	if strings.HasSuffix(current, "\n") {
+		return
+	}
+	buffer.WriteByte('\n')
+}
+
+func normalizeMarkdownSummaryText(content string) string {
+	rawLines := strings.Split(content, "\n")
+	lines := make([]string, 0, len(rawLines))
+	for _, line := range rawLines {
+		trimmedLine := strings.TrimSpace(line)
+		if trimmedLine == "" {
+			continue
+		}
+		lines = append(lines, trimmedLine)
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 func loadActiveConversationUserIDs(db *gorm.DB, conversationID string) ([]string, error) {

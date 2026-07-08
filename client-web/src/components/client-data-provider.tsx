@@ -19,6 +19,8 @@ import {
   openAppConversation as openAppConversationRequest,
   sendConversationFileMessage,
   sendConversationImageMessage,
+  sendConversationLinkMessage,
+  sendConversationMarkdownMessage,
   sendConversationTextMessage,
   setGroupConversationPrivate as setGroupConversationPrivateRequest,
   setGroupConversationPublic as setGroupConversationPublicRequest,
@@ -533,6 +535,74 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     [mergeIncomingConversationMessage, updateConversationMessageState]
   )
 
+  const sendConversationMarkdown = useCallback(
+    async (conversationId: string, content: string) => {
+      const trimmedContent = content.trim()
+      const state = conversationMessageStatesRef.current[conversationId]
+      if (!conversationId || !trimmedContent || state?.sending) {
+        return null
+      }
+
+      const clientMessageId = createClientMessageId()
+      updateConversationMessageState(conversationId, (currentState) => ({
+        ...currentState,
+        sending: true,
+      }))
+
+      try {
+        const message = await sendConversationMarkdownMessage(conversationId, {
+          clientMessageId,
+          content: trimmedContent,
+        })
+        mergeIncomingConversationMessage(message, { markLoaded: true })
+        return message
+      } catch (error: unknown) {
+        toast.error(getClientDataErrorMessage(error, "发送富文本消息失败"))
+        return null
+      } finally {
+        updateConversationMessageState(conversationId, (currentState) => ({
+          ...currentState,
+          sending: false,
+        }))
+      }
+    },
+    [mergeIncomingConversationMessage, updateConversationMessageState]
+  )
+
+  const sendConversationLink = useCallback(
+    async (conversationId: string, url: string) => {
+      const trimmedURL = url.trim()
+      const state = conversationMessageStatesRef.current[conversationId]
+      if (!conversationId || !trimmedURL || state?.sending) {
+        return null
+      }
+
+      const clientMessageId = createClientMessageId()
+      updateConversationMessageState(conversationId, (currentState) => ({
+        ...currentState,
+        sending: true,
+      }))
+
+      try {
+        const message = await sendConversationLinkMessage(conversationId, {
+          clientMessageId,
+          url: trimmedURL,
+        })
+        mergeIncomingConversationMessage(message, { markLoaded: true })
+        return message
+      } catch (error: unknown) {
+        toast.error(getClientDataErrorMessage(error, "发送链接失败"))
+        return null
+      } finally {
+        updateConversationMessageState(conversationId, (currentState) => ({
+          ...currentState,
+          sending: false,
+        }))
+      }
+    },
+    [mergeIncomingConversationMessage, updateConversationMessageState]
+  )
+
   const sendConversationFile = useCallback(
     async (conversationId: string, file: File) => {
       const state = conversationMessageStatesRef.current[conversationId]
@@ -941,6 +1011,8 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     refreshMe,
     sendConversationFile,
     sendConversationImage,
+    sendConversationLink,
+    sendConversationMarkdown,
     sendConversationText,
     setGroupConversationPrivate,
     setGroupConversationPublic,

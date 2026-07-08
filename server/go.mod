@@ -14,7 +14,9 @@ require (
 	github.com/labstack/echo/v4 v4.15.4
 	github.com/pressly/goose/v3 v3.27.2
 	github.com/swaggo/echo-swagger v1.5.2
+	github.com/yuin/goldmark v1.8.2
 	golang.org/x/crypto v0.53.0
+	golang.org/x/net v0.56.0
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/gorm v1.30.5
@@ -65,7 +67,6 @@ require (
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
 	golang.org/x/text v0.38.0 // indirect

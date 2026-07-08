@@ -38,13 +38,13 @@ type appMessageSenderPayload struct {
 	Type     string `json:"type"`
 }
 
-func (s *Server) dispatchAppTextMessageCreatedEvent(sender store.User, message store.Message) error {
+func (s *Server) dispatchAppMessageCreatedEvent(sender store.User, message store.Message) error {
 	conversation, appID, ok, err := s.findMessageConversationApp(message.ConversationID)
 	if err != nil || !ok {
 		return err
 	}
 
-	_, ok = textMessageContent(message.Body)
+	_, ok = appMessageContent(message.Body)
 	if !ok {
 		return nil
 	}
@@ -103,11 +103,32 @@ func (s *Server) findMessageConversationApp(conversationID string) (store.Conver
 	return conversation, member.MemberID, true, nil
 }
 
-func textMessageContent(raw json.RawMessage) (string, bool) {
-	body, err := decodeTextMessageBody(raw)
-	if err != nil || body.Type != messageTypeText {
+func appMessageContent(raw json.RawMessage) (string, bool) {
+	var envelope messageBodyEnvelope
+	if err := json.Unmarshal(raw, &envelope); err != nil {
 		return "", false
 	}
 
-	return body.Content, true
+	switch envelope.Type {
+	case messageTypeLink:
+		body, err := decodeLinkMessageBody(raw)
+		if err != nil {
+			return "", false
+		}
+		return body.URL, true
+	case messageTypeMarkdown:
+		body, err := decodeMarkdownMessageBody(raw)
+		if err != nil {
+			return "", false
+		}
+		return body.Content, true
+	case messageTypeText:
+		body, err := decodeTextMessageBody(raw)
+		if err != nil {
+			return "", false
+		}
+		return body.Content, true
+	default:
+		return "", false
+	}
 }

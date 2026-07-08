@@ -153,6 +153,17 @@ type TextMessageBodyResponse = {
   type?: "text"
 }
 
+type MarkdownMessageBodyResponse = {
+  content?: string
+  type?: "markdown"
+}
+
+type LinkMessageBodyResponse = {
+  title?: string
+  type?: "link"
+  url?: string
+}
+
 type FileMessageBodyResponse = {
   file_id?: string
   name?: string
@@ -211,6 +222,8 @@ type GroupNameUpdatedSystemEventBodyResponse = {
 
 type MessageBodyResponse =
   | TextMessageBodyResponse
+  | MarkdownMessageBodyResponse
+  | LinkMessageBodyResponse
   | FileMessageBodyResponse
   | ImageMessageBodyResponse
   | GroupMembersInvitedSystemEventBodyResponse
@@ -354,6 +367,17 @@ export type ClientTextMessageBody = {
   type: "text"
 }
 
+export type ClientMarkdownMessageBody = {
+  content: string
+  type: "markdown"
+}
+
+export type ClientLinkMessageBody = {
+  title: string
+  type: "link"
+  url: string
+}
+
 export type ClientFileMessageBody = {
   fileId: string
   name: string
@@ -412,6 +436,8 @@ export type ClientGroupNameUpdatedSystemEventBody = {
 
 export type ClientMessageBody =
   | ClientTextMessageBody
+  | ClientMarkdownMessageBody
+  | ClientLinkMessageBody
   | ClientFileMessageBody
   | ClientImageMessageBody
   | ClientGroupMembersInvitedSystemEventBody
@@ -453,6 +479,16 @@ export type ListConversationMessagesOptions = {
 export type SendConversationTextMessageInput = {
   clientMessageId: string
   content: string
+}
+
+export type SendConversationMarkdownMessageInput = {
+  clientMessageId: string
+  content: string
+}
+
+export type SendConversationLinkMessageInput = {
+  clientMessageId: string
+  url: string
 }
 
 export type SendConversationFileMessageInput = {
@@ -1073,6 +1109,80 @@ export async function sendConversationTextMessage(
   return normalizeMessage(message)
 }
 
+export async function sendConversationMarkdownMessage(
+  conversationId: string,
+  input: SendConversationMarkdownMessageInput,
+  fetcher: ClientDataFetch = fetch
+) {
+  const response = await fetcher(
+    `/api/client/conversations/${encodeURIComponent(conversationId)}/messages`,
+    {
+      body: JSON.stringify({
+        client_message_id: input.clientMessageId,
+        body: {
+          type: "markdown",
+          content: input.content,
+        },
+      }),
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    }
+  )
+  const payload = await readJson<
+    ClientDataErrorEnvelope | ClientDataSuccessEnvelope<CreateMessageResponse>
+  >(response)
+
+  if (!response.ok || payload?.success === false) {
+    throw createRequestError(payload, response, "发送富文本消息失败")
+  }
+
+  const message = (
+    payload as ClientDataSuccessEnvelope<CreateMessageResponse> | undefined
+  )?.data?.message
+
+  return normalizeMessage(message)
+}
+
+export async function sendConversationLinkMessage(
+  conversationId: string,
+  input: SendConversationLinkMessageInput,
+  fetcher: ClientDataFetch = fetch
+) {
+  const response = await fetcher(
+    `/api/client/conversations/${encodeURIComponent(conversationId)}/messages`,
+    {
+      body: JSON.stringify({
+        client_message_id: input.clientMessageId,
+        body: {
+          type: "link",
+          url: input.url,
+        },
+      }),
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    }
+  )
+  const payload = await readJson<
+    ClientDataErrorEnvelope | ClientDataSuccessEnvelope<CreateMessageResponse>
+  >(response)
+
+  if (!response.ok || payload?.success === false) {
+    throw createRequestError(payload, response, "发送链接失败")
+  }
+
+  const message = (
+    payload as ClientDataSuccessEnvelope<CreateMessageResponse> | undefined
+  )?.data?.message
+
+  return normalizeMessage(message)
+}
+
 export async function sendConversationFileMessage(
   conversationId: string,
   input: SendConversationFileMessageInput,
@@ -1260,6 +1370,14 @@ export function normalizeMessageCreatedEventPayload(
 export function formatClientMessageBodySummary(body: ClientMessageBody) {
   if (body.type === "text") {
     return body.content
+  }
+
+  if (body.type === "markdown") {
+    return formatMarkdownMessageSummary(body.content)
+  }
+
+  if (body.type === "link") {
+    return `[链接] ${body.title}`
   }
 
   if (body.type === "file") {
@@ -1521,6 +1639,25 @@ function normalizeMessageBody(
     }
   }
 
+  if (body?.type === "markdown" && typeof body.content === "string") {
+    return {
+      content: body.content,
+      type: "markdown",
+    }
+  }
+
+  if (
+    body?.type === "link" &&
+    typeof body.url === "string" &&
+    typeof body.title === "string"
+  ) {
+    return {
+      title: body.title,
+      type: "link",
+      url: body.url,
+    }
+  }
+
   if (
     body?.type === "file" &&
     typeof body.file_id === "string" &&
@@ -1548,6 +1685,28 @@ function normalizeMessageBody(
   }
 
   throw new ClientDataRequestError("消息响应格式不正确")
+}
+
+function formatMarkdownMessageSummary(content: string) {
+  return content
+    .replace(/```[\s\S]*?```/g, (block) =>
+      block
+        .replace(/^```[^\n]*\n?/, "")
+        .replace(/```$/, "")
+        .trim()
+    )
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/!\[[^\]]*]\([^)]*\)/g, "")
+    .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^>\s?/gm, "")
+    .replace(/^\s*[-*+]\s+/gm, "")
+    .replace(/^\s*\d+[.)]\s+/gm, "")
+    .replace(/[*_~]+/g, "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join("\n")
 }
 
 function normalizeSystemEventMessageBody(

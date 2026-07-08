@@ -140,11 +140,12 @@ func (s *Server) createConversationFileMessage(c echo.Context) error {
 	}
 
 	message, created, memberUserIDs, err := s.createUserMessage(
+		c.Request().Context(),
 		user.ID,
 		conversationID,
 		clientMessageID,
 		body,
-		fileMessageSummary(fileName),
+		staticMessageBodyFinalizer(fileMessageSummary(fileName)),
 	)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
