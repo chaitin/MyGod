@@ -52,7 +52,7 @@ type BootstrapState = "loading" | "ready" | "error"
 
 const minimumBootstrapLoadingMs = 2_000
 const messagePageLimit = 20
-const refreshIntervalMs = 60_000
+const refreshIntervalMs = 15_000
 const emptyConversationMessageState: ClientConversationMessageState = {
   error: null,
   loaded: false,
@@ -1028,6 +1028,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     function refresh() {
       void refreshMe().catch(() => undefined)
       void refreshContacts().catch(() => undefined)
+      void refreshConversations().catch(() => undefined)
     }
 
     const interval = window.setInterval(refresh, refreshIntervalMs)
@@ -1044,7 +1045,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
       window.clearInterval(interval)
       document.removeEventListener("visibilitychange", handleVisibilityChange)
     }
-  }, [bootstrapState, refreshContacts, refreshMe])
+  }, [bootstrapState, refreshContacts, refreshConversations, refreshMe])
 
   if (bootstrapState === "loading") {
     return <ClientLoadingPage />
