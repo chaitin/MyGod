@@ -8,20 +8,30 @@ import {
   Send,
   Settings,
   Smile,
+  UsersRound,
   X,
 } from "lucide-react"
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
+import { getConversationMemberMentionLabel } from "@/lib/conversation-mention-labels"
 import {
   formatClientMessageBodySummary,
   type ClientConversation,
+  type ClientConversationMember,
   type ClientMessage,
 } from "@/lib/client-data-api"
 import {
   compressImageForMessage,
   imageMessageMaxBytes,
 } from "@/lib/image-message"
+import {
+  createMentionToken,
+  formatMentionTemplateText,
+  parseMentionTemplate,
+  type MentionLabelResolver,
+  type MentionTargetType,
+} from "@/lib/message-mentions"
 import { AddGroupMembersDialog } from "@/components/add-group-members-dialog"
 import { ConversationInfoDrawer } from "@/components/conversation-info-drawer"
 import {
@@ -82,14 +92,39 @@ export type ConversationPanelReplyTarget = {
 }
 
 const maxFileMessageUploadBytes = 20 * 1024 * 1024
+const fallbackMentionLabelResolver: MentionLabelResolver = () => undefined
+
+type DraftMention = {
+  end: number
+  id: string
+  label: string
+  start: number
+  targetType: MentionTargetType
+}
+
+type MentionCandidate = {
+  avatar: string
+  description: string
+  id: string
+  label: string
+  searchText: string
+  targetType: MentionTargetType
+}
+
+type MentionTrigger = {
+  query: string
+  start: number
+}
 
 type ConversationPanelProps = {
   conversation: ClientConversation | null
   conversationOnline?: boolean
+  currentUserId: string
   draft: string
   historyError: string | null
   historyLoading: boolean
   historyLoadingBefore: boolean
+  mentionLabelResolver?: MentionLabelResolver
   messages: ConversationPanelMessage[]
   onDraftChange: (draft: string) => void
   onCancelReply: () => void
@@ -99,7 +134,7 @@ type ConversationPanelProps = {
   onSendImage: (image: File) => Promise<ClientMessage | null>
   onLoadBeforeMessages: () => void
   onRichTextModeChange: (richTextMode: boolean) => void
-  onSendMessage: () => void
+  onSendMessage: (content?: string) => void
   replyTarget: ConversationPanelReplyTarget | null
   richTextMode: boolean
   sending: boolean
@@ -108,10 +143,12 @@ type ConversationPanelProps = {
 export function ConversationPanel({
   conversation,
   conversationOnline,
+  currentUserId,
   draft,
   historyError,
   historyLoading,
   historyLoadingBefore,
+  mentionLabelResolver = fallbackMentionLabelResolver,
   messages,
   onDraftChange,
   onCancelReply,
@@ -145,13 +182,15 @@ export function ConversationPanel({
             error={historyError}
             loading={historyLoading}
             loadingBefore={historyLoadingBefore}
+            currentUserId={currentUserId}
+            mentionLabelResolver={mentionLabelResolver}
             messages={messages}
             onLoadBeforeMessages={onLoadBeforeMessages}
             onReplyToMessage={onReplyToMessage}
             onRevokeMessage={onRevokeMessage}
           />
           <ConversationPanelComposer
-            conversationName={conversation.name}
+            conversation={conversation}
             draft={draft}
             replyTarget={replyTarget}
             onCancelReply={onCancelReply}
@@ -270,18 +309,22 @@ function ConversationAvatarBadge({ online }: { online: boolean }) {
 
 function ConversationPanelHistory({
   conversation,
+  currentUserId,
   error,
   loading,
   loadingBefore,
+  mentionLabelResolver,
   messages,
   onLoadBeforeMessages,
   onReplyToMessage,
   onRevokeMessage,
 }: {
   conversation: ClientConversation
+  currentUserId: string
   error: string | null
   loading: boolean
   loadingBefore: boolean
+  mentionLabelResolver: MentionLabelResolver
   messages: ConversationPanelMessage[]
   onLoadBeforeMessages: () => void
   onReplyToMessage: (message: ConversationPanelMessage) => void
@@ -428,12 +471,19 @@ function ConversationPanelHistory({
         )}
         {messages.map((message) =>
           message.role === "system" ? (
-            <SystemMessageBadge key={message.id} message={message} />
+            <SystemMessageBadge
+              key={message.id}
+              currentUserId={currentUserId}
+              mentionLabelResolver={mentionLabelResolver}
+              message={message}
+            />
           ) : (
             <MessageBubble
               key={message.id}
               message={message}
               conversation={conversation}
+              currentUserId={currentUserId}
+              mentionLabelResolver={mentionLabelResolver}
               onReply={onReplyToMessage}
               onRevoke={onRevokeMessage}
             />
@@ -445,7 +495,7 @@ function ConversationPanelHistory({
 }
 
 function ConversationPanelComposer({
-  conversationName,
+  conversation,
   draft,
   replyTarget,
   onCancelReply,
@@ -457,7 +507,7 @@ function ConversationPanelComposer({
   richTextMode,
   sending,
 }: {
-  conversationName: string
+  conversation: ClientConversation
   draft: string
   replyTarget: ConversationPanelReplyTarget | null
   onCancelReply: () => void
@@ -465,7 +515,7 @@ function ConversationPanelComposer({
   onSendFile: (file: File) => Promise<ClientMessage | null>
   onSendImage: (image: File) => Promise<ClientMessage | null>
   onRichTextModeChange: (richTextMode: boolean) => void
-  onSendMessage: () => void
+  onSendMessage: (content?: string) => void
   richTextMode: boolean
   sending: boolean
 }) {
@@ -478,8 +528,24 @@ function ConversationPanelComposer({
   const [fileDialogOpen, setFileDialogOpen] = React.useState(false)
   const [imageDialogOpen, setImageDialogOpen] = React.useState(false)
   const [imagePreparing, setImagePreparing] = React.useState(false)
+  const [draftMentions, setDraftMentions] = React.useState<DraftMention[]>([])
+  const [mentionTrigger, setMentionTrigger] =
+    React.useState<MentionTrigger | null>(null)
+  const [selectedMentionIndex, setSelectedMentionIndex] = React.useState(0)
   const [selectedFile, setSelectedFile] = React.useState<File | null>(null)
   const [selectedImage, setSelectedImage] = React.useState<File | null>(null)
+  const mentionCandidates = React.useMemo(
+    () =>
+      conversation.type === "group"
+        ? createMentionCandidates(conversation.members ?? [])
+        : [],
+    [conversation.members, conversation.type]
+  )
+  const filteredMentionCandidates = React.useMemo(
+    () =>
+      filterMentionCandidates(mentionCandidates, mentionTrigger?.query ?? ""),
+    [mentionCandidates, mentionTrigger?.query]
+  )
 
   React.useEffect(() => {
     textareaRef.current?.focus()
@@ -502,18 +568,76 @@ function ConversationPanelComposer({
     textarea.focus()
   }, [sending])
 
+  function handleDraftChange(event: React.ChangeEvent<HTMLTextAreaElement>) {
+    const nextDraft = event.target.value
+    const cursor = event.target.selectionStart
+
+    setDraftMentions((currentMentions) =>
+      syncDraftMentions(currentMentions, draft, nextDraft)
+    )
+    onDraftChange(nextDraft)
+    updateMentionTrigger(nextDraft, cursor)
+  }
+
+  function updateMentionTrigger(value: string, cursor: number) {
+    if (conversation.type !== "group" || mentionCandidates.length === 0) {
+      setMentionTrigger(null)
+      setSelectedMentionIndex(0)
+      return
+    }
+
+    setMentionTrigger(getMentionTrigger(value, cursor))
+    setSelectedMentionIndex(0)
+  }
+
   function handleSendMessage() {
     if (sending || !draft.trim()) {
       return
     }
 
     shouldFocusAfterSendingRef.current = true
-    onSendMessage()
+    onSendMessage(createDraftMentionTemplate(draft, draftMentions))
+    setDraftMentions([])
+    setMentionTrigger(null)
+    setSelectedMentionIndex(0)
   }
 
   function handleComposerKeyDown(
     event: React.KeyboardEvent<HTMLTextAreaElement>
   ) {
+    if (mentionTrigger && filteredMentionCandidates.length > 0) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault()
+        setSelectedMentionIndex(
+          (currentIndex) =>
+            (currentIndex + 1) % filteredMentionCandidates.length
+        )
+        return
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault()
+        setSelectedMentionIndex(
+          (currentIndex) =>
+            (currentIndex - 1 + filteredMentionCandidates.length) %
+            filteredMentionCandidates.length
+        )
+        return
+      }
+      if (event.key === "Escape") {
+        event.preventDefault()
+        setMentionTrigger(null)
+        return
+      }
+      if (event.key === "Enter" || event.key === "Tab") {
+        event.preventDefault()
+        insertMentionCandidate(
+          filteredMentionCandidates[selectedMentionIndex] ??
+            filteredMentionCandidates[0]
+        )
+        return
+      }
+    }
+
     if (event.key !== "Enter") {
       return
     }
@@ -525,12 +649,71 @@ function ConversationPanelComposer({
 
     if (event.shiftKey || event.ctrlKey) {
       event.preventDefault()
-      insertTextareaText(event.currentTarget, "\n", onDraftChange)
+      insertTextareaText(event.currentTarget, "\n", handleTextareaValueChange)
       return
     }
 
     event.preventDefault()
     handleSendMessage()
+  }
+
+  function handleTextareaValueChange(value: string, cursor?: number) {
+    setDraftMentions((currentMentions) =>
+      syncDraftMentions(currentMentions, draft, value)
+    )
+    onDraftChange(value)
+    updateMentionTrigger(value, cursor ?? value.length)
+  }
+
+  function insertMentionCandidate(candidate: MentionCandidate | undefined) {
+    if (!candidate) {
+      return
+    }
+
+    const textarea = textareaRef.current
+    const cursor = textarea?.selectionStart ?? draft.length
+    const trigger = getMentionTrigger(draft, cursor)
+    if (!trigger) {
+      return
+    }
+
+    const mentionText = `@${candidate.label}`
+    const insertedText = `${mentionText} `
+    const nextDraft =
+      draft.slice(0, trigger.start) + insertedText + draft.slice(cursor)
+    const nextMention: DraftMention = {
+      end: trigger.start + mentionText.length,
+      id: candidate.id,
+      label: candidate.label,
+      start: trigger.start,
+      targetType: candidate.targetType,
+    }
+
+    setDraftMentions((currentMentions) =>
+      [
+        ...syncDraftMentions(
+          currentMentions.filter(
+            (mention) => mention.end <= trigger.start || mention.start >= cursor
+          ),
+          draft,
+          nextDraft
+        ),
+        nextMention,
+      ].sort((mentionA, mentionB) => mentionA.start - mentionB.start)
+    )
+    onDraftChange(nextDraft)
+    setMentionTrigger(null)
+    setSelectedMentionIndex(0)
+
+    window.requestAnimationFrame(() => {
+      if (!textareaRef.current) {
+        return
+      }
+
+      const nextCursor = trigger.start + insertedText.length
+      textareaRef.current.focus()
+      textareaRef.current.setSelectionRange(nextCursor, nextCursor)
+    })
   }
 
   function handleExpressionSelect(item: ExpressionItem) {
@@ -541,12 +724,12 @@ function ConversationPanelComposer({
     const textarea = textareaRef.current
 
     if (!textarea) {
-      onDraftChange(draft + item.value)
+      handleTextareaValueChange(draft + item.value)
       setExpressionPickerOpen(false)
       return
     }
 
-    insertTextareaText(textarea, item.value, onDraftChange)
+    insertTextareaText(textarea, item.value, handleTextareaValueChange)
     setExpressionPickerOpen(false)
     window.requestAnimationFrame(() => {
       textarea.focus()
@@ -730,18 +913,75 @@ function ConversationPanelComposer({
             </Button>
           </div>
         )}
-        <div data-testid="conversation-panel-editor-row">
+        <div className="relative" data-testid="conversation-panel-editor-row">
           <Textarea
             ref={textareaRef}
             value={draft}
             aria-disabled={sending}
-            onChange={(event) => onDraftChange(event.target.value)}
+            onChange={handleDraftChange}
             onKeyDown={handleComposerKeyDown}
+            onSelect={(event) =>
+              updateMentionTrigger(
+                event.currentTarget.value,
+                event.currentTarget.selectionStart
+              )
+            }
             onPaste={handleComposerPaste}
             placeholder={richTextMode ? "输入 Markdown 消息" : "输入消息"}
             readOnly={sending}
             className="max-h-48 min-h-24 resize-none"
           />
+          {mentionTrigger && filteredMentionCandidates.length > 0 && (
+            <div className="absolute bottom-full left-0 z-20 mb-2 w-72 overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
+              {filteredMentionCandidates.map((candidate, index) => (
+                <Button
+                  key={`${candidate.targetType}-${candidate.id}`}
+                  className={cn(
+                    "h-auto w-full justify-start gap-2 px-2 py-1.5 text-left",
+                    index === selectedMentionIndex && "bg-accent"
+                  )}
+                  onMouseDown={(event) => {
+                    event.preventDefault()
+                    insertMentionCandidate(candidate)
+                  }}
+                  type="button"
+                  variant="ghost"
+                >
+                  <Avatar
+                    className={cn(
+                      "size-6 rounded-sm after:rounded-sm",
+                      candidate.targetType === "all" ? "bg-teal-500" : "bg-muted"
+                    )}
+                    data-size="sm"
+                  >
+                    {candidate.targetType === "all" ? (
+                      <AvatarFallback className="rounded-sm bg-transparent text-background">
+                        <UsersRound className="size-3.5" />
+                      </AvatarFallback>
+                    ) : candidate.avatar ? (
+                      <AvatarImage
+                        alt={candidate.label}
+                        className="rounded-sm"
+                        src={candidate.avatar}
+                      />
+                    ) : (
+                      <AvatarFallback className="rounded-sm text-xs">
+                        {getConversationInitial(candidate.label)}
+                      </AvatarFallback>
+                    )}
+                  </Avatar>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm">
+                      {candidate.label}
+                    </span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {candidate.description}
+                    </span>
+                  </span>
+                </Button>
+              ))}
+            </div>
+          )}
         </div>
         <div
           className="flex items-center justify-between gap-2"
@@ -824,7 +1064,7 @@ function ConversationPanelComposer({
         </div>
       </div>
       <SendFileMessageDialog
-        conversationName={conversationName}
+        conversationName={conversation.name}
         file={selectedFile}
         onConfirm={() => void handleFileSendConfirm()}
         onOpenChange={handleFileDialogOpenChange}
@@ -832,7 +1072,7 @@ function ConversationPanelComposer({
         sending={sending}
       />
       <SendImageMessageDialog
-        conversationName={conversationName}
+        conversationName={conversation.name}
         image={selectedImage}
         onConfirm={() => void handleImageSendConfirm()}
         onOpenChange={handleImageDialogOpenChange}
@@ -862,7 +1102,7 @@ function getClipboardImageFile(clipboardData: DataTransfer) {
 function insertTextareaText(
   textarea: HTMLTextAreaElement,
   text: string,
-  onChange: (value: string) => void
+  onChange: (value: string, cursor: number) => void
 ) {
   const selectionStart = textarea.selectionStart
   const selectionEnd = textarea.selectionEnd
@@ -874,7 +1114,201 @@ function insertTextareaText(
 
   textarea.value = nextValue
   textarea.setSelectionRange(nextCursor, nextCursor)
-  onChange(nextValue)
+  onChange(nextValue, nextCursor)
+}
+
+function createMentionCandidates(
+  members: ClientConversationMember[]
+): MentionCandidate[] {
+  const memberCandidates = members
+    .map((member): MentionCandidate | null => {
+      const label = getConversationMemberMentionLabel(member)
+      if (!label) {
+        return null
+      }
+
+      const description =
+        member.type === "app" ? "应用" : member.email || member.phone || "成员"
+      const searchText = [
+        label,
+        member.name,
+        member.nickname,
+        member.email,
+        member.phone,
+        member.type,
+      ]
+        .join(" ")
+        .toLowerCase()
+
+      return {
+        avatar: member.avatar,
+        description,
+        id: member.id,
+        label,
+        searchText,
+        targetType: member.type,
+      }
+    })
+    .filter((candidate): candidate is MentionCandidate => candidate !== null)
+
+  return [
+    {
+      avatar: "",
+      description: "所有成员",
+      id: "all",
+      label: "所有人",
+      searchText: "所有人 全体 all everyone",
+      targetType: "all",
+    },
+    ...memberCandidates,
+  ]
+}
+
+function filterMentionCandidates(
+  candidates: MentionCandidate[],
+  query: string
+) {
+  const normalizedQuery = query.trim().toLowerCase()
+  if (!normalizedQuery) {
+    return candidates.slice(0, 8)
+  }
+
+  return candidates
+    .filter((candidate) => candidate.searchText.includes(normalizedQuery))
+    .slice(0, 8)
+}
+
+function getMentionTrigger(
+  value: string,
+  cursor: number
+): MentionTrigger | null {
+  const beforeCursor = value.slice(0, cursor)
+  const start = beforeCursor.lastIndexOf("@")
+  if (start < 0) {
+    return null
+  }
+
+  const query = value.slice(start + 1, cursor)
+  if (/[\s@]/.test(query)) {
+    return null
+  }
+
+  return {
+    query,
+    start,
+  }
+}
+
+function syncDraftMentions(
+  mentions: DraftMention[],
+  previousValue: string,
+  value: string
+): DraftMention[] {
+  if (!value) {
+    return []
+  }
+
+  const textChange = getTextChange(previousValue, value)
+  const nextMentions: DraftMention[] = []
+
+  for (const mention of mentions) {
+    const text = getDraftMentionText(mention)
+    if (previousValue.slice(mention.start, mention.end) !== text) {
+      continue
+    }
+
+    const nextMention = shiftDraftMention(mention, textChange)
+
+    if (!nextMention) {
+      continue
+    }
+
+    if (value.slice(nextMention.start, nextMention.end) === text) {
+      nextMentions.push(nextMention)
+    }
+  }
+
+  return nextMentions
+}
+
+type TextChange = {
+  delta: number
+  newEnd: number
+  oldEnd: number
+  start: number
+}
+
+function getTextChange(previousValue: string, value: string): TextChange {
+  let start = 0
+  while (
+    start < previousValue.length &&
+    start < value.length &&
+    previousValue[start] === value[start]
+  ) {
+    start += 1
+  }
+
+  let unchangedSuffixLength = 0
+  while (
+    unchangedSuffixLength < previousValue.length - start &&
+    unchangedSuffixLength < value.length - start &&
+    previousValue[previousValue.length - 1 - unchangedSuffixLength] ===
+      value[value.length - 1 - unchangedSuffixLength]
+  ) {
+    unchangedSuffixLength += 1
+  }
+
+  const oldEnd = previousValue.length - unchangedSuffixLength
+  const newEnd = value.length - unchangedSuffixLength
+
+  return {
+    delta: newEnd - oldEnd,
+    newEnd,
+    oldEnd,
+    start,
+  }
+}
+
+function shiftDraftMention(mention: DraftMention, textChange: TextChange) {
+  if (mention.end <= textChange.start) {
+    return mention
+  }
+
+  if (mention.start >= textChange.oldEnd) {
+    return {
+      ...mention,
+      end: mention.end + textChange.delta,
+      start: mention.start + textChange.delta,
+    }
+  }
+
+  return null
+}
+
+function createDraftMentionTemplate(value: string, mentions: DraftMention[]) {
+  let content = value
+  const validMentions = mentions
+    .filter(
+      (mention) =>
+        value.slice(mention.start, mention.end) === getDraftMentionText(mention)
+    )
+    .sort((mentionA, mentionB) => mentionB.start - mentionA.start)
+
+  for (const mention of validMentions) {
+    content =
+      content.slice(0, mention.start) +
+      createMentionToken({
+        id: mention.id,
+        type: mention.targetType,
+      }) +
+      content.slice(mention.end)
+  }
+
+  return content
+}
+
+function getDraftMentionText(mention: Pick<DraftMention, "label">) {
+  return `@${mention.label}`
 }
 
 function ConversationPanelEmptyState() {
@@ -889,8 +1323,12 @@ function ConversationPanelEmptyState() {
 }
 
 function SystemMessageBadge({
+  currentUserId,
+  mentionLabelResolver,
   message,
 }: {
+  currentUserId: string
+  mentionLabelResolver: MentionLabelResolver
   message: ConversationPanelMessage
 }) {
   return (
@@ -899,7 +1337,11 @@ function SystemMessageBadge({
         className="h-auto max-w-[min(80%,36rem)] text-center leading-relaxed whitespace-normal"
         variant="secondary"
       >
-        <MessageBodyRenderer body={message.body} />
+        <MessageBodyRenderer
+          body={message.body}
+          currentUserId={currentUserId}
+          mentionLabelResolver={mentionLabelResolver}
+        />
       </Badge>
     </div>
   )
@@ -908,17 +1350,21 @@ function SystemMessageBadge({
 function MessageBubble({
   message,
   conversation,
+  currentUserId,
+  mentionLabelResolver,
   onReply,
   onRevoke,
 }: {
   message: ConversationPanelMessage
   conversation: ClientConversation
+  currentUserId: string
+  mentionLabelResolver: MentionLabelResolver
   onReply: (message: ConversationPanelMessage) => void
   onRevoke: (message: ConversationPanelMessage) => void
 }) {
   const fromMe = message.role === "me"
   const fallback = fromMe ? "我" : getConversationInitial(conversation.name)
-  const copyText = getMessageCopyText(message)
+  const copyText = getMessageCopyText(message, mentionLabelResolver)
   const bubbleRef = React.useRef<HTMLDivElement | null>(null)
   const selectedCopyTextRef = React.useRef("")
 
@@ -932,7 +1378,12 @@ function MessageBubble({
     const selectedText = selectedCopyTextRef.current
     selectedCopyTextRef.current = ""
 
-    void copyMessageToClipboard(message, selectedText, bubbleRef.current)
+    void copyMessageToClipboard(
+      message,
+      selectedText,
+      bubbleRef.current,
+      mentionLabelResolver
+    )
   }
 
   return (
@@ -969,7 +1420,11 @@ function MessageBubble({
             {message.replyTo && (
               <MessageReplyReference replyTo={message.replyTo} />
             )}
-            <MessageBodyRenderer body={message.body} />
+            <MessageBodyRenderer
+              body={message.body}
+              currentUserId={currentUserId}
+              mentionLabelResolver={mentionLabelResolver}
+            />
           </div>
         </MessageActionMenu>
         {message.delegatedByName && (
@@ -992,13 +1447,14 @@ function MessageBubble({
 async function copyMessageToClipboard(
   message: ConversationPanelMessage,
   selectedText: string,
-  messageElement: HTMLElement | null
+  messageElement: HTMLElement | null,
+  mentionLabelResolver: MentionLabelResolver
 ) {
   const text =
     (selectedText.trim()
       ? selectedText
       : getSelectedTextWithinElement(messageElement)) ||
-    getMessageCopyText(message)
+    getMessageCopyText(message, mentionLabelResolver)
   if (!text) {
     toast.error("没有可复制内容")
     return
@@ -1040,7 +1496,10 @@ function rangeIntersectsElement(range: Range, element: HTMLElement) {
   }
 }
 
-function getMessageCopyText(message: ConversationPanelMessage) {
+function getMessageCopyText(
+  message: ConversationPanelMessage,
+  mentionLabelResolver: MentionLabelResolver
+) {
   switch (message.body.type) {
     case "file":
       return message.body.name
@@ -1052,7 +1511,10 @@ function getMessageCopyText(message: ConversationPanelMessage) {
       return message.body.url
     case "markdown":
     case "text":
-      return message.body.content
+      return formatMentionTemplateText(
+        message.body.content,
+        mentionLabelResolver
+      )
     case "system_event":
       return formatClientMessageBodySummary(message.body)
   }
@@ -1116,8 +1578,12 @@ function MessageAvatar({
 
 function MessageBodyRenderer({
   body,
+  currentUserId,
+  mentionLabelResolver,
 }: {
   body: ConversationPanelMessage["body"]
+  currentUserId: string
+  mentionLabelResolver: MentionLabelResolver
 }) {
   switch (body.type) {
     case "file":
@@ -1127,9 +1593,21 @@ function MessageBodyRenderer({
     case "link":
       return <MessageLink link={body} />
     case "markdown":
-      return <MessageMarkdown content={body.content} />
+      return (
+        <MessageMarkdown
+          content={body.content}
+          currentUserId={currentUserId}
+          mentionLabelResolver={mentionLabelResolver}
+        />
+      )
     case "text":
-      return <TextMessageBody content={body.content} />
+      return (
+        <TextMessageBody
+          content={body.content}
+          currentUserId={currentUserId}
+          mentionLabelResolver={mentionLabelResolver}
+        />
+      )
     case "revoked":
       return <span className="text-muted-foreground">该消息已被撤回</span>
     case "system_event":
@@ -1137,8 +1615,68 @@ function MessageBodyRenderer({
   }
 }
 
-function TextMessageBody({ content }: { content: string }) {
-  return <span className="break-words whitespace-pre-wrap">{content}</span>
+function TextMessageBody({
+  content,
+  currentUserId,
+  mentionLabelResolver,
+}: {
+  content: string
+  currentUserId: string
+  mentionLabelResolver: MentionLabelResolver
+}) {
+  const parts = parseMentionTemplate(content, mentionLabelResolver)
+
+  return (
+    <span className="break-words whitespace-pre-wrap">
+      {parts.map((part, index) =>
+        part.type === "text" ? (
+          <React.Fragment key={`text-${index}`}>{part.text}</React.Fragment>
+        ) : (
+          <MentionTextPart
+            key={`${part.targetType}-${part.id}-${index}`}
+            currentUserId={currentUserId}
+            part={part}
+          />
+        )
+      )}
+    </span>
+  )
+}
+
+function MentionTextPart({
+  currentUserId,
+  part,
+}: {
+  currentUserId: string
+  part: Extract<
+    ReturnType<typeof parseMentionTemplate>[number],
+    { type: "mention" }
+  >
+}) {
+  const isCurrentUserMention =
+    part.targetType === "all" ||
+    (part.targetType === "user" && isSameUserId(part.id, currentUserId))
+  const content = (
+    <span className={getMentionTextClassName(isCurrentUserMention)}>
+      {part.label}
+    </span>
+  )
+
+  if (part.targetType !== "user") {
+    return content
+  }
+
+  return <UserProfilePopover userId={part.id}>{content}</UserProfilePopover>
+}
+
+function getMentionTextClassName(isCurrentUserMention: boolean) {
+  return isCurrentUserMention
+    ? "mx-0.5 font-medium text-amber-600 hover:text-amber-700"
+    : "mx-0.5 font-medium text-sky-500 hover:text-sky-600"
+}
+
+function isSameUserId(userId: string | undefined, currentUserId: string) {
+  return userId?.toLowerCase() === currentUserId.toLowerCase()
 }
 
 function getConversationInitial(name: string) {

@@ -24,6 +24,7 @@ func TestNewConversationListItemResponseUsesDirectFallbackCopy(t *testing.T) {
 			},
 		},
 		map[string]store.User{},
+		nil,
 	)
 
 	if response.Name != "私聊" {

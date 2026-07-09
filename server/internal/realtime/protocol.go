@@ -15,6 +15,7 @@ const (
 
 	EventMessageCreated      = "message.created"
 	EventMessageUpdated      = "message.updated"
+	EventMemberMentioned     = "conversation.member_mentioned"
 	EventConversationRemoved = "conversation.removed"
 	EventSystemReady         = "system.ready"
 )

@@ -75,6 +75,7 @@ type conversationMemberResponse struct {
 	Nickname string `json:"nickname" example:"小张"`
 	Phone    string `json:"phone" example:"+8613812345678"`
 	Role     string `json:"role" example:"member"`
+	Type     string `json:"type" example:"user"`
 }
 
 type groupConversationResponse struct {
@@ -86,6 +87,7 @@ type groupConversationResponse struct {
 	LastMessageID      *string                      `json:"last_message_id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
 	LastMessageSeq     int64                        `json:"last_message_seq" example:"12"`
 	LastMessageSummary string                       `json:"last_message_summary" example:"张三 邀请 李四 加入群聊"`
+	LastMentionedSeq   int64                        `json:"last_mentioned_seq" example:"0"`
 	LastReadSeq        int64                        `json:"last_read_seq" example:"12"`
 	MemberCount        int                          `json:"member_count" example:"3"`
 	Members            []conversationMemberResponse `json:"members"`
@@ -129,6 +131,7 @@ type conversationListItemResponse struct {
 	LastMessageID      *string                      `json:"last_message_id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
 	LastMessageSeq     int64                        `json:"last_message_seq" example:"12"`
 	LastMessageSummary string                       `json:"last_message_summary" example:"好的，我看一下"`
+	LastMentionedSeq   int64                        `json:"last_mentioned_seq" example:"0"`
 	LastReadSeq        int64                        `json:"last_read_seq" example:"9"`
 	MemberCount        int                          `json:"member_count" example:"2"`
 	Members            []conversationMemberResponse `json:"members"`
@@ -261,7 +264,7 @@ func (s *Server) listClientConversations(c echo.Context) error {
 		conversationIDs = append(conversationIDs, conversation.ID)
 	}
 
-	membersByConversationID, usersByID, err := s.loadConversationListMembers(conversationIDs)
+	membersByConversationID, usersByID, appsByID, err := s.loadConversationListMembers(conversationIDs)
 	if err != nil {
 		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
 	}
@@ -273,6 +276,7 @@ func (s *Server) listClientConversations(c echo.Context) error {
 			user.ID,
 			membersByConversationID[assistantConversation.ID],
 			usersByID,
+			appsByID,
 		))
 	}
 	for _, conversation := range conversations {
@@ -281,6 +285,7 @@ func (s *Server) listClientConversations(c echo.Context) error {
 			user.ID,
 			membersByConversationID[conversation.ID],
 			usersByID,
+			appsByID,
 		))
 	}
 
@@ -602,6 +607,7 @@ func (s *Server) createDirectConversation(c echo.Context) error {
 				user.ID:   user,
 				target.ID: target,
 			},
+			nil,
 		),
 		Created: created,
 	})
@@ -665,6 +671,9 @@ func (s *Server) createAppConversation(c echo.Context) error {
 			},
 			map[string]store.User{
 				user.ID: user,
+			},
+			map[string]store.App{
+				app.ID: app,
 			},
 		),
 		Created: created,
@@ -870,7 +879,7 @@ func (s *Server) addGroupConversationMembers(c echo.Context) error {
 		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
 	}
 
-	membersByConversationID, usersByID, err := s.loadConversationListMembers([]string{conversation.ID})
+	membersByConversationID, usersByID, appsByID, err := s.loadConversationListMembers([]string{conversation.ID})
 	if err != nil {
 		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
 	}
@@ -888,6 +897,7 @@ func (s *Server) addGroupConversationMembers(c echo.Context) error {
 			user.ID,
 			membersByConversationID[conversation.ID],
 			usersByID,
+			appsByID,
 		),
 		Message: messageResponse,
 	})
@@ -939,7 +949,7 @@ func (s *Server) removeGroupConversationMember(c echo.Context) error {
 		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
 	}
 
-	membersByConversationID, usersByID, err := s.loadConversationListMembers([]string{conversation.ID})
+	membersByConversationID, usersByID, appsByID, err := s.loadConversationListMembers([]string{conversation.ID})
 	if err != nil {
 		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
 	}
@@ -958,6 +968,7 @@ func (s *Server) removeGroupConversationMember(c echo.Context) error {
 			user.ID,
 			membersByConversationID[conversation.ID],
 			usersByID,
+			appsByID,
 		),
 		Message: messageResponse,
 	})
@@ -1009,7 +1020,7 @@ func (s *Server) updateGroupConversationName(c echo.Context) error {
 		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
 	}
 
-	membersByConversationID, usersByID, err := s.loadConversationListMembers([]string{conversation.ID})
+	membersByConversationID, usersByID, appsByID, err := s.loadConversationListMembers([]string{conversation.ID})
 	if err != nil {
 		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
 	}
@@ -1027,6 +1038,7 @@ func (s *Server) updateGroupConversationName(c echo.Context) error {
 			user.ID,
 			membersByConversationID[conversation.ID],
 			usersByID,
+			appsByID,
 		),
 		Message: messageResponse,
 	})
@@ -1087,7 +1099,7 @@ func (s *Server) setGroupConversationVisibility(c echo.Context, visibility strin
 		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
 	}
 
-	membersByConversationID, usersByID, err := s.loadConversationListMembers([]string{conversation.ID})
+	membersByConversationID, usersByID, appsByID, err := s.loadConversationListMembers([]string{conversation.ID})
 	if err != nil {
 		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
 	}
@@ -1105,6 +1117,7 @@ func (s *Server) setGroupConversationVisibility(c echo.Context, visibility strin
 			user.ID,
 			membersByConversationID[conversation.ID],
 			usersByID,
+			appsByID,
 		),
 		Message: messageResponse,
 	})
@@ -1147,7 +1160,7 @@ func (s *Server) joinPublicGroupConversation(c echo.Context) error {
 		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
 	}
 
-	membersByConversationID, usersByID, err := s.loadConversationListMembers([]string{conversation.ID})
+	membersByConversationID, usersByID, appsByID, err := s.loadConversationListMembers([]string{conversation.ID})
 	if err != nil {
 		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
 	}
@@ -1165,6 +1178,7 @@ func (s *Server) joinPublicGroupConversation(c echo.Context) error {
 			user.ID,
 			membersByConversationID[conversation.ID],
 			usersByID,
+			appsByID,
 		),
 		Message: messageResponse,
 	})
@@ -2692,45 +2706,64 @@ func loadActiveGroupMembers(db *gorm.DB, memberIDs []string) ([]store.User, erro
 	return orderedUsers, nil
 }
 
-func (s *Server) loadConversationListMembers(conversationIDs []string) (map[string][]store.ConversationMember, map[string]store.User, error) {
+func (s *Server) loadConversationListMembers(conversationIDs []string) (map[string][]store.ConversationMember, map[string]store.User, map[string]store.App, error) {
 	membersByConversationID := make(map[string][]store.ConversationMember, len(conversationIDs))
 	usersByID := make(map[string]store.User)
+	appsByID := make(map[string]store.App)
 	if len(conversationIDs) == 0 {
-		return membersByConversationID, usersByID, nil
+		return membersByConversationID, usersByID, appsByID, nil
 	}
 
 	var members []store.ConversationMember
 	if err := s.db.
-		Where("conversation_id IN ? AND member_type = ? AND left_at IS NULL", conversationIDs, store.ConversationMemberTypeUser).
+		Where("conversation_id IN ? AND left_at IS NULL", conversationIDs).
 		Order("conversation_id ASC").
 		Order("joined_at ASC").
 		Find(&members).Error; err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	userIDSet := make(map[string]struct{})
+	appIDSet := make(map[string]struct{})
 	for _, member := range members {
 		membersByConversationID[member.ConversationID] = append(membersByConversationID[member.ConversationID], member)
-		userIDSet[member.MemberID] = struct{}{}
+		switch member.MemberType {
+		case store.ConversationMemberTypeUser:
+			userIDSet[member.MemberID] = struct{}{}
+		case store.ConversationMemberTypeApp:
+			appIDSet[member.MemberID] = struct{}{}
+		}
 	}
 
 	userIDs := make([]string, 0, len(userIDSet))
 	for userID := range userIDSet {
 		userIDs = append(userIDs, userID)
 	}
-	if len(userIDs) == 0 {
-		return membersByConversationID, usersByID, nil
+	if len(userIDs) > 0 {
+		var users []store.User
+		if err := s.db.Where("id IN ?", userIDs).Find(&users).Error; err != nil {
+			return nil, nil, nil, err
+		}
+		for _, user := range users {
+			usersByID[user.ID] = user
+		}
 	}
 
-	var users []store.User
-	if err := s.db.Where("id IN ?", userIDs).Find(&users).Error; err != nil {
-		return nil, nil, err
+	appIDs := make([]string, 0, len(appIDSet))
+	for appID := range appIDSet {
+		appIDs = append(appIDs, appID)
 	}
-	for _, user := range users {
-		usersByID[user.ID] = user
+	if len(appIDs) > 0 {
+		var apps []store.App
+		if err := s.db.Unscoped().Where("id IN ?", appIDs).Find(&apps).Error; err != nil {
+			return nil, nil, nil, err
+		}
+		for _, app := range apps {
+			appsByID[app.ID] = app
+		}
 	}
 
-	return membersByConversationID, usersByID, nil
+	return membersByConversationID, usersByID, appsByID, nil
 }
 
 func newConversationListItemResponse(
@@ -2738,10 +2771,12 @@ func newConversationListItemResponse(
 	currentUserID string,
 	members []store.ConversationMember,
 	usersByID map[string]store.User,
+	appsByID map[string]store.App,
 ) conversationListItemResponse {
 	name := conversation.Name
 	avatar := conversation.Avatar
 	lastReadSeq := currentMemberLastReadSeq(currentUserID, members)
+	lastMentionedSeq := currentMemberLastMentionedSeq(currentUserID, members)
 	if conversation.Kind == store.ConversationKindDirect {
 		for _, member := range members {
 			if member.MemberID == currentUserID {
@@ -2773,9 +2808,10 @@ func newConversationListItemResponse(
 		LastMessageID:      conversation.LastMessageID,
 		LastMessageSeq:     conversation.LastMessageSeq,
 		LastMessageSummary: conversation.LastMessageSummary,
+		LastMentionedSeq:   lastMentionedSeq,
 		LastReadSeq:        lastReadSeq,
-		MemberCount:        len(members),
-		Members:            newConversationMemberResponses(members, usersByID),
+		MemberCount:        conversationListMemberCount(conversation.Kind, members),
+		Members:            newConversationMemberResponses(members, usersByID, appsByID),
 		Name:               name,
 		Type:               conversation.Kind,
 		UnreadCount:        unreadCount(conversation.LastMessageSeq, lastReadSeq),
@@ -2793,6 +2829,31 @@ func currentMemberLastReadSeq(currentUserID string, members []store.Conversation
 	return 0
 }
 
+func currentMemberLastMentionedSeq(currentUserID string, members []store.ConversationMember) int64 {
+	for _, member := range members {
+		if member.MemberType == store.ConversationMemberTypeUser && member.MemberID == currentUserID {
+			return member.LastMentionedSeq
+		}
+	}
+
+	return 0
+}
+
+func conversationListMemberCount(conversationKind string, members []store.ConversationMember) int {
+	if conversationKind != store.ConversationKindApp {
+		return len(members)
+	}
+
+	count := 0
+	for _, member := range members {
+		if member.MemberType == store.ConversationMemberTypeUser {
+			count++
+		}
+	}
+
+	return count
+}
+
 func unreadCount(lastMessageSeq int64, lastReadSeq int64) int64 {
 	if lastReadSeq >= lastMessageSeq {
 		return 0
@@ -2804,9 +2865,25 @@ func unreadCount(lastMessageSeq int64, lastReadSeq int64) int64 {
 func newConversationMemberResponses(
 	members []store.ConversationMember,
 	usersByID map[string]store.User,
+	appsByID map[string]store.App,
 ) []conversationMemberResponse {
 	responses := make([]conversationMemberResponse, 0, len(members))
 	for _, member := range members {
+		if member.MemberType == store.ConversationMemberTypeApp {
+			app, ok := appsByID[member.MemberID]
+			if !ok {
+				continue
+			}
+			responses = append(responses, conversationMemberResponse{
+				Avatar: app.Avatar,
+				ID:     app.ID,
+				Name:   app.Name,
+				Role:   member.Role,
+				Type:   store.ConversationMemberTypeApp,
+			})
+			continue
+		}
+
 		user, ok := usersByID[member.MemberID]
 		if !ok {
 			continue
@@ -2827,6 +2904,7 @@ func newConversationMemberResponses(
 			Nickname: user.Nickname,
 			Phone:    phone,
 			Role:     member.Role,
+			Type:     store.ConversationMemberTypeUser,
 		})
 	}
 
@@ -2864,6 +2942,7 @@ func newGroupConversationResponse(
 			Nickname: member.user.Nickname,
 			Phone:    phone,
 			Role:     member.role,
+			Type:     store.ConversationMemberTypeUser,
 		})
 	}
 

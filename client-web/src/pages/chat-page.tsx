@@ -4,6 +4,7 @@ import { Loader2Icon, Plus, Search } from "lucide-react"
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
+import { createConversationMentionLabelResolver } from "@/lib/conversation-mention-labels"
 import { sortContactsByDisplayName } from "@/lib/contact-sort"
 import { useClientData } from "@/lib/client-data-context"
 import {
@@ -15,6 +16,10 @@ import {
   type ContactUser,
 } from "@/lib/client-data-api"
 import { formatConversationLastMessageTime } from "@/lib/conversation-format"
+import {
+  formatMentionTemplateText,
+  type MentionLabelResolver,
+} from "@/lib/message-mentions"
 import { ConversationListItemMenu } from "@/components/conversation-list-item-menu"
 import {
   ConversationPanel,
@@ -175,6 +180,16 @@ export function ChatPage() {
 
     return appsByLookup
   }, [contactApps])
+  const activeMentionLabelResolver = React.useMemo(
+    () =>
+      createConversationMentionLabelResolver({
+        appsById: contactAppsByLookup,
+        contactsById,
+        conversation: activeConversation,
+        currentUser: me,
+      }),
+    [activeConversation, contactAppsByLookup, contactsById, me]
+  )
   const activeConversationOnline = activeConversation
     ? getConversationOnlineStatus(
         activeConversation,
@@ -192,7 +207,8 @@ export function ChatPage() {
               activeConversation,
               me,
               contactsById,
-              activeClientMessagesById
+              activeClientMessagesById,
+              activeMentionLabelResolver
             )
           )
         : [],
@@ -200,6 +216,7 @@ export function ChatPage() {
       activeClientMessages,
       activeClientMessagesById,
       activeConversation,
+      activeMentionLabelResolver,
       contactsById,
       me,
     ]
@@ -282,11 +299,14 @@ export function ChatPage() {
         target: {
           id: message.id,
           author: message.author,
-          summary: formatClientMessageBodySummary(message.body),
+          summary: formatConversationMessageSummary(
+            message.body,
+            activeMentionLabelResolver
+          ),
         },
       })
     },
-    [activeConversationId]
+    [activeConversationId, activeMentionLabelResolver]
   )
 
   const revokeMessage = React.useCallback(
@@ -304,15 +324,16 @@ export function ChatPage() {
     [activeConversationId, revokeConversationMessage]
   )
 
-  function sendMessage() {
-    const content = draft.trim()
+  function sendMessage(contentOverride?: string) {
+    const visibleContent = draft.trim()
+    const content = (contentOverride ?? draft).trim()
     if (!content || !activeConversationId || activeMessageState?.sending) {
       return
     }
 
     const sendingConversationId = activeConversationId
     const sendingReplyToMessageId = replyTarget?.id
-    const linkURL = normalizeSingleLinkMessageURL(content)
+    const linkURL = normalizeSingleLinkMessageURL(visibleContent)
     const sendConversation = linkURL
       ? sendConversationLink
       : richTextMode
@@ -459,6 +480,19 @@ export function ChatPage() {
               const lastMessageTime = formatConversationLastMessageTime(
                 conversation.lastMessageAt ?? conversation.createdAt
               )
+              const mentionLabelResolver =
+                createConversationMentionLabelResolver({
+                  appsById: contactAppsByLookup,
+                  contactsById,
+                  conversation,
+                  currentUser: me,
+                })
+              const hasUnreadMention =
+                conversation.lastMentionedSeq > conversation.lastReadSeq
+              const description = getConversationListDescription(
+                conversation,
+                mentionLabelResolver
+              )
 
               return (
                 <ConversationListItemMenu key={conversation.id}>
@@ -502,7 +536,12 @@ export function ChatPage() {
                           data-slot="item-description"
                           className="w-full min-w-0 truncate text-left text-xs leading-normal font-normal text-muted-foreground"
                         >
-                          {getConversationListDescription(conversation)}
+                          {hasUnreadMention && (
+                            <span className="mr-1 font-medium text-rose-700 dark:text-rose-300">
+                              [有人 @ 我]
+                            </span>
+                          )}
+                          <span>{description}</span>
                         </p>
                       </ItemContent>
                     </Button>
@@ -518,10 +557,12 @@ export function ChatPage() {
         key={activeConversationId || "empty"}
         conversation={activeConversation}
         conversationOnline={activeConversationOnline}
+        currentUserId={me.id}
         draft={draft}
         historyError={activeMessageState?.error ?? null}
         historyLoading={historyLoading}
         historyLoadingBefore={Boolean(activeMessageState?.loadingBefore)}
+        mentionLabelResolver={activeMentionLabelResolver}
         messages={activeMessages}
         onCancelReply={clearReplyTarget}
         onDraftChange={setDraft}
@@ -785,10 +826,15 @@ function CreateGroupMemberItem({
     </Item>
   )
 }
-function getConversationListDescription(conversation: ClientConversation) {
+function getConversationListDescription(
+  conversation: ClientConversation,
+  mentionLabelResolver: MentionLabelResolver
+) {
   const summary = conversation.lastMessageSummary.trim()
 
-  return summary || "暂无消息"
+  return summary
+    ? formatMentionTemplateText(summary, mentionLabelResolver)
+    : "暂无消息"
 }
 
 function ConversationListAvatar({
@@ -863,7 +909,8 @@ function toConversationPanelMessage(
   conversation: ClientConversation,
   currentUser: Pick<ClientUser, "avatar" | "id" | "name" | "nickname">,
   contactsById: ReadonlyMap<string, ContactUser>,
-  messagesById: ReadonlyMap<string, ClientMessage>
+  messagesById: ReadonlyMap<string, ClientMessage>,
+  mentionLabelResolver: MentionLabelResolver
 ): ConversationPanelMessage {
   const fromMe =
     message.sender.type === "user" && message.sender.id === currentUser.id
@@ -882,7 +929,8 @@ function toConversationPanelMessage(
       conversation,
       currentUser,
       contactsById,
-      messagesById
+      messagesById,
+      mentionLabelResolver
     ),
     role,
     senderUserId: message.sender.type === "user" ? message.sender.id : null,
@@ -917,7 +965,8 @@ function getMessageReplyTarget(
   conversation: ClientConversation,
   currentUser: Pick<ClientUser, "avatar" | "id" | "name" | "nickname">,
   contactsById: ReadonlyMap<string, ContactUser>,
-  messagesById: ReadonlyMap<string, ClientMessage>
+  messagesById: ReadonlyMap<string, ClientMessage>,
+  mentionLabelResolver: MentionLabelResolver
 ): ConversationPanelReplyTarget | undefined {
   if (message.replyTo) {
     return {
@@ -928,7 +977,10 @@ function getMessageReplyTarget(
         currentUser,
         contactsById
       ),
-      summary: message.replyTo.summary,
+      summary: formatMentionTemplateText(
+        message.replyTo.summary,
+        mentionLabelResolver
+      ),
     }
   }
 
@@ -949,8 +1001,21 @@ function getMessageReplyTarget(
       currentUser,
       contactsById
     ),
-    summary: formatClientMessageBodySummary(replyMessage.body),
+    summary: formatConversationMessageSummary(
+      replyMessage.body,
+      mentionLabelResolver
+    ),
   }
+}
+
+function formatConversationMessageSummary(
+  body: ClientMessage["body"],
+  mentionLabelResolver: MentionLabelResolver
+) {
+  return formatMentionTemplateText(
+    formatClientMessageBodySummary(body),
+    mentionLabelResolver
+  )
 }
 
 function getReplyToSenderAuthor(

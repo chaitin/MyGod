@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -36,6 +37,7 @@ const (
 	maxClientMessageIDLength    = 128
 	maxLinkMessageURLLength     = 2048
 	maxLinkPreviewReadBytes     = 1024
+	maxMessageMentionTargets    = 50
 	maxTextMessageContentLength = 5000
 	linkPreviewFetchTimeout     = 2 * time.Second
 	linkPreviewMaxRedirects     = 3
@@ -43,6 +45,8 @@ const (
 	messageTypeMarkdown         = "markdown"
 	messageTypeText             = "text"
 )
+
+var messageMentionTokenPattern = regexp.MustCompile(`\{\(@(?:(user)/(all)|(user|app)/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}))\)\}`)
 
 var (
 	errConversationAccessDenied = errors.New("conversation access denied")
@@ -158,6 +162,12 @@ type createMessageMetadata struct {
 	ReplyToMessageID *string
 }
 
+type messageMentionTarget struct {
+	All        bool
+	MemberID   string
+	MemberType string
+}
+
 type textMessageBodyHandler struct{}
 type markdownMessageBodyHandler struct{}
 type linkMessageBodyHandler struct{}
@@ -270,7 +280,7 @@ func (s *Server) createConversationMessage(c echo.Context) error {
 		return failure(c, http.StatusBadRequest, "invalid_request", err.Error())
 	}
 
-	message, created, memberUserIDs, err := s.createUserMessageWithMetadata(
+	message, created, memberUserIDs, mentionedUserIDs, err := s.createUserMessageWithMetadata(
 		c.Request().Context(),
 		user.ID,
 		conversationID,
@@ -304,6 +314,7 @@ func (s *Server) createConversationMessage(c echo.Context) error {
 	}
 	if created {
 		s.sendRealtimeMessageCreatedToUsers(c.Request().Context(), memberUserIDs, message)
+		s.sendRealtimeConversationMemberMentionedToUsers(mentionedUserIDs, message)
 		if err := s.dispatchAppMessageCreatedEvent(user, message); err != nil {
 			c.Logger().Warnf("dispatch app message event failed: %v", err)
 		}
@@ -503,20 +514,16 @@ func (s *Server) visibleMessagePageBounds(conversationID string, visibleFromSeq 
 
 func (s *Server) visibleMessageExists(conversationID string, visibleFromSeq int64, condition string, args ...any) (bool, error) {
 	var message store.Message
-	err := s.db.
+	result := s.db.
 		Select("id").
 		Where("conversation_id = ? AND deleted_at IS NULL AND seq >= ?", conversationID, visibleFromSeq).
 		Where(condition, args...).
 		Limit(1).
-		Take(&message).Error
-	if err == nil {
-		return true, nil
+		Find(&message)
+	if result.Error != nil {
+		return false, result.Error
 	}
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return false, nil
-	}
-
-	return false, err
+	return result.RowsAffected > 0, nil
 }
 
 func newListMessagesPageResponse(messages []store.Message, limit int, hasMoreBefore bool, hasMoreAfter bool) listMessagesPageResponse {
@@ -543,13 +550,15 @@ func reverseMessages(messages []store.Message) {
 }
 
 func (s *Server) createUserMessage(ctx context.Context, userID string, conversationID string, clientMessageID string, body json.RawMessage, finalizeBody finalizeMessageBodyFunc) (store.Message, bool, []string, error) {
-	return s.createUserMessageWithMetadata(ctx, userID, conversationID, clientMessageID, body, finalizeBody, createMessageMetadata{})
+	message, created, memberUserIDs, _, err := s.createUserMessageWithMetadata(ctx, userID, conversationID, clientMessageID, body, finalizeBody, createMessageMetadata{})
+	return message, created, memberUserIDs, err
 }
 
-func (s *Server) createUserMessageWithMetadata(ctx context.Context, userID string, conversationID string, clientMessageID string, body json.RawMessage, finalizeBody finalizeMessageBodyFunc, metadata createMessageMetadata) (store.Message, bool, []string, error) {
+func (s *Server) createUserMessageWithMetadata(ctx context.Context, userID string, conversationID string, clientMessageID string, body json.RawMessage, finalizeBody finalizeMessageBodyFunc, metadata createMessageMetadata) (store.Message, bool, []string, []string, error) {
 	var created bool
 	var message store.Message
 	memberUserIDs := []string{}
+	mentionedUserIDs := []string{}
 
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		var conversation store.Conversation
@@ -638,26 +647,159 @@ func (s *Server) createUserMessageWithMetadata(ctx context.Context, userID strin
 		if err := advanceConversationMemberReadSeq(tx, conversationID, userID, message.Seq); err != nil {
 			return err
 		}
+		mentionedIDs, err := updateConversationMentionedSeq(tx, conversation.Kind, conversationID, message.Seq, finalBody)
+		if err != nil {
+			return err
+		}
 
 		ids, err := loadActiveConversationUserIDs(tx, conversationID)
 		if err != nil {
 			return err
 		}
 		memberUserIDs = ids
+		mentionedUserIDs = mentionedIDs
 		created = true
 		return nil
 	})
 	if err != nil {
-		return store.Message{}, false, nil, err
+		return store.Message{}, false, nil, nil, err
 	}
 
-	return message, created, memberUserIDs, nil
+	return message, created, memberUserIDs, mentionedUserIDs, nil
 }
 
 func advanceConversationMemberReadSeq(db *gorm.DB, conversationID string, userID string, seq int64) error {
 	return db.Model(&store.ConversationMember{}).
 		Where("conversation_id = ? AND member_type = ? AND member_id = ?", conversationID, store.ConversationMemberTypeUser, userID).
 		Update("last_read_seq", gorm.Expr("CASE WHEN last_read_seq > ? THEN last_read_seq ELSE ? END", seq, seq)).Error
+}
+
+func updateConversationMentionedSeq(db *gorm.DB, conversationKind string, conversationID string, seq int64, body json.RawMessage) ([]string, error) {
+	if conversationKind != store.ConversationKindGroup {
+		return nil, nil
+	}
+	targets := parseMessageMentionTargets(body)
+	if len(targets) == 0 {
+		return nil, nil
+	}
+
+	var members []store.ConversationMember
+	if err := db.
+		Where("conversation_id = ? AND left_at IS NULL", conversationID).
+		Find(&members).Error; err != nil {
+		return nil, err
+	}
+
+	mentionAll := false
+	targetSet := make(map[string]struct{}, len(targets))
+	for _, target := range targets {
+		if target.All {
+			mentionAll = true
+			continue
+		}
+		targetSet[conversationMemberMentionKey(target.MemberType, target.MemberID)] = struct{}{}
+	}
+
+	mentionedUserIDs := make([]string, 0, len(targets))
+	mentionedUserIDSet := make(map[string]struct{}, len(targets))
+	for _, member := range members {
+		memberKey := conversationMemberMentionKey(member.MemberType, member.MemberID)
+		_, mentionedDirectly := targetSet[memberKey]
+		mentionedByAll := mentionAll && member.MemberType == store.ConversationMemberTypeUser
+		if !mentionedDirectly && !mentionedByAll {
+			continue
+		}
+
+		if err := db.Model(&store.ConversationMember{}).
+			Where("conversation_id = ? AND member_type = ? AND member_id = ?", conversationID, member.MemberType, member.MemberID).
+			Update("last_mentioned_seq", gorm.Expr("CASE WHEN last_mentioned_seq > ? THEN last_mentioned_seq ELSE ? END", seq, seq)).Error; err != nil {
+			return nil, err
+		}
+		if member.MemberType == store.ConversationMemberTypeUser {
+			if _, ok := mentionedUserIDSet[member.MemberID]; ok {
+				continue
+			}
+			mentionedUserIDSet[member.MemberID] = struct{}{}
+			mentionedUserIDs = append(mentionedUserIDs, member.MemberID)
+		}
+	}
+
+	return mentionedUserIDs, nil
+}
+
+func parseMessageMentionTargets(body json.RawMessage) []messageMentionTarget {
+	content, ok := messageMentionContent(body)
+	if !ok {
+		return nil
+	}
+
+	matches := messageMentionTokenPattern.FindAllStringSubmatch(content, -1)
+	targets := make([]messageMentionTarget, 0, len(matches))
+	seen := make(map[string]struct{}, len(matches))
+	for _, match := range matches {
+		if len(match) != 5 {
+			continue
+		}
+		if match[2] == "all" {
+			if _, ok := seen["all"]; ok {
+				continue
+			}
+			seen["all"] = struct{}{}
+			targets = append(targets, messageMentionTarget{All: true})
+			if len(targets) >= maxMessageMentionTargets {
+				break
+			}
+			continue
+		}
+		memberType := match[3]
+		memberID, err := uuid.Parse(match[4])
+		if err != nil {
+			continue
+		}
+		target := messageMentionTarget{
+			MemberID:   memberID.String(),
+			MemberType: memberType,
+		}
+		key := conversationMemberMentionKey(target.MemberType, target.MemberID)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		targets = append(targets, target)
+		if len(targets) >= maxMessageMentionTargets {
+			break
+		}
+	}
+
+	return targets
+}
+
+func messageMentionContent(body json.RawMessage) (string, bool) {
+	var envelope messageBodyEnvelope
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return "", false
+	}
+
+	switch strings.TrimSpace(envelope.Type) {
+	case messageTypeText:
+		body, err := decodeTextMessageBody(body)
+		if err != nil {
+			return "", false
+		}
+		return body.Content, true
+	case messageTypeMarkdown:
+		body, err := decodeMarkdownMessageBody(body)
+		if err != nil {
+			return "", false
+		}
+		return body.Content, true
+	default:
+		return "", false
+	}
+}
+
+func conversationMemberMentionKey(memberType string, memberID string) string {
+	return memberType + "/" + memberID
 }
 
 func findExistingMessageByClientMessageID(db *gorm.DB, conversationID string, senderType string, senderID string, clientMessageID string) (store.Message, bool, error) {
@@ -1490,9 +1632,21 @@ type conversationRemovedEventPayload struct {
 	ConversationID string `json:"conversation_id"`
 }
 
+type conversationMemberMentionedEventPayload struct {
+	ConversationID   string `json:"conversation_id"`
+	LastMentionedSeq int64  `json:"last_mentioned_seq"`
+}
+
 func realtimeConversationRemovedEvent(conversationID string) realtime.Envelope {
 	return realtime.NewEvent(realtime.EventConversationRemoved, conversationRemovedEventPayload{
 		ConversationID: conversationID,
+	})
+}
+
+func realtimeConversationMemberMentionedEvent(conversationID string, lastMentionedSeq int64) realtime.Envelope {
+	return realtime.NewEvent(realtime.EventMemberMentioned, conversationMemberMentionedEventPayload{
+		ConversationID:   conversationID,
+		LastMentionedSeq: lastMentionedSeq,
 	})
 }
 
@@ -1504,6 +1658,13 @@ func (s *Server) sendRealtimeMessageCreatedToUsers(ctx context.Context, userIDs 
 		}
 		s.realtime.SendToUsers([]string{userID}, realtimeMessageCreatedEvent(response))
 	}
+}
+
+func (s *Server) sendRealtimeConversationMemberMentionedToUsers(userIDs []string, message store.Message) {
+	if len(userIDs) == 0 {
+		return
+	}
+	s.realtime.SendToUsers(userIDs, realtimeConversationMemberMentionedEvent(message.ConversationID, message.Seq))
 }
 
 func (s *Server) sendRealtimeMessageUpdatedToUsers(ctx context.Context, userIDs []string, message store.Message) {

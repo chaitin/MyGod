@@ -173,7 +173,7 @@ func (s *Server) createConversationImageMessage(c echo.Context) error {
 		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
 	}
 
-	message, created, memberUserIDs, err := s.createUserMessageWithMetadata(
+	message, created, memberUserIDs, mentionedUserIDs, err := s.createUserMessageWithMetadata(
 		c.Request().Context(),
 		user.ID,
 		conversationID,
@@ -207,6 +207,7 @@ func (s *Server) createConversationImageMessage(c echo.Context) error {
 	}
 	if created {
 		s.sendRealtimeMessageCreatedToUsers(c.Request().Context(), memberUserIDs, message)
+		s.sendRealtimeConversationMemberMentionedToUsers(mentionedUserIDs, message)
 		if err := s.dispatchAppMessageCreatedEvent(user, message); err != nil {
 			c.Logger().Warnf("dispatch app message event failed: %v", err)
 		}

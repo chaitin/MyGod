@@ -109,7 +109,7 @@ func (s *Server) uploadGroupConversationAvatar(c echo.Context) error {
 		return groupConversationAvatarFailure(c, err)
 	}
 
-	membersByConversationID, usersByID, err := s.loadConversationListMembers([]string{conversation.ID})
+	membersByConversationID, usersByID, appsByID, err := s.loadConversationListMembers([]string{conversation.ID})
 	if err != nil {
 		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
 	}
@@ -123,6 +123,7 @@ func (s *Server) uploadGroupConversationAvatar(c echo.Context) error {
 			user.ID,
 			membersByConversationID[conversation.ID],
 			usersByID,
+			appsByID,
 		),
 		Message: messageResponse,
 	})

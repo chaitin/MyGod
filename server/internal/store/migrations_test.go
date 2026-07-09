@@ -18,6 +18,7 @@ func TestMigrationDirectoryContainsExpectedMigrations(t *testing.T) {
 		"00003_add_message_reply_to.sql",
 		"00004_add_app_soft_delete.sql",
 		"00005_add_message_revoke.sql",
+		"00006_add_conversation_member_mentions.sql",
 	}
 	if len(matches) != len(want) {
 		t.Fatalf("migration file count = %d, want %d: %v", len(matches), len(want), matches)
@@ -148,6 +149,26 @@ func TestInitialSchemaMigrationDefinesBaseSchema(t *testing.T) {
 	} {
 		if strings.Contains(sql, forbidden) {
 			t.Fatalf("init schema migration contains legacy fragment %q", forbidden)
+		}
+	}
+}
+
+func TestConversationMemberMentionsMigrationAddsLastMentionedSeq(t *testing.T) {
+	rawSQL, err := os.ReadFile("../../migrations/00006_add_conversation_member_mentions.sql")
+	if err != nil {
+		t.Fatalf("read conversation member mentions migration: %v", err)
+	}
+	sql := normalizeSQL(string(rawSQL))
+
+	for _, required := range []string{
+		"-- +goose up",
+		"alter table conversation_members",
+		"add column last_mentioned_seq bigint not null default 0",
+		"-- +goose down",
+		"drop column last_mentioned_seq",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("conversation member mentions migration missing %q", required)
 		}
 	}
 }

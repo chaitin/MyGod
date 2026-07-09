@@ -61,6 +61,10 @@ export type ClientDataContextValue = {
     options?: { activeConversationId?: string; visible?: boolean }
   ) => void
   handleIncomingConversationMessageUpdate: (message: ClientMessage) => void
+  updateConversationLastMentionedSeq: (
+    conversationId: string,
+    lastMentionedSeq: number
+  ) => void
   mergeIncomingConversationMessage: (
     message: ClientMessage,
     options?: { markLoaded?: boolean; updateList?: boolean }

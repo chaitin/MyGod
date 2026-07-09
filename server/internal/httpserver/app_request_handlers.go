@@ -275,12 +275,13 @@ func (s *Server) handleAppSendMessage(appID string, request realtime.Envelope) (
 		return appSendMessageResponse{}, err
 	}
 
-	message, created, memberUserIDs, err := s.createAppMessage(appID, conversation.ID, request.ID, prepared.Body, prepared.Finalize)
+	message, created, memberUserIDs, mentionedUserIDs, err := s.createAppMessage(appID, conversation.ID, request.ID, prepared.Body, prepared.Finalize)
 	if err != nil {
 		return appSendMessageResponse{}, mapAppMessageError(err)
 	}
 	if created {
 		s.realtime.SendToUsers(memberUserIDs, realtimeMessageCreatedEvent(newMessageResponse(message)))
+		s.sendRealtimeConversationMemberMentionedToUsers(mentionedUserIDs, message)
 	}
 
 	return appSendMessageResponse{
@@ -336,7 +337,7 @@ func (s *Server) handleAppSendMessageAsUser(appID string, request realtime.Envel
 
 	delegatedByType := store.MessageSenderTypeApp
 	delegatedByID := app.ID
-	message, created, memberUserIDs, err := s.createUserMessageWithMetadata(
+	message, created, memberUserIDs, mentionedUserIDs, err := s.createUserMessageWithMetadata(
 		context.Background(),
 		actor.ID,
 		conversation.ID,
@@ -354,6 +355,7 @@ func (s *Server) handleAppSendMessageAsUser(appID string, request realtime.Envel
 	}
 	if created {
 		s.realtime.SendToUsers(memberUserIDs, realtimeMessageCreatedEvent(newMessageResponse(message)))
+		s.sendRealtimeConversationMemberMentionedToUsers(mentionedUserIDs, message)
 	}
 
 	return appSendMessageResponse{
@@ -455,7 +457,7 @@ func (s *Server) handleAppListGroupConversations(appID string, request realtime.
 	for _, conversation := range conversations {
 		conversationIDs = append(conversationIDs, conversation.ID)
 	}
-	membersByConversationID, usersByID, err := s.loadConversationListMembers(conversationIDs)
+	membersByConversationID, usersByID, appsByID, err := s.loadConversationListMembers(conversationIDs)
 	if err != nil {
 		return appListGroupConversationsResponse{}, err
 	}
@@ -467,6 +469,7 @@ func (s *Server) handleAppListGroupConversations(appID string, request realtime.
 			actor.ID,
 			membersByConversationID[conversation.ID],
 			usersByID,
+			appsByID,
 		))
 	}
 
@@ -552,7 +555,7 @@ func (s *Server) handleAppAddGroupConversationMembers(appID string, request real
 	if err != nil {
 		return appAddGroupConversationMembersResponse{}, mapAppGroupConversationError(err)
 	}
-	membersByConversationID, usersByID, err := s.loadConversationListMembers([]string{conversation.ID})
+	membersByConversationID, usersByID, appsByID, err := s.loadConversationListMembers([]string{conversation.ID})
 	if err != nil {
 		return appAddGroupConversationMembersResponse{}, err
 	}
@@ -570,6 +573,7 @@ func (s *Server) handleAppAddGroupConversationMembers(appID string, request real
 			actor.ID,
 			membersByConversationID[conversation.ID],
 			usersByID,
+			appsByID,
 		),
 		Message: messageResponse,
 	}, nil
@@ -1097,7 +1101,7 @@ func (s *Server) newAppConversationSummaryPayloads(conversations []store.Convers
 	for _, conversation := range conversations {
 		conversationIDs = append(conversationIDs, conversation.ID)
 	}
-	membersByConversationID, usersByID, err := s.loadConversationListMembers(conversationIDs)
+	membersByConversationID, usersByID, appsByID, err := s.loadConversationListMembers(conversationIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -1113,6 +1117,7 @@ func (s *Server) newAppConversationSummaryPayloads(conversations []store.Convers
 			currentUserID,
 			membersByConversationID[conversation.ID],
 			usersByID,
+			appsByID,
 		)
 		lastActiveAt := conversation.CreatedAt
 		if conversation.LastMessageAt != nil {
@@ -1447,10 +1452,11 @@ func (s *Server) findAppWritableConversation(appID string, conversationID string
 	return conversation, nil
 }
 
-func (s *Server) createAppMessage(appID string, conversationID string, clientMessageID string, body json.RawMessage, finalizeBody finalizeMessageBodyFunc) (store.Message, bool, []string, error) {
+func (s *Server) createAppMessage(appID string, conversationID string, clientMessageID string, body json.RawMessage, finalizeBody finalizeMessageBodyFunc) (store.Message, bool, []string, []string, error) {
 	var created bool
 	var message store.Message
 	memberUserIDs := []string{}
+	mentionedUserIDs := []string{}
 
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		var conversation store.Conversation
@@ -1530,15 +1536,21 @@ func (s *Server) createAppMessage(appID string, conversationID string, clientMes
 		if err != nil {
 			return err
 		}
+		mentionedIDs, err := updateConversationMentionedSeq(tx, conversation.Kind, conversationID, message.Seq, finalBody)
+		if err != nil {
+			return err
+		}
+
+		mentionedUserIDs = mentionedIDs
 		memberUserIDs = ids
 		created = true
 		return nil
 	})
 	if err != nil {
-		return store.Message{}, false, nil, err
+		return store.Message{}, false, nil, nil, err
 	}
 
-	return message, created, memberUserIDs, nil
+	return message, created, memberUserIDs, mentionedUserIDs, nil
 }
 
 func appRequestErrorResponse(replyTo string, err error) realtime.Envelope {

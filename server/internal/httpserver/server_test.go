@@ -3900,6 +3900,128 @@ func TestCreateConversationTextMessagePushesMessageCreatedToConversationMembers(
 	}
 }
 
+func TestCreateConversationTextMessageUpdatesMentionedMemberAndPushesMentionEvent(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+	now := time.Date(2026, 7, 3, 9, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	conversation := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindGroup,
+		memberIDs:       []string{alice.ID, bob.ID},
+		now:             now,
+	})
+	aliceCookie := loginAsUser(t, server, alice.Email)
+	bobConn := dialClientWebSocket(t, server, loginAsUser(t, server, bob.Email))
+	if ready := readRealtimeEvent(t, bobConn); ready.Kind != realtime.KindEvent || ready.Event != realtime.EventSystemReady {
+		t.Fatalf("bob ready envelope = %#v, want system.ready", ready)
+	}
+
+	resp, body := postJSON(t, server, "/api/client/conversations/"+conversation.ID+"/messages", map[string]any{
+		"client_message_id": "client-message-mention-1",
+		"body": map[string]any{
+			"type":    "text",
+			"content": "你好，{(@user/" + bob.ID + ")}",
+		},
+	}, aliceCookie)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body = %#v", resp.StatusCode, body)
+	}
+	createdMessage := requireSuccess(t, body)["message"].(map[string]any)
+
+	pushedMessage := readMessageCreatedEvent(t, bobConn)
+	if pushedMessage["id"] != createdMessage["id"] {
+		t.Fatalf("pushed message id = %v, want %v", pushedMessage["id"], createdMessage["id"])
+	}
+
+	mentionEvent := readRealtimeEvent(t, bobConn)
+	if mentionEvent.Kind != realtime.KindEvent || mentionEvent.Event != realtime.EventMemberMentioned {
+		t.Fatalf("mention event = %#v, want conversation.member_mentioned", mentionEvent)
+	}
+	var mentionPayload map[string]any
+	if err := json.Unmarshal(mentionEvent.Payload, &mentionPayload); err != nil {
+		t.Fatalf("unmarshal mention payload: %v", err)
+	}
+	if mentionPayload["conversation_id"] != conversation.ID {
+		t.Fatalf("mention conversation_id = %v, want %s", mentionPayload["conversation_id"], conversation.ID)
+	}
+	if mentionPayload["last_mentioned_seq"] != float64(1) {
+		t.Fatalf("mention last_mentioned_seq = %v, want 1", mentionPayload["last_mentioned_seq"])
+	}
+
+	var bobMember store.ConversationMember
+	if err := db.First(
+		&bobMember,
+		"conversation_id = ? AND member_type = ? AND member_id = ?",
+		conversation.ID,
+		store.ConversationMemberTypeUser,
+		bob.ID,
+	).Error; err != nil {
+		t.Fatalf("find bob conversation member: %v", err)
+	}
+	if bobMember.LastMentionedSeq != 1 {
+		t.Fatalf("bob last_mentioned_seq = %d, want 1", bobMember.LastMentionedSeq)
+	}
+}
+
+func TestCreateConversationTextMessageMentionAllUpdatesCurrentUserMembers(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+	now := time.Date(2026, 7, 3, 9, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	conversation := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindGroup,
+		memberIDs:       []string{alice.ID, bob.ID},
+		now:             now,
+	})
+	aliceCookie := loginAsUser(t, server, alice.Email)
+	bobConn := dialClientWebSocket(t, server, loginAsUser(t, server, bob.Email))
+	if ready := readRealtimeEvent(t, bobConn); ready.Kind != realtime.KindEvent || ready.Event != realtime.EventSystemReady {
+		t.Fatalf("bob ready envelope = %#v, want system.ready", ready)
+	}
+
+	resp, body := postJSON(t, server, "/api/client/conversations/"+conversation.ID+"/messages", map[string]any{
+		"client_message_id": "client-message-mention-all-1",
+		"body": map[string]any{
+			"type":    "text",
+			"content": "大家看一下，{(@user/all)}",
+		},
+	}, aliceCookie)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body = %#v", resp.StatusCode, body)
+	}
+	createdMessage := requireSuccess(t, body)["message"].(map[string]any)
+
+	pushedMessage := readMessageCreatedEvent(t, bobConn)
+	if pushedMessage["id"] != createdMessage["id"] {
+		t.Fatalf("pushed message id = %v, want %v", pushedMessage["id"], createdMessage["id"])
+	}
+
+	mentionEvent := readRealtimeEvent(t, bobConn)
+	if mentionEvent.Kind != realtime.KindEvent || mentionEvent.Event != realtime.EventMemberMentioned {
+		t.Fatalf("mention event = %#v, want conversation.member_mentioned", mentionEvent)
+	}
+
+	for _, user := range []store.User{alice, bob} {
+		var member store.ConversationMember
+		if err := db.First(
+			&member,
+			"conversation_id = ? AND member_type = ? AND member_id = ?",
+			conversation.ID,
+			store.ConversationMemberTypeUser,
+			user.ID,
+		).Error; err != nil {
+			t.Fatalf("find %s conversation member: %v", user.Email, err)
+		}
+		if member.LastMentionedSeq != 1 {
+			t.Fatalf("%s last_mentioned_seq = %d, want 1", user.Email, member.LastMentionedSeq)
+		}
+	}
+}
+
 func TestRevokeOwnConversationMessageMarksOriginalAndCreatesSystemMessage(t *testing.T) {
 	server, db := newTestRouter(t)
 	defer server.Close()

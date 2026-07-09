@@ -86,6 +86,7 @@ type ConversationResponse = {
   last_message_id?: string | null
   last_message_seq?: number
   last_message_summary?: string
+  last_mentioned_seq?: number
   last_read_seq?: number
   member_count?: number
   members?: ConversationMemberResponse[]
@@ -103,6 +104,7 @@ type ConversationMemberResponse = {
   nickname?: string
   phone?: string
   role?: string
+  type?: string
 }
 
 type ListClientConversationsResponse = {
@@ -324,6 +326,11 @@ type ConversationRemovedEventPayloadResponse = {
   conversation_id?: string
 }
 
+type ConversationMemberMentionedEventPayloadResponse = {
+  conversation_id?: string
+  last_mentioned_seq?: number
+}
+
 type TemporaryFileReadURLResponse = {
   expires_at?: string
   file_id?: string
@@ -391,6 +398,7 @@ export type ClientConversation = {
   lastMessageId: string | null
   lastMessageSeq: number
   lastMessageSummary: string
+  lastMentionedSeq: number
   lastReadSeq: number
   memberCount: number
   members?: ClientConversationMember[]
@@ -408,7 +416,7 @@ export type ClientConversationMember = {
   nickname: string
   phone: string
   role: "owner" | "admin" | "member"
-  type: "user"
+  type: "user" | "app"
 }
 
 export type ClientMessageSender = {
@@ -1580,6 +1588,28 @@ export function normalizeConversationRemovedEventPayload(payload: unknown) {
   }
 }
 
+export function normalizeConversationMemberMentionedEventPayload(
+  payload: unknown
+) {
+  if (!isObject(payload)) {
+    throw new ClientDataRequestError("会话提醒推送格式不正确")
+  }
+
+  const event = payload as ConversationMemberMentionedEventPayloadResponse
+  if (
+    typeof event.conversation_id !== "string" ||
+    event.conversation_id.trim() === "" ||
+    typeof event.last_mentioned_seq !== "number"
+  ) {
+    throw new ClientDataRequestError("会话提醒推送格式不正确")
+  }
+
+  return {
+    conversationId: event.conversation_id,
+    lastMentionedSeq: event.last_mentioned_seq,
+  }
+}
+
 export function formatClientMessageBodySummary(body: ClientMessageBody) {
   if (body.type === "text") {
     return body.content
@@ -1758,6 +1788,7 @@ function normalizeConversation(
     lastMessageId: conversation.last_message_id ?? null,
     lastMessageSeq: conversation.last_message_seq ?? 0,
     lastMessageSummary: conversation.last_message_summary ?? "",
+    lastMentionedSeq: conversation.last_mentioned_seq ?? 0,
     lastReadSeq: conversation.last_read_seq ?? 0,
     memberCount: conversation.member_count ?? 0,
     name: conversation.name,
@@ -1796,19 +1827,20 @@ function normalizeMarkConversationReadResult(
 function normalizeConversationMember(
   member: ConversationMemberResponse | undefined
 ): ClientConversationMember {
-  if (!member?.email || !member.id || !member.name) {
+  const memberType = member?.type === "app" ? "app" : "user"
+  if (!member?.id || !member.name || (memberType === "user" && !member.email)) {
     throw new ClientDataRequestError("会话成员响应格式不正确")
   }
 
   return {
     avatar: member.avatar ?? "",
-    email: member.email,
+    email: member.email ?? "",
     id: member.id,
     name: member.name,
     nickname: member.nickname ?? "",
     phone: member.phone ?? "",
     role: normalizeConversationMemberRole(member.role),
-    type: "user",
+    type: memberType,
   }
 }
 

@@ -327,6 +327,29 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     []
   )
 
+  const updateConversationLastMentionedSeq = useCallback(
+    (conversationId: string, lastMentionedSeq: number) => {
+      if (!conversationId || lastMentionedSeq <= 0) {
+        return
+      }
+
+      setConversations((currentConversations) =>
+        currentConversations.map((conversation) =>
+          conversation.id === conversationId
+            ? {
+                ...conversation,
+                lastMentionedSeq: Math.max(
+                  conversation.lastMentionedSeq,
+                  lastMentionedSeq
+                ),
+              }
+            : conversation
+        )
+      )
+    },
+    []
+  )
+
   const markConversationRead = useCallback(
     async (
       conversationId: string,
@@ -1105,6 +1128,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     setGroupConversationPublic,
     syncLoadedConversationMessages,
     updateConversationLastMessage,
+    updateConversationLastMentionedSeq,
     updateGroupConversationAvatar,
     updateGroupConversationName,
   }

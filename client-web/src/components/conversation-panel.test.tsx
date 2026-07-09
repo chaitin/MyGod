@@ -9,6 +9,7 @@ describe("ConversationPanel", () => {
     render(
       <ConversationPanel
         conversation={createConversation("conversation-1")}
+        currentUserId="user-1"
         draft=""
         historyError={null}
         historyLoading={false}
@@ -44,6 +45,7 @@ function createConversation(id: string): ClientConversation {
     lastMessageId: null,
     lastMessageSeq: 0,
     lastMessageSummary: "",
+    lastMentionedSeq: 0,
     lastReadSeq: 0,
     memberCount: 2,
     members: [],

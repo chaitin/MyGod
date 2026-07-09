@@ -2,6 +2,7 @@ import * as React from "react"
 import { useLocation, useNavigate } from "react-router"
 
 import {
+  normalizeConversationMemberMentionedEventPayload,
   normalizeConversationRemovedEventPayload,
   normalizeMessageCreatedEventPayload,
   normalizeMessageUpdatedEventPayload,
@@ -19,6 +20,7 @@ export function ClientConversationRealtimeSync() {
     refreshConversations,
     removeConversation,
     syncLoadedConversationMessages,
+    updateConversationLastMentionedSeq,
   } = useClientData()
   const hasSeenRealtimeReadyRef = React.useRef(realtimeReady)
   const previousRealtimeReadyRef = React.useRef(realtimeReady)
@@ -84,6 +86,24 @@ export function ClientConversationRealtimeSync() {
     removeConversation,
     subscribeRealtimeEvent,
   ])
+
+  React.useEffect(() => {
+    return subscribeRealtimeEvent(
+      "conversation.member_mentioned",
+      (payload) => {
+        try {
+          const event =
+            normalizeConversationMemberMentionedEventPayload(payload)
+          updateConversationLastMentionedSeq(
+            event.conversationId,
+            event.lastMentionedSeq
+          )
+        } catch {
+          // Ignore malformed realtime events. The websocket remains usable.
+        }
+      }
+    )
+  }, [subscribeRealtimeEvent, updateConversationLastMentionedSeq])
 
   React.useEffect(() => {
     const wasReady = previousRealtimeReadyRef.current

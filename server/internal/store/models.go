@@ -118,6 +118,7 @@ type ConversationMember struct {
 	LeftAt                *time.Time   `gorm:"index"`
 	LastReadMessageID     *string      `gorm:"type:uuid"`
 	LastReadSeq           int64        `gorm:"not null;default:0"`
+	LastMentionedSeq      int64        `gorm:"not null;default:0"`
 }
 
 type Message struct {
