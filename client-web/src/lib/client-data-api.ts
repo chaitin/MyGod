@@ -192,7 +192,9 @@ type FileMessageBodyResponse = {
 
 type ImageMessageBodyResponse = {
   file_id?: string
+  height?: number
   type?: "image"
+  width?: number
 }
 
 type SystemEventUserRefResponse = {
@@ -458,7 +460,9 @@ export type ClientFileMessageBody = {
 
 export type ClientImageMessageBody = {
   fileId: string
+  height?: number
   type: "image"
+  width?: number
 }
 
 export type ClientRevokedMessageBody = {
@@ -1965,10 +1969,19 @@ function normalizeMessageBody(
   }
 
   if (body?.type === "image" && typeof body.file_id === "string") {
-    return {
+    const normalizedImage: ClientImageMessageBody = {
       fileId: body.file_id,
       type: "image",
     }
+
+    if (isPositiveFiniteNumber(body.width)) {
+      normalizedImage.width = body.width
+    }
+    if (isPositiveFiniteNumber(body.height)) {
+      normalizedImage.height = body.height
+    }
+
+    return normalizedImage
   }
 
   if (body?.type === "system_event") {
@@ -1976,6 +1989,10 @@ function normalizeMessageBody(
   }
 
   throw new ClientDataRequestError("消息响应格式不正确")
+}
+
+function isPositiveFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
 }
 
 function formatMarkdownMessageSummary(content: string) {

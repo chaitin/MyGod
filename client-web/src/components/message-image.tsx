@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 
 type MessageImageProps = {
@@ -32,6 +33,10 @@ type PreviewSize = {
 const minPreviewZoom = 0.5
 const maxPreviewZoom = 2
 const previewZoomStep = 0.1
+const legacyImageThumbnailSize = 256
+const minImageThumbnailWidth = 160
+const maxImageThumbnailWidth = 320
+const maxImageThumbnailHeight = 360
 
 export function MessageImage({ image }: MessageImageProps) {
   const previewAreaRef = React.useRef<HTMLDivElement | null>(null)
@@ -144,6 +149,7 @@ export function MessageImage({ image }: MessageImageProps) {
   }, [open])
 
   const currentSource = source?.fileId === image.fileId ? source : null
+  const thumbnailFrame = getImageThumbnailFrame(image)
 
   function resetPreviewState() {
     setPreviewZoom(1)
@@ -286,6 +292,7 @@ export function MessageImage({ image }: MessageImageProps) {
   if (currentSource?.error) {
     return (
       <MessageImageStatus
+        frame={thumbnailFrame}
         icon={<ImageOff className="size-5" />}
         text="图片加载失败"
       />
@@ -293,28 +300,26 @@ export function MessageImage({ image }: MessageImageProps) {
   }
 
   if (!currentSource?.url) {
-    return <MessageImageLoadingStatus />
+    return <MessageImageLoadingStatus frame={thumbnailFrame} />
   }
 
   return (
     <>
       <button
         aria-label="预览图片"
-        className={cn(
-          "relative block max-w-full overflow-hidden rounded-sm text-left",
-          !currentSource.loaded && "w-64 max-w-[65vw]"
-        )}
+        className="relative block max-w-[65vw] overflow-hidden rounded-sm bg-muted text-left"
         onClick={handlePreviewClick}
+        style={thumbnailFrame}
         type="button"
       >
-        {!currentSource.loaded && <MessageImageLoadingStatus />}
+        {!currentSource.loaded && (
+          <MessageImageLoadingStatus frame={thumbnailFrame} />
+        )}
         <img
           alt="图片消息"
           className={cn(
-            "block rounded-sm object-contain",
-            currentSource.loaded
-              ? "h-auto w-64 max-w-[65vw]"
-              : "absolute inset-0 h-full w-full opacity-0"
+            "absolute inset-0 h-full w-full rounded-sm object-cover",
+            currentSource.loaded ? "opacity-100" : "opacity-0"
           )}
           onError={handleImageError}
           onLoad={handleImageLoad}
@@ -376,32 +381,69 @@ export function MessageImage({ image }: MessageImageProps) {
   )
 }
 
-function MessageImageLoadingStatus() {
+function MessageImageLoadingStatus({ frame }: { frame: PreviewSize }) {
   return (
-    <MessageImageStatus
-      icon={<Spinner className="size-5 text-muted-foreground" />}
-      text="图片正在加载"
-    />
+    <div
+      className="relative flex max-w-[65vw] items-center justify-center overflow-hidden rounded-sm"
+      style={frame}
+    >
+      <Skeleton className="absolute inset-0 h-full w-full rounded-sm" />
+      <div className="relative flex flex-col items-center gap-2 text-muted-foreground">
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-background/60">
+          <Spinner className="size-5" />
+        </div>
+        <span className="text-xs font-medium">图片正在加载</span>
+      </div>
+      <span className="sr-only">
+        图片加载区域 {Math.round(frame.width)} x {Math.round(frame.height)}
+      </span>
+    </div>
   )
 }
 
 function MessageImageStatus({
+  frame,
   icon,
   text,
 }: {
+  frame: PreviewSize
   icon: React.ReactNode
   text: string
 }) {
   return (
-    <div className="flex w-64 max-w-[65vw] items-center gap-3 rounded-sm bg-background/50 p-3">
-      <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-background/60 text-muted-foreground">
+    <div
+      className="flex max-w-[65vw] flex-col items-center justify-center gap-2 overflow-hidden rounded-sm bg-muted text-muted-foreground"
+      style={frame}
+    >
+      <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-background/60">
         {icon}
       </div>
-      <span className="min-w-0 text-sm font-medium text-foreground">
-        {text}
-      </span>
+      <span className="min-w-0 text-xs font-medium">{text}</span>
     </div>
   )
+}
+
+function getImageThumbnailFrame(image: ClientImageMessageBody): PreviewSize {
+  if (!image.width || !image.height) {
+    return {
+      height: legacyImageThumbnailSize,
+      width: legacyImageThumbnailSize,
+    }
+  }
+
+  const width = Math.min(
+    maxImageThumbnailWidth,
+    Math.max(minImageThumbnailWidth, image.width)
+  )
+  const height = Math.min(
+    maxImageThumbnailHeight,
+    (image.height * width) / image.width
+  )
+
+  return {
+    height: Math.max(1, Math.round(height)),
+    width: Math.max(1, Math.round(width)),
+  }
 }
 
 function getContainedPreviewSize(

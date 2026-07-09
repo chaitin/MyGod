@@ -57,7 +57,8 @@ func (s *Server) createRemoteImageMessageBody(ctx context.Context, rawURL string
 	if len(webpContent) > maxImageMessageUploadBytes {
 		return nil, newAppRequestFailure("request_too_large", "图片不能超过 5MiB")
 	}
-	if _, _, err := parseWebPDimensions(webpContent); err != nil {
+	width, height, err := parseWebPDimensions(webpContent)
+	if err != nil {
 		return nil, newAppRequestFailure("invalid_request", "图片转换失败")
 	}
 
@@ -68,6 +69,8 @@ func (s *Server) createRemoteImageMessageBody(ctx context.Context, rawURL string
 	body, err := json.Marshal(imageMessageBody{
 		Type:   messageTypeImage,
 		FileID: temporaryFile.ID,
+		Width:  width,
+		Height: height,
 	})
 	if err != nil {
 		return nil, err

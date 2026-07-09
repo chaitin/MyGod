@@ -28,6 +28,8 @@ var errImageMessageTooLarge = errors.New("image message too large")
 type imageMessageBody struct {
 	Type   string `json:"type"`
 	FileID string `json:"file_id"`
+	Width  int    `json:"width,omitempty"`
+	Height int    `json:"height,omitempty"`
 }
 
 // createConversationImageMessage godoc
@@ -164,6 +166,8 @@ func (s *Server) createConversationImageMessage(c echo.Context) error {
 	body, err := json.Marshal(imageMessageBody{
 		Type:   messageTypeImage,
 		FileID: temporaryFile.ID,
+		Width:  width,
+		Height: height,
 	})
 	if err != nil {
 		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")

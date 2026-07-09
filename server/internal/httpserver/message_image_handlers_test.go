@@ -95,6 +95,9 @@ func TestAppMessageSendConvertsImageURLToWebP(t *testing.T) {
 		t.Fatalf("message.body.type = %v, want image", body["type"])
 	}
 	fileID := body["file_id"].(string)
+	if body["width"] != float64(64) || body["height"] != float64(32) {
+		t.Fatalf("message.body dimensions = %vx%v, want 64x32", body["width"], body["height"])
+	}
 
 	var storedFile store.TemporaryFile
 	if err := db.First(&storedFile, "id = ?", fileID).Error; err != nil {
@@ -125,7 +128,10 @@ func TestAppMessageSendConvertsImageURLToWebP(t *testing.T) {
 
 	pushedMessage := readMessageCreatedEvent(t, aliceConn)
 	pushedBody := pushedMessage["body"].(map[string]any)
-	if pushedBody["type"] != messageTypeImage || pushedBody["file_id"] != fileID {
+	if pushedBody["type"] != messageTypeImage ||
+		pushedBody["file_id"] != fileID ||
+		pushedBody["width"] != float64(64) ||
+		pushedBody["height"] != float64(32) {
 		t.Fatalf("pushed body = %#v, want image file id", pushedBody)
 	}
 }
@@ -181,11 +187,11 @@ func TestClientCanSendConversationImageMessage(t *testing.T) {
 	if _, err := uuid.Parse(fileID); err != nil {
 		t.Fatalf("message.body.file_id = %q, want uuid", fileID)
 	}
-	if _, ok := messageBody["width"]; ok {
-		t.Fatalf("message.body.width = %#v, want omitted", messageBody["width"])
+	if messageBody["width"] != float64(1024) {
+		t.Fatalf("message.body.width = %#v, want 1024", messageBody["width"])
 	}
-	if _, ok := messageBody["height"]; ok {
-		t.Fatalf("message.body.height = %#v, want omitted", messageBody["height"])
+	if messageBody["height"] != float64(768) {
+		t.Fatalf("message.body.height = %#v, want 768", messageBody["height"])
 	}
 	if _, ok := messageBody["name"]; ok {
 		t.Fatalf("message.body.name = %#v, want omitted", messageBody["name"])
@@ -225,7 +231,10 @@ func TestClientCanSendConversationImageMessage(t *testing.T) {
 
 	pushedMessage := readMessageCreatedEvent(t, bobConn)
 	pushedBody := pushedMessage["body"].(map[string]any)
-	if pushedBody["type"] != "image" || pushedBody["file_id"] != fileID {
+	if pushedBody["type"] != "image" ||
+		pushedBody["file_id"] != fileID ||
+		pushedBody["width"] != float64(1024) ||
+		pushedBody["height"] != float64(768) {
 		t.Fatalf("pushed message body = %#v, want image body", pushedBody)
 	}
 }
@@ -295,7 +304,10 @@ func TestClientCanSendConversationImageMessageToAppConversationNotifiesApp(t *te
 		t.Fatalf("message.id = %v, want %v", message["id"], createdMessage["id"])
 	}
 	messageBody := message["body"].(map[string]any)
-	if messageBody["type"] != messageTypeImage || messageBody["file_id"] != createdBody["file_id"] {
+	if messageBody["type"] != messageTypeImage ||
+		messageBody["file_id"] != createdBody["file_id"] ||
+		messageBody["width"] != float64(320) ||
+		messageBody["height"] != float64(240) {
 		t.Fatalf("message.body = %#v, want image body with created file id", messageBody)
 	}
 	if message["summary"] != imageMessageSummary() {
