@@ -3,6 +3,7 @@ package appclient
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -376,6 +377,279 @@ func TestHandleServerMessageReadsTemporaryFileURLForImageAndFileMessages(t *test
 				}
 			}
 		})
+	}
+}
+
+func TestHandleServerMessageEnrichesCurrentAndHistoryFileURLs(t *testing.T) {
+	var readURLPayload struct {
+		ConversationID string   `json:"conversation_id"`
+		FileIDs        []string `json:"file_ids"`
+	}
+	var agentRequests []agent.Request
+	requester := appRequestFunc(func(ctx context.Context, method string, payload any) (json.RawMessage, error) {
+		switch method {
+		case methodConversationMessagesList:
+			return json.Marshal(map[string]any{
+				"messages": []map[string]any{
+					{
+						"id":         "history-image",
+						"seq":        1,
+						"created_at": "2026-07-08T10:00:00Z",
+						"sender": map[string]any{
+							"id":   "user-2",
+							"name": "Bob",
+							"type": "user",
+						},
+						"summary": "发了一张图片",
+						"body": map[string]any{
+							"type":    "image",
+							"file_id": "file-history-image",
+						},
+					},
+					{
+						"id":         "history-file",
+						"seq":        2,
+						"created_at": "2026-07-08T10:01:00Z",
+						"sender": map[string]any{
+							"id":   "user-1",
+							"name": "Alice",
+							"type": "user",
+						},
+						"summary": "发了一个文件",
+						"body": map[string]any{
+							"type":       "file",
+							"file_id":    "file-history-report",
+							"name":       "report.pdf",
+							"size_bytes": 456,
+						},
+					},
+					{
+						"id":         "message-current",
+						"seq":        3,
+						"created_at": "2026-07-08T10:02:00Z",
+						"sender": map[string]any{
+							"id":   "user-1",
+							"name": "Alice",
+							"type": "user",
+						},
+						"summary": "当前图片",
+						"body": map[string]any{
+							"type":    "image",
+							"file_id": "file-current-image",
+						},
+					},
+				},
+			})
+		case methodTemporaryFilesReadURLs:
+			rawPayload, err := json.Marshal(payload)
+			if err != nil {
+				t.Fatalf("marshal read URL payload: %v", err)
+			}
+			if err := json.Unmarshal(rawPayload, &readURLPayload); err != nil {
+				t.Fatalf("unmarshal read URL payload: %v", err)
+			}
+			urls := make([]map[string]any, 0, len(readURLPayload.FileIDs))
+			for _, fileID := range readURLPayload.FileIDs {
+				urls = append(urls, map[string]any{
+					"file_id":    fileID,
+					"url":        "https://assets.example.test/" + fileID,
+					"expires_at": "2026-07-08T12:00:00Z",
+				})
+			}
+			return json.Marshal(map[string]any{"urls": urls})
+		default:
+			t.Fatalf("unexpected app request method %q", method)
+			return nil, nil
+		}
+	})
+	replyAgent := replyAgentFunc(func(ctx context.Context, request agent.Request, sink agent.OutputSink) error {
+		agentRequests = append(agentRequests, request)
+		return nil
+	})
+
+	handleParsedServerMessage(
+		context.Background(),
+		testMessageCreatedEnvelopeWithBody(t, "user-1", "message-current", 3, map[string]any{
+			"type":    "image",
+			"file_id": "file-current-image",
+		}),
+		requester,
+		replyAgent,
+		directAgentRunner{},
+		func(message envelope) error { return nil },
+	)
+
+	if readURLPayload.ConversationID != "conversation-1" {
+		t.Fatalf("read URL conversation_id = %q, want conversation-1", readURLPayload.ConversationID)
+	}
+	wantFileIDs := []string{"file-current-image", "file-history-image", "file-history-report"}
+	if !slices.Equal(readURLPayload.FileIDs, wantFileIDs) {
+		t.Fatalf("read URL file_ids = %#v, want %#v", readURLPayload.FileIDs, wantFileIDs)
+	}
+	if len(agentRequests) != 1 {
+		t.Fatalf("agent request count = %d, want 1", len(agentRequests))
+	}
+	agentRequest := agentRequests[0]
+	if !strings.Contains(agentRequest.Content, "https://assets.example.test/file-current-image") {
+		t.Fatalf("agent content = %q, want current image URL", agentRequest.Content)
+	}
+	if len(agentRequest.History) != 2 {
+		t.Fatalf("history count = %d, want 2", len(agentRequest.History))
+	}
+	historyJSON, err := json.Marshal(agentRequest.History)
+	if err != nil {
+		t.Fatalf("marshal history: %v", err)
+	}
+	for _, snippet := range []string{
+		`"body"`,
+		`"file_id":"file-history-image"`,
+		`"url":"https://assets.example.test/file-history-image"`,
+		`"file_id":"file-history-report"`,
+		`"url":"https://assets.example.test/file-history-report"`,
+	} {
+		if !strings.Contains(string(historyJSON), snippet) {
+			t.Fatalf("history JSON = %s, want to contain %s", historyJSON, snippet)
+		}
+	}
+}
+
+func TestHandleServerMessageContinuesWhenSomeTemporaryFileURLsFail(t *testing.T) {
+	var readURLCalls [][]string
+	var agentRequests []agent.Request
+	requester := appRequestFunc(func(ctx context.Context, method string, payload any) (json.RawMessage, error) {
+		switch method {
+		case methodConversationMessagesList:
+			return json.Marshal(map[string]any{
+				"messages": []map[string]any{
+					{
+						"id":         "history-image",
+						"seq":        1,
+						"created_at": "2026-07-08T10:00:00Z",
+						"sender": map[string]any{
+							"id":   "user-2",
+							"name": "Bob",
+							"type": "user",
+						},
+						"summary": "发了一张图片",
+						"body": map[string]any{
+							"type":    "image",
+							"file_id": "file-history-image",
+						},
+					},
+					{
+						"id":         "history-expired-file",
+						"seq":        2,
+						"created_at": "2026-07-08T10:01:00Z",
+						"sender": map[string]any{
+							"id":   "user-1",
+							"name": "Alice",
+							"type": "user",
+						},
+						"summary": "发了一个过期文件",
+						"body": map[string]any{
+							"type":       "file",
+							"file_id":    "file-history-expired",
+							"name":       "expired.pdf",
+							"size_bytes": 789,
+						},
+					},
+					{
+						"id":         "message-current",
+						"seq":        3,
+						"created_at": "2026-07-08T10:02:00Z",
+						"sender": map[string]any{
+							"id":   "user-1",
+							"name": "Alice",
+							"type": "user",
+						},
+						"summary": "帮我看一下",
+						"body": map[string]any{
+							"type":    "text",
+							"content": "帮我看一下",
+						},
+					},
+				},
+			})
+		case methodTemporaryFilesReadURLs:
+			var readURLPayload readTemporaryFileURLsRequestPayload
+			rawPayload, err := json.Marshal(payload)
+			if err != nil {
+				t.Fatalf("marshal read URL payload: %v", err)
+			}
+			if err := json.Unmarshal(rawPayload, &readURLPayload); err != nil {
+				t.Fatalf("unmarshal read URL payload: %v", err)
+			}
+			readURLCalls = append(readURLCalls, slices.Clone(readURLPayload.FileIDs))
+			if len(readURLPayload.FileIDs) != 1 {
+				return nil, errors.New("not_found: temporary file not found")
+			}
+			fileID := readURLPayload.FileIDs[0]
+			if fileID == "file-history-expired" {
+				return nil, errors.New("not_found: temporary file not found")
+			}
+			return json.Marshal(map[string]any{
+				"urls": []map[string]any{
+					{
+						"file_id":    fileID,
+						"url":        "https://assets.example.test/" + fileID,
+						"expires_at": "2026-07-08T12:00:00Z",
+					},
+				},
+			})
+		default:
+			t.Fatalf("unexpected app request method %q", method)
+			return nil, nil
+		}
+	})
+	replyAgent := replyAgentFunc(func(ctx context.Context, request agent.Request, sink agent.OutputSink) error {
+		agentRequests = append(agentRequests, request)
+		return nil
+	})
+
+	handleParsedServerMessage(
+		context.Background(),
+		testMessageCreatedEnvelope(t, "user-1", "message-current", 3, "帮我看一下"),
+		requester,
+		replyAgent,
+		directAgentRunner{},
+		func(message envelope) error { return nil },
+	)
+
+	wantCalls := [][]string{
+		{"file-history-image", "file-history-expired"},
+		{"file-history-image"},
+		{"file-history-expired"},
+	}
+	if !slices.EqualFunc(readURLCalls, wantCalls, slices.Equal[[]string]) {
+		t.Fatalf("read URL calls = %#v, want %#v", readURLCalls, wantCalls)
+	}
+	if len(agentRequests) != 1 {
+		t.Fatalf("agent request count = %d, want 1", len(agentRequests))
+	}
+	agentRequest := agentRequests[0]
+	if agentRequest.Content != "帮我看一下" {
+		t.Fatalf("agent content = %q, want current text", agentRequest.Content)
+	}
+	if len(agentRequest.History) != 2 {
+		t.Fatalf("history count = %d, want 2", len(agentRequest.History))
+	}
+
+	var imageBody map[string]any
+	if err := json.Unmarshal(agentRequest.History[0].Body, &imageBody); err != nil {
+		t.Fatalf("unmarshal image body: %v", err)
+	}
+	if imageBody["url"] != "https://assets.example.test/file-history-image" {
+		t.Fatalf("image history url = %v, want resolved URL", imageBody["url"])
+	}
+	var expiredBody map[string]any
+	if err := json.Unmarshal(agentRequest.History[1].Body, &expiredBody); err != nil {
+		t.Fatalf("unmarshal expired body: %v", err)
+	}
+	if expiredBody["file_id"] != "file-history-expired" {
+		t.Fatalf("expired history file_id = %v, want original file_id", expiredBody["file_id"])
+	}
+	if _, ok := expiredBody["url"]; ok {
+		t.Fatalf("expired history url = %v, want omitted", expiredBody["url"])
 	}
 }
 

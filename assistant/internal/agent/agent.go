@@ -79,10 +79,11 @@ type Sender struct {
 }
 
 type HistoryMessage struct {
-	Seq        int64  `json:"seq"`
-	SenderType string `json:"sender_type"`
-	SenderName string `json:"sender_name"`
-	Summary    string `json:"summary"`
+	Body       json.RawMessage `json:"body,omitempty"`
+	Seq        int64           `json:"seq"`
+	SenderType string          `json:"sender_type"`
+	SenderName string          `json:"sender_name"`
+	Summary    string          `json:"summary"`
 }
 
 type Request struct {

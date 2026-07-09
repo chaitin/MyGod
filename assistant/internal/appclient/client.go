@@ -148,11 +148,12 @@ type temporaryFileReadURLPayload struct {
 }
 
 type historyMessagePayload struct {
-	CreatedAt time.Time     `json:"created_at"`
-	ID        string        `json:"id"`
-	Seq       int64         `json:"seq"`
-	Sender    senderPayload `json:"sender"`
-	Summary   string        `json:"summary"`
+	Body      json.RawMessage `json:"body,omitempty"`
+	CreatedAt time.Time       `json:"created_at"`
+	ID        string          `json:"id"`
+	Seq       int64           `json:"seq"`
+	Sender    senderPayload   `json:"sender"`
+	Summary   string          `json:"summary"`
 }
 
 func New(ctx context.Context, cfg config.Config) (*Client, error) {
@@ -462,18 +463,28 @@ func handleParsedServerMessage(ctx context.Context, message envelope, requester 
 		return sendMarkdownReply(writeJSON, payload.Conversation, content)
 	})
 	runner.Start(ctx, userAgentKey(payload.Sender), sink, func(ctx context.Context, sink agent.OutputSink) error {
-		content, err := buildAgentMessageContent(ctx, requester, payload.Conversation.ID, body)
-		if err != nil {
-			if !errors.Is(err, context.Canceled) {
-				log.Printf("prepare agent message content failed: %v", err)
-			}
-			return err
-		}
-		history, err := loadConversationHistory(ctx, requester, payload)
+		historyMessages, err := loadConversationHistoryMessages(ctx, requester, payload)
 		if err != nil {
 			if !errors.Is(err, context.Canceled) {
 				log.Printf("load conversation history failed: %v", err)
 			}
+			return err
+		}
+		fileURLs, err := readTemporaryFileURLsForMessages(ctx, requester, payload.Conversation.ID, body, historyMessages)
+		if err != nil {
+			if !errors.Is(err, context.Canceled) {
+				log.Printf("read temporary file URLs failed: %v", err)
+			}
+			return err
+		}
+		content, err := buildAgentMessageContent(body, fileURLs)
+		if err != nil {
+			log.Printf("prepare agent message content failed: %v", err)
+			return err
+		}
+		history, err := buildAgentHistory(payload.Message.ID, historyMessages, fileURLs)
+		if err != nil {
+			log.Printf("prepare conversation history failed: %v", err)
 			return err
 		}
 		agentCtx := builtintools.WithScope(ctx, builtintools.Scope{
@@ -516,50 +527,140 @@ func isSupportedIncomingMessageType(messageType string) bool {
 	}
 }
 
-func buildAgentMessageContent(ctx context.Context, requester appRequester, conversationID string, body messageBody) (string, error) {
+func buildAgentMessageContent(body messageBody, fileURLs map[string]temporaryFileReadURLPayload) (string, error) {
 	switch body.Type {
 	case "text", "markdown":
 		return body.Content, nil
 	case "image":
-		readURL, err := readTemporaryFileURL(ctx, requester, conversationID, body.FileID)
-		if err != nil {
-			return "", err
+		content := fmt.Sprintf("用户发送了一张图片。\n文件 ID：%s", body.FileID)
+		if readURL, ok := temporaryFileURLForBody(body, fileURLs); ok {
+			content += "\n临时访问地址：" + readURL.URL
+		} else {
+			content += "\n临时访问地址：未获取到"
 		}
-		return fmt.Sprintf("用户发送了一张图片。\n文件 ID：%s\n临时访问地址：%s", body.FileID, readURL.URL), nil
+		return content, nil
 	case "file":
-		readURL, err := readTemporaryFileURL(ctx, requester, conversationID, body.FileID)
-		if err != nil {
-			return "", err
+		content := fmt.Sprintf("用户发送了一个文件。\n文件名：%s\n文件大小：%d 字节\n文件 ID：%s", body.Name, body.SizeBytes, body.FileID)
+		if readURL, ok := temporaryFileURLForBody(body, fileURLs); ok {
+			content += "\n临时访问地址：" + readURL.URL
+		} else {
+			content += "\n临时访问地址：未获取到"
 		}
-		return fmt.Sprintf("用户发送了一个文件。\n文件名：%s\n文件大小：%d 字节\n文件 ID：%s\n临时访问地址：%s", body.Name, body.SizeBytes, body.FileID, readURL.URL), nil
+		return content, nil
 	default:
 		return "", fmt.Errorf("unsupported message type %q", body.Type)
 	}
 }
 
-func readTemporaryFileURL(ctx context.Context, requester appRequester, conversationID string, fileID string) (temporaryFileReadURLPayload, error) {
-	if fileID == "" {
-		return temporaryFileReadURLPayload{}, fmt.Errorf("file_id is required")
+func readTemporaryFileURLsForMessages(ctx context.Context, requester appRequester, conversationID string, currentBody messageBody, historyMessages []historyMessagePayload) (map[string]temporaryFileReadURLPayload, error) {
+	fileIDs, err := collectTemporaryFileIDs(currentBody, historyMessages)
+	if err != nil {
+		return nil, err
 	}
+	return readTemporaryFileURLs(ctx, requester, conversationID, fileIDs)
+}
+
+func collectTemporaryFileIDs(currentBody messageBody, historyMessages []historyMessagePayload) ([]string, error) {
+	fileIDs := make([]string, 0)
+	seen := map[string]struct{}{}
+	add := func(fileID string) {
+		if _, ok := seen[fileID]; ok {
+			return
+		}
+		seen[fileID] = struct{}{}
+		fileIDs = append(fileIDs, fileID)
+	}
+	if err := collectTemporaryFileIDFromBody(currentBody, add); err != nil {
+		return nil, err
+	}
+	for _, message := range historyMessages {
+		if len(message.Body) == 0 {
+			continue
+		}
+		var body messageBody
+		if err := json.Unmarshal(message.Body, &body); err != nil {
+			return nil, fmt.Errorf("history message %s body: %w", message.ID, err)
+		}
+		if err := collectTemporaryFileIDFromBody(body, add); err != nil {
+			return nil, fmt.Errorf("history message %s body: %w", message.ID, err)
+		}
+	}
+
+	return fileIDs, nil
+}
+
+func collectTemporaryFileIDFromBody(body messageBody, add func(string)) error {
+	switch body.Type {
+	case "image", "file":
+		if body.FileID == "" {
+			return nil
+		}
+		add(body.FileID)
+	}
+	return nil
+}
+
+func readTemporaryFileURLs(ctx context.Context, requester appRequester, conversationID string, fileIDs []string) (map[string]temporaryFileReadURLPayload, error) {
+	if len(fileIDs) == 0 {
+		return map[string]temporaryFileReadURLPayload{}, nil
+	}
+	urls, err := requestTemporaryFileURLs(ctx, requester, conversationID, fileIDs)
+	if err == nil || errors.Is(err, context.Canceled) {
+		return urls, err
+	}
+
+	urls = make(map[string]temporaryFileReadURLPayload, len(fileIDs))
+	for _, fileID := range fileIDs {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		singleURLs, err := requestTemporaryFileURLs(ctx, requester, conversationID, []string{fileID})
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				return nil, err
+			}
+			continue
+		}
+		for fileID, readURL := range singleURLs {
+			urls[fileID] = readURL
+		}
+	}
+
+	return urls, nil
+}
+
+func requestTemporaryFileURLs(ctx context.Context, requester appRequester, conversationID string, fileIDs []string) (map[string]temporaryFileReadURLPayload, error) {
 	raw, err := requester.Request(ctx, methodTemporaryFilesReadURLs, readTemporaryFileURLsRequestPayload{
 		ConversationID: conversationID,
-		FileIDs:        []string{fileID},
+		FileIDs:        fileIDs,
 	})
 	if err != nil {
-		return temporaryFileReadURLPayload{}, err
+		return nil, err
 	}
 
 	var response readTemporaryFileURLsResponsePayload
 	if err := json.Unmarshal(raw, &response); err != nil {
-		return temporaryFileReadURLPayload{}, err
+		return nil, err
 	}
+	urls := make(map[string]temporaryFileReadURLPayload, len(response.URLs))
 	for _, item := range response.URLs {
-		if item.FileID == fileID && item.URL != "" {
-			return item, nil
+		if item.FileID != "" && item.URL != "" {
+			urls[item.FileID] = item
 		}
 	}
 
-	return temporaryFileReadURLPayload{}, fmt.Errorf("temporary file read URL not found for %s", fileID)
+	return urls, nil
+}
+
+func temporaryFileURLForBody(body messageBody, fileURLs map[string]temporaryFileReadURLPayload) (temporaryFileReadURLPayload, bool) {
+	if body.FileID == "" {
+		return temporaryFileReadURLPayload{}, false
+	}
+	readURL, ok := fileURLs[body.FileID]
+	if !ok || readURL.URL == "" {
+		return temporaryFileReadURLPayload{}, false
+	}
+	return readURL, true
 }
 
 func userAgentKey(sender senderPayload) string {
@@ -572,7 +673,7 @@ func userAgentKey(sender senderPayload) string {
 	return "unknown"
 }
 
-func loadConversationHistory(ctx context.Context, requester appRequester, payload messageCreatedPayload) ([]agent.HistoryMessage, error) {
+func loadConversationHistoryMessages(ctx context.Context, requester appRequester, payload messageCreatedPayload) ([]historyMessagePayload, error) {
 	raw, err := requester.Request(ctx, methodConversationMessagesList, appListConversationMessagesRequestPayload{
 		BeforeOrEqualSeq: payload.Message.Seq,
 		ConversationID:   payload.Conversation.ID,
@@ -587,16 +688,25 @@ func loadConversationHistory(ctx context.Context, requester appRequester, payloa
 		return nil, err
 	}
 
-	history := make([]agent.HistoryMessage, 0, len(response.Messages))
-	for _, message := range response.Messages {
-		if message.ID == payload.Message.ID {
+	return response.Messages, nil
+}
+
+func buildAgentHistory(currentMessageID string, messages []historyMessagePayload, fileURLs map[string]temporaryFileReadURLPayload) ([]agent.HistoryMessage, error) {
+	history := make([]agent.HistoryMessage, 0, len(messages))
+	for _, message := range messages {
+		if message.ID == currentMessageID {
 			continue
 		}
 		senderName := message.Sender.Name
 		if message.Sender.Nickname != "" {
 			senderName = message.Sender.Nickname
 		}
+		body, err := enrichHistoryMessageBody(message.Body, fileURLs)
+		if err != nil {
+			return nil, fmt.Errorf("history message %s body: %w", message.ID, err)
+		}
 		history = append(history, agent.HistoryMessage{
+			Body:       body,
 			Seq:        message.Seq,
 			SenderType: message.Sender.Type,
 			SenderName: senderName,
@@ -605,6 +715,34 @@ func loadConversationHistory(ctx context.Context, requester appRequester, payloa
 	}
 
 	return history, nil
+}
+
+func enrichHistoryMessageBody(raw json.RawMessage, fileURLs map[string]temporaryFileReadURLPayload) (json.RawMessage, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, nil
+	}
+
+	messageType, _ := fields["type"].(string)
+	switch messageType {
+	case "image", "file":
+		fileID, _ := fields["file_id"].(string)
+		if readURL, ok := fileURLs[fileID]; ok && readURL.URL != "" {
+			fields["url"] = readURL.URL
+		}
+	}
+
+	body, err := json.Marshal(fields)
+	if err != nil {
+		return nil, err
+	}
+	return body, nil
 }
 
 func sendMarkdownReply(writeJSON func(envelope) error, conversation conversationPayload, content string) error {

@@ -126,6 +126,7 @@ type appReadTemporaryFileURLsRequest struct {
 }
 
 type appConversationHistoryMessagePayload struct {
+	Body      json.RawMessage         `json:"body,omitempty"`
 	CreatedAt time.Time               `json:"created_at"`
 	ID        string                  `json:"id"`
 	Sender    appMessageSenderPayload `json:"sender"`
@@ -943,10 +944,13 @@ func (s *Server) newAppConversationHistoryMessagePayloads(messages []store.Messa
 	payloads := make([]appConversationHistoryMessagePayload, 0, len(messages))
 	for _, message := range messages {
 		summary := message.Summary
+		body := message.Body
 		if message.RevokedAt != nil {
 			summary = revokedMessageSummary()
+			body = nil
 		}
 		payloads = append(payloads, appConversationHistoryMessagePayload{
+			Body:      body,
 			CreatedAt: message.CreatedAt,
 			ID:        message.ID,
 			Sender:    newAppHistoryMessageSenderPayload(message, usersByID, appsByID),

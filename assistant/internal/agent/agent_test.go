@@ -72,6 +72,7 @@ func TestAgentBuildsSystemPromptAndUserContext(t *testing.T) {
 				SenderType: "user",
 				SenderName: "Alice",
 				Summary:    "之前问了部署时间",
+				Body:       json.RawMessage(`{"type":"image","file_id":"file-history-image","url":"https://assets.example.test/file-history-image"}`),
 			},
 			{
 				Seq:        2,
@@ -141,6 +142,11 @@ func TestAgentBuildsSystemPromptAndUserContext(t *testing.T) {
 			SenderType string `json:"sender_type"`
 			SenderName string `json:"sender_name"`
 			Summary    string `json:"summary"`
+			Body       struct {
+				Type   string `json:"type"`
+				FileID string `json:"file_id"`
+				URL    string `json:"url"`
+			} `json:"body"`
 		} `json:"messages"`
 	}
 	if err := json.Unmarshal([]byte(contextMessage.Content), &contextPayload); err != nil {
@@ -178,6 +184,9 @@ func TestAgentBuildsSystemPromptAndUserContext(t *testing.T) {
 	}
 	if contextPayload.Messages[0].Summary != "之前问了部署时间" {
 		t.Fatalf("first summary = %q, want history summary", contextPayload.Messages[0].Summary)
+	}
+	if contextPayload.Messages[0].Body.URL != "https://assets.example.test/file-history-image" {
+		t.Fatalf("first history body URL = %q, want temporary file URL", contextPayload.Messages[0].Body.URL)
 	}
 	if contextPayload.Messages[1].SenderName != "女菩萨" {
 		t.Fatalf("second sender = %q, want 女菩萨", contextPayload.Messages[1].SenderName)

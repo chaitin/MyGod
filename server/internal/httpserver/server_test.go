@@ -1177,6 +1177,27 @@ func TestAppWebSocketConversationMessagesListReturnsAuthorizedSummaries(t *testi
 			}
 			continue
 		}
+		if seq == 99 {
+			revokedAt := createdAt.Add(time.Minute)
+			senderID := alice.ID
+			message := store.Message{
+				ID:              uuid.NewString(),
+				ConversationID:  conversationID,
+				Seq:             seq,
+				SenderType:      store.MessageSenderTypeUser,
+				SenderID:        &senderID,
+				Body:            json.RawMessage(`{"type":"text","content":"revoked secret body"}`),
+				Summary:         "revoked secret body",
+				RevokedAt:       &revokedAt,
+				RevokedByUserID: &alice.ID,
+				CreatedAt:       createdAt,
+				UpdatedAt:       createdAt,
+			}
+			if err := db.Create(&message).Error; err != nil {
+				t.Fatalf("create revoked app history message: %v", err)
+			}
+			continue
+		}
 		insertTestMessage(t, db, conversationID, alice.ID, seq, fmt.Sprintf("user summary %03d", seq), createdAt)
 	}
 
@@ -1215,10 +1236,11 @@ func TestAppWebSocketConversationMessagesListReturnsAuthorizedSummaries(t *testi
 		t.Fatalf("app history seq = %v, want 100", appHistoryMessage["seq"])
 	}
 	if appHistoryMessage["summary"] != "assistant summary 100" {
-		t.Fatalf("app history summary = %v, want summary only", appHistoryMessage["summary"])
+		t.Fatalf("app history summary = %v, want summary", appHistoryMessage["summary"])
 	}
-	if _, ok := appHistoryMessage["body"]; ok {
-		t.Fatalf("app history body = %v, want omitted", appHistoryMessage["body"])
+	appHistoryBody := appHistoryMessage["body"].(map[string]any)
+	if appHistoryBody["type"] != "text" || appHistoryBody["content"] != "assistant full body 100" {
+		t.Fatalf("app history body = %#v, want full body", appHistoryBody)
 	}
 	appSender := appHistoryMessage["sender"].(map[string]any)
 	if appSender["type"] != store.MessageSenderTypeApp {
@@ -1226,6 +1248,16 @@ func TestAppWebSocketConversationMessagesListReturnsAuthorizedSummaries(t *testi
 	}
 	if appSender["name"] != app.Name {
 		t.Fatalf("app sender name = %v, want %s", appSender["name"], app.Name)
+	}
+	revokedHistoryMessage := messages[48].(map[string]any)
+	if revokedHistoryMessage["seq"] != float64(99) {
+		t.Fatalf("revoked history seq = %v, want 99", revokedHistoryMessage["seq"])
+	}
+	if revokedHistoryMessage["summary"] != "该消息已被撤回" {
+		t.Fatalf("revoked history summary = %v, want revoked summary", revokedHistoryMessage["summary"])
+	}
+	if _, ok := revokedHistoryMessage["body"]; ok {
+		t.Fatalf("revoked history body = %v, want omitted", revokedHistoryMessage["body"])
 	}
 
 	earlyResponse := sendAppRequest(t, appConn, realtime.Envelope{
