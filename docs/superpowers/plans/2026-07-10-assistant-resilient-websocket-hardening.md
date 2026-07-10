@@ -694,7 +694,7 @@ Expected: PASS with no race report before commit.
 #### Completed review follow-up: protect responses and bound writer fairness
 
 - [x] `d704ddf` added an independent bounded response queue, routed every normal/error response through reliable admission, made the writer response-first, and added the real `Client.Run` overflow integration test.
-- [x] `7224371` bounded response priority to bursts of at most 16 consecutive responses so ready events and pings cannot be starved.
+- [x] `7224371` introduced a fairness point after at most 16 consecutive responses, separately guaranteeing bounded progress for event-only and ping-only readiness; the simultaneous-ready case remained open until `5fe51d0`.
 - [x] `5fe51d0` made the fairness point service both a ready ping and one ready event when they are simultaneously ready, preventing event starvation.
 
 Verification recorded for these review follow-ups:
