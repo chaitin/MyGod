@@ -8,6 +8,7 @@ import {
   Send,
   Settings,
   Smile,
+  Upload,
   UsersRound,
   X,
 } from "lucide-react"
@@ -24,6 +25,8 @@ import {
 import {
   compressImageForMessage,
   imageMessageMaxBytes,
+  isAcceptedImageMessageFile,
+  isAcceptedImageMessageMimeType,
 } from "@/lib/image-message"
 import {
   createMentionToken,
@@ -48,6 +51,7 @@ import {
   type ExpressionItem,
 } from "@/components/expression-picker"
 import { GroupAvatar } from "@/components/group-avatar"
+import { GroupProfilePopover } from "@/components/group-profile-popover"
 import { MarkdownIcon } from "@/components/icons/markdown-icon"
 import { MessageAttachment } from "@/components/message-attachment"
 import { MessageImage } from "@/components/message-image"
@@ -128,7 +132,10 @@ type MentionCandidate = {
 type ConversationPanelComposerHandle = {
   focus: () => void
   insertMention: (target: ConversationPanelMentionTarget) => void
+  openDroppedFile: (file: File) => void
 }
+
+type DraggedFileKind = "file" | "image"
 
 type MentionTrigger = {
   query: string
@@ -187,6 +194,9 @@ export function ConversationPanel({
   sending,
 }: ConversationPanelProps) {
   const composerRef = React.useRef<ConversationPanelComposerHandle | null>(null)
+  const fileDragDepthRef = React.useRef(0)
+  const [draggedFileKind, setDraggedFileKind] =
+    React.useState<DraggedFileKind | null>(null)
 
   const insertComposerMention = React.useCallback(
     (target: ConversationPanelMentionTarget) => {
@@ -214,18 +224,83 @@ export function ConversationPanel({
     [conversation?.type, onReplyToMessage]
   )
 
+  function resetFileDrag() {
+    fileDragDepthRef.current = 0
+    setDraggedFileKind(null)
+  }
+
+  function handlePanelDragEnter(event: React.DragEvent<HTMLElement>) {
+    if (!hasDraggedFiles(event.dataTransfer)) {
+      return
+    }
+
+    event.preventDefault()
+    event.dataTransfer.dropEffect = conversation && !sending ? "copy" : "none"
+
+    if (!conversation || sending) {
+      return
+    }
+
+    fileDragDepthRef.current += 1
+    setDraggedFileKind(getDraggedFileKind(event.dataTransfer))
+  }
+
+  function handlePanelDragOver(event: React.DragEvent<HTMLElement>) {
+    if (!hasDraggedFiles(event.dataTransfer)) {
+      return
+    }
+
+    event.preventDefault()
+    event.dataTransfer.dropEffect = conversation && !sending ? "copy" : "none"
+  }
+
+  function handlePanelDragLeave(event: React.DragEvent<HTMLElement>) {
+    if (fileDragDepthRef.current === 0) {
+      return
+    }
+
+    event.preventDefault()
+    fileDragDepthRef.current = Math.max(0, fileDragDepthRef.current - 1)
+
+    if (fileDragDepthRef.current === 0) {
+      setDraggedFileKind(null)
+    }
+  }
+
+  function handlePanelDrop(event: React.DragEvent<HTMLElement>) {
+    if (!hasDraggedFiles(event.dataTransfer)) {
+      return
+    }
+
+    event.preventDefault()
+    const file = event.dataTransfer.files[0]
+
+    resetFileDrag()
+
+    if (!conversation || sending || !file) {
+      return
+    }
+
+    composerRef.current?.openDroppedFile(file)
+  }
+
   return (
     <main
       className={cn(
-        "flex min-w-0 flex-1 flex-col",
+        "relative flex min-w-0 flex-1 flex-col",
         conversation ? "bg-background" : "bg-muted"
       )}
       data-testid="chat-detail-shell"
+      onDragEnter={handlePanelDragEnter}
+      onDragLeave={handlePanelDragLeave}
+      onDragOver={handlePanelDragOver}
+      onDrop={handlePanelDrop}
     >
       {conversation ? (
         <>
           <ConversationPanelHeader
             conversation={conversation}
+            currentUserId={currentUserId}
             online={conversationOnline}
           />
           <ConversationPanelHistory
@@ -261,15 +336,45 @@ export function ConversationPanel({
       ) : (
         <ConversationPanelEmptyState />
       )}
+      {conversation && draggedFileKind && (
+        <ConversationFileDropOverlay kind={draggedFileKind} />
+      )}
     </main>
+  )
+}
+
+function ConversationFileDropOverlay({ kind }: { kind: DraggedFileKind }) {
+  const isImage = kind === "image"
+
+  return (
+    <div
+      aria-live="polite"
+      className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center bg-teal-700/10 p-3 backdrop-blur-[2px]"
+      data-testid="conversation-file-drop-overlay"
+      role="status"
+    >
+      <div className="flex size-full max-h-60 max-w-100 flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-teal-500 bg-background/60 text-teal-700 dark:text-teal-300">
+        <span className="flex size-11 items-center justify-center rounded-full bg-teal-500/15">
+          <Upload aria-hidden="true" className="size-5" />
+        </span>
+        <span className="text-sm font-medium">
+          {isImage ? "松开发送图片" : "松开发送文件"}
+        </span>
+        <span className="text-xs text-muted-foreground">
+          {isImage ? "支持 PNG、JPG 和 WebP" : "将作为附件发送"}
+        </span>
+      </div>
+    </div>
   )
 }
 
 function ConversationPanelHeader({
   conversation,
+  currentUserId,
   online,
 }: {
   conversation: ClientConversation
+  currentUserId: string
   online?: boolean
 }) {
   return (
@@ -278,8 +383,9 @@ function ConversationPanelHeader({
       data-testid="conversation-panel-header"
     >
       <div className="flex min-w-0 items-center gap-3 pr-3">
-        <ConversationPanelHeaderAvatar
+        <ConversationPanelHeaderProfileAvatar
           conversation={conversation}
+          currentUserId={currentUserId}
           online={online}
         />
         <div className="flex min-w-0 items-baseline gap-2">
@@ -326,6 +432,72 @@ function ConversationPanelHeader({
 
 function getGroupMemberCount(conversation: ClientConversation) {
   return conversation.memberCount || conversation.members?.length || 0
+}
+
+function ConversationPanelHeaderProfileAvatar({
+  conversation,
+  currentUserId,
+  online,
+}: {
+  conversation: ClientConversation
+  currentUserId: string
+  online?: boolean
+}) {
+  const avatar = (
+    <ConversationPanelHeaderAvatar
+      conversation={conversation}
+      online={online}
+    />
+  )
+
+  if (conversation.type === "group") {
+    return (
+      <GroupProfilePopover conversation={conversation}>
+        {avatar}
+      </GroupProfilePopover>
+    )
+  }
+
+  if (conversation.type === "direct") {
+    const otherMember = conversation.members?.find(
+      (member) => member.type === "user" && member.id !== currentUserId
+    )
+
+    if (!otherMember) {
+      return avatar
+    }
+
+    return (
+      <UserProfilePopover
+        fallbackProfile={otherMember}
+        triggerAriaLabel={`${conversation.name}资料`}
+        userId={otherMember.id}
+      >
+        {avatar}
+      </UserProfilePopover>
+    )
+  }
+
+  const appMember = conversation.members?.find(
+    (member) => member.type === "app"
+  )
+  const appId = appMember?.id ?? conversation.id
+
+  return (
+    <AppProfilePopover
+      appId={appId}
+      fallbackProfile={{
+        avatar: appMember?.avatar || conversation.avatar,
+        description: "",
+        id: appId,
+        name: appMember?.name || conversation.name,
+        online: online ?? false,
+      }}
+      triggerAriaLabel={`${conversation.name}资料`}
+    >
+      {avatar}
+    </AppProfilePopover>
+  )
 }
 
 function ConversationPanelHeaderAvatar({
@@ -636,6 +808,18 @@ const ConversationPanelComposer = React.forwardRef<
     insertMention(target) {
       insertMentionTarget(target)
     },
+    openDroppedFile(file) {
+      if (sending || imagePreparing) {
+        return
+      }
+
+      if (isAcceptedImageMessageFile(file)) {
+        void prepareSelectedImage(file)
+        return
+      }
+
+      prepareSelectedFile(file)
+    },
   }))
 
   React.useEffect(() => {
@@ -890,6 +1074,10 @@ const ConversationPanelComposer = React.forwardRef<
       return
     }
 
+    prepareSelectedFile(file)
+  }
+
+  function prepareSelectedFile(file: File) {
     if (file.size > maxFileMessageUploadBytes) {
       setSelectedFile(null)
       setFileDialogOpen(false)
@@ -1242,6 +1430,20 @@ function getClipboardImageFile(clipboardData: DataTransfer) {
   }
 
   return null
+}
+
+function hasDraggedFiles(dataTransfer: DataTransfer) {
+  return Array.from(dataTransfer.types).includes("Files")
+}
+
+function getDraggedFileKind(dataTransfer: DataTransfer): DraggedFileKind {
+  const firstFileItem = Array.from(dataTransfer.items).find(
+    (item) => item.kind === "file"
+  )
+
+  return firstFileItem && isAcceptedImageMessageMimeType(firstFileItem.type)
+    ? "image"
+    : "file"
 }
 
 function insertTextareaText(

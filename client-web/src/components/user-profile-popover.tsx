@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { formatContactPhone } from "@/lib/contact-format"
 import { useClientData } from "@/lib/client-data-context"
 import { cn } from "@/lib/utils"
+import { AvatarPreviewDialog } from "@/components/avatar-preview-dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import {
@@ -17,6 +18,7 @@ import {
 type UserProfilePopoverProps = {
   children: React.ReactNode
   fallbackProfile?: UserProfile | null
+  triggerAriaLabel?: string
   triggerClassName?: string
   userId: string | null
 }
@@ -33,12 +35,14 @@ type UserProfile = {
 export function UserProfilePopover({
   children,
   fallbackProfile = null,
+  triggerAriaLabel,
   triggerClassName,
   userId,
 }: UserProfilePopoverProps) {
   const { contacts, me, openDirectConversation } = useClientData()
   const navigate = useNavigate()
   const [open, setOpen] = React.useState(false)
+  const [avatarPreviewOpen, setAvatarPreviewOpen] = React.useState(false)
   const [openingConversation, setOpeningConversation] = React.useState(false)
   const user = React.useMemo(
     () => resolveUserProfile(userId, me, contacts, fallbackProfile),
@@ -71,82 +75,118 @@ export function UserProfilePopover({
     }
   }
 
+  function handleAvatarPreview() {
+    setOpen(false)
+    setAvatarPreviewOpen(true)
+  }
+
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
-        className={cn(
-          "inline-flex cursor-pointer appearance-none rounded-sm border-0 bg-transparent p-0 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-          triggerClassName
-        )}
-        type="button"
-      >
-        {children}
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        className="w-72"
-        side="right"
-        sideOffset={8}
-      >
-        <div className="flex flex-col gap-4">
-          <div className="flex items-center gap-3">
-            <Avatar className="size-14 rounded-sm bg-muted after:rounded-sm">
-              {profile.avatar && (
-                <AvatarImage
-                  alt={displayName}
-                  className="rounded-sm"
-                  src={profile.avatar}
-                />
-              )}
-              <AvatarFallback className="rounded-sm text-lg">
-                {getUserInitial(displayName)}
-              </AvatarFallback>
-            </Avatar>
-            <div className="min-w-0">
-              <div className="truncate text-sm font-medium">{displayName}</div>
-              <div className="truncate text-xs text-muted-foreground">
-                用户资料
+    <>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger
+          aria-label={triggerAriaLabel}
+          className={cn(
+            "inline-flex cursor-pointer appearance-none rounded-sm border-0 bg-transparent p-0 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+            triggerClassName
+          )}
+          type="button"
+        >
+          {children}
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          className="w-72"
+          side="right"
+          sideOffset={8}
+        >
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center gap-3">
+              <button
+                aria-haspopup="dialog"
+                aria-label={`预览${displayName}头像`}
+                className="shrink-0 cursor-pointer rounded-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                onClick={handleAvatarPreview}
+                type="button"
+              >
+                <Avatar className="size-14 rounded-sm bg-muted after:rounded-sm">
+                  {profile.avatar && (
+                    <AvatarImage
+                      alt={displayName}
+                      className="rounded-sm"
+                      src={profile.avatar}
+                    />
+                  )}
+                  <AvatarFallback className="rounded-sm text-lg">
+                    {getUserInitial(displayName)}
+                  </AvatarFallback>
+                </Avatar>
+              </button>
+              <div className="min-w-0">
+                <div className="truncate text-sm font-medium">
+                  {displayName}
+                </div>
+                <div className="truncate text-xs text-muted-foreground">
+                  用户资料
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="grid gap-1 text-sm">
-            <UserProfileRow
-              icon={<UserRound className="size-4 text-muted-foreground" />}
-              label="姓名"
-              value={profile.name}
-            />
-            <UserProfileRow
-              icon={<UserPen className="size-4 text-muted-foreground" />}
-              label="昵称"
-              value={profile.nickname}
-            />
-            <UserProfileRow
-              icon={<Mail className="size-4 text-muted-foreground" />}
-              label="邮箱"
-              value={profile.email}
-            />
-            <UserProfileRow
-              icon={<Phone className="size-4 text-muted-foreground" />}
-              label="手机"
-              value={profile.phone ? formatContactPhone(profile.phone) : ""}
-            />
-          </div>
+            <div className="grid gap-1 text-sm">
+              <UserProfileRow
+                icon={<UserRound className="size-4 text-muted-foreground" />}
+                label="姓名"
+                value={profile.name}
+              />
+              <UserProfileRow
+                icon={<UserPen className="size-4 text-muted-foreground" />}
+                label="昵称"
+                value={profile.nickname}
+              />
+              <UserProfileRow
+                icon={<Mail className="size-4 text-muted-foreground" />}
+                label="邮箱"
+                value={profile.email}
+              />
+              <UserProfileRow
+                icon={<Phone className="size-4 text-muted-foreground" />}
+                label="手机"
+                value={profile.phone ? formatContactPhone(profile.phone) : ""}
+              />
+            </div>
 
-          <Button
-            className="w-full"
-            disabled={!canStartConversation || openingConversation}
-            onClick={() => void handleStartConversation()}
-            type="button"
-          >
-            {openingConversation && (
-              <Loader2Icon aria-hidden="true" className="animate-spin" />
-            )}
-            发消息
-          </Button>
-        </div>
-      </PopoverContent>
-    </Popover>
+            <Button
+              className="w-full"
+              disabled={!canStartConversation || openingConversation}
+              onClick={() => void handleStartConversation()}
+              type="button"
+            >
+              {openingConversation && (
+                <Loader2Icon aria-hidden="true" className="animate-spin" />
+              )}
+              发消息
+            </Button>
+          </div>
+        </PopoverContent>
+      </Popover>
+      <AvatarPreviewDialog
+        label={`${displayName}头像预览`}
+        onOpenChange={setAvatarPreviewOpen}
+        open={avatarPreviewOpen}
+      >
+        <Avatar className="size-full rounded-sm bg-muted after:rounded-sm">
+          {profile.avatar && (
+            <AvatarImage
+              alt={displayName}
+              className="rounded-sm"
+              src={profile.avatar}
+            />
+          )}
+          <AvatarFallback className="rounded-sm text-6xl">
+            {getUserInitial(displayName)}
+          </AvatarFallback>
+        </Avatar>
+      </AvatarPreviewDialog>
+    </>
   )
 }
 

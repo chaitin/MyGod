@@ -57,12 +57,16 @@ export async function compressImageForMessage(sourceFile: File) {
   })
 }
 
-function isAcceptedImageMessageFile(file: File) {
-  if (acceptedImageMessageTypes.has(file.type)) {
+export function isAcceptedImageMessageFile(file: File) {
+  if (isAcceptedImageMessageMimeType(file.type)) {
     return true
   }
 
   return /\.(jpe?g|png|webp)$/i.test(file.name)
+}
+
+export function isAcceptedImageMessageMimeType(type: string) {
+  return acceptedImageMessageTypes.has(type.toLowerCase())
 }
 
 function loadImage(file: File) {
