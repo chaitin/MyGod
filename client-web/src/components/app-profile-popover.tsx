@@ -17,6 +17,7 @@ type AppProfilePopoverProps = {
   appId: string | null
   children: React.ReactNode
   fallbackProfile?: AppProfile | null
+  triggerAriaLabel?: string
   triggerClassName?: string
 }
 
@@ -32,6 +33,7 @@ export function AppProfilePopover({
   appId,
   children,
   fallbackProfile = null,
+  triggerAriaLabel,
   triggerClassName,
 }: AppProfilePopoverProps) {
   const { contactApps, openAppConversation } = useClientData()
@@ -70,6 +72,7 @@ export function AppProfilePopover({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
+        aria-label={triggerAriaLabel}
         className={cn(
           "inline-flex cursor-pointer appearance-none rounded-sm border-0 bg-transparent p-0 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
           triggerClassName

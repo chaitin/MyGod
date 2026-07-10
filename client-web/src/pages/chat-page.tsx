@@ -27,6 +27,7 @@ import {
 import { ConversationListItemMenu } from "@/components/conversation-list-item-menu"
 import {
   ConversationPanel,
+  type ConversationPanelAppProfile,
   type ConversationPanelMentionTarget,
   type ConversationPanelMessage,
   type ConversationPanelReplyTarget,
@@ -955,6 +956,8 @@ function toConversationPanelMessage(
       mentionLabelResolver
     ),
     role,
+    senderAppId: message.sender.type === "app" ? message.sender.id : null,
+    senderAppProfile: getMessageAppProfile(message, conversation, appsById),
     senderUserId: message.sender.type === "user" ? message.sender.id : null,
     time: getMessageTime(message.createdAt),
   }
@@ -1191,4 +1194,28 @@ function getMessageAvatar(
   }
 
   return ""
+}
+
+function getMessageAppProfile(
+  message: ClientMessage,
+  conversation: ClientConversation,
+  appsById: ReadonlyMap<string, ContactApp>
+): ConversationPanelAppProfile | null {
+  if (message.sender.type !== "app") {
+    return null
+  }
+
+  const contactApp = appsById.get(message.sender.id)
+
+  return {
+    avatar: getConversationAppAvatar(conversation, message.sender.id, appsById),
+    description: contactApp?.description ?? "",
+    id: message.sender.id,
+    name: getConversationAppDisplayName(
+      conversation,
+      message.sender.id,
+      appsById
+    ),
+    online: contactApp?.online ?? false,
+  }
 }

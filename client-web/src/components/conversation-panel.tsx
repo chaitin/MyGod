@@ -88,7 +88,17 @@ export type ConversationPanelMessage = {
   mentionTarget: ConversationPanelMentionTarget | null
   replyTo?: ConversationPanelReplyTarget
   time: string
+  senderAppId: string | null
+  senderAppProfile: ConversationPanelAppProfile | null
   senderUserId: string | null
+}
+
+export type ConversationPanelAppProfile = {
+  avatar: string
+  description: string
+  id: string
+  name: string
+  online: boolean
 }
 
 export type ConversationPanelMentionTarget = {
@@ -1738,8 +1748,32 @@ function MessageAvatar({
   )
 
   return (
+    <MessageAvatarProfile message={message}>{avatar}</MessageAvatarProfile>
+  )
+}
+
+function MessageAvatarProfile({
+  children,
+  message,
+}: {
+  children: React.ReactNode
+  message: ConversationPanelMessage
+}) {
+  if (message.senderAppId) {
+    return (
+      <AppProfilePopover
+        appId={message.senderAppId}
+        fallbackProfile={message.senderAppProfile}
+        triggerAriaLabel={`${message.author}资料`}
+      >
+        {children}
+      </AppProfilePopover>
+    )
+  }
+
+  return (
     <UserProfilePopover userId={message.senderUserId}>
-      {avatar}
+      {children}
     </UserProfilePopover>
   )
 }
