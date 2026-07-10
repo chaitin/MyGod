@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -44,12 +45,19 @@ var (
 	errGroupConversationOwnerCannotLeave  = errors.New("group conversation owner cannot leave")
 	errGroupConversationOwnerCannotRemove = errors.New("group conversation owner cannot be removed")
 	errGroupConversationCannotRemoveSelf  = errors.New("group conversation member cannot remove self")
+	errGroupConversationProjectInvalid    = errors.New("invalid group conversation project")
+	errGroupConversationProjectPersonal   = errors.New("personal project cannot link group conversation")
+	errGroupConversationProjectUnowned    = errors.New("group conversation project is not owned by user")
+	errGroupConversationProjectMissing    = errors.New("group conversation project missing")
+	errGroupConversationProjectMutation   = errors.New("group conversation project mutation failed")
+	errGroupConversationProjectLockChange = errors.New("group conversation project lock set changed")
 )
 
 type createGroupConversationRequest struct {
-	AppIDs    []string `json:"app_ids" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
-	MemberIDs []string `json:"member_ids" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
-	Name      string   `json:"name" example:"产品讨论组"`
+	AppIDs     []string                   `json:"app_ids" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
+	MemberIDs  []string                   `json:"member_ids" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
+	Name       string                     `json:"name" example:"产品讨论组"`
+	ProjectIDs projectOptionalStringSlice `json:"project_ids" swaggertype:"array,string" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
 }
 
 type addGroupConversationMembersRequest struct {
@@ -726,17 +734,30 @@ func (s *Server) createGroupConversation(c echo.Context) error {
 	if err != nil {
 		return failure(c, http.StatusBadRequest, "invalid_request", err.Error())
 	}
+	projectIDs, err := normalizeGroupProjectIDs(req.ProjectIDs.Value)
+	if err != nil {
+		return failure(c, http.StatusBadRequest, "invalid_request", "项目 ID 格式错误")
+	}
 	if len(memberIDs)+len(appIDs)+1 > maxGroupConversationMembers {
 		return failure(c, http.StatusBadRequest, "invalid_request", "群聊成员不能超过 500 人")
 	}
 
-	conversation, createdMessage, candidates, memberUserIDs, err := s.createUserGroupConversation(user, name, memberIDs, appIDs)
+	conversation, createdMessage, candidates, memberUserIDs, err := s.createUserGroupConversationWithProjects(user, name, memberIDs, appIDs, projectIDs)
 	if err != nil {
 		if errors.Is(err, errGroupConversationMemberMiss) {
 			return failure(c, http.StatusBadRequest, "invalid_request", "成员或应用不存在或不可用")
 		}
 		if errors.Is(err, errGroupConversationMemberCap) {
 			return failure(c, http.StatusBadRequest, "invalid_request", "群聊成员不能超过 500 人")
+		}
+		if errors.Is(err, errGroupConversationProjectInvalid) {
+			return failure(c, http.StatusBadRequest, "invalid_request", "项目 ID 格式错误")
+		}
+		if errors.Is(err, errGroupConversationProjectPersonal) {
+			return failure(c, http.StatusBadRequest, "invalid_request", "个人项目不能关联群聊")
+		}
+		if errors.Is(err, errGroupConversationProjectUnowned) || errors.Is(err, errGroupConversationProjectMissing) {
+			return failure(c, http.StatusNotFound, "not_found", "项目不存在")
 		}
 		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
 	}
@@ -751,6 +772,10 @@ func (s *Server) createGroupConversation(c echo.Context) error {
 }
 
 func (s *Server) createUserGroupConversation(user store.User, name string, memberIDs []string, appIDs []string) (store.Conversation, *store.Message, []conversationMemberCandidate, []string, error) {
+	return s.createUserGroupConversationWithProjects(user, name, memberIDs, appIDs, nil)
+}
+
+func (s *Server) createUserGroupConversationWithProjects(user store.User, name string, memberIDs []string, appIDs []string, projectIDs []string) (store.Conversation, *store.Message, []conversationMemberCandidate, []string, error) {
 	if len(memberIDs)+len(appIDs)+1 > maxGroupConversationMembers {
 		return store.Conversation{}, nil, nil, nil, errGroupConversationMemberCap
 	}
@@ -806,6 +831,11 @@ func (s *Server) createUserGroupConversation(user store.User, name string, membe
 	var createdMessage *store.Message
 	memberUserIDs := make([]string, 0, len(candidates))
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		projects, err := lockOwnedGroupConversationProjects(tx, projectIDs, user.ID)
+		if err != nil {
+			return err
+		}
+
 		if err := tx.Create(&conversation).Error; err != nil {
 			return err
 		}
@@ -849,12 +879,62 @@ func (s *Server) createUserGroupConversation(user store.User, name string, membe
 			}
 			createdMessage = &message
 		}
+
+		if len(projects) > 0 {
+			links := make([]store.ProjectGroup, 0, len(projects))
+			for _, project := range projects {
+				links = append(links, store.ProjectGroup{
+					ProjectID:      project.ID,
+					ConversationID: conversation.ID,
+					LinkedByUserID: user.ID,
+					CreatedAt:      now,
+				})
+			}
+			if err := tx.Create(&links).Error; err != nil {
+				return err
+			}
+			for _, project := range projects {
+				result := tx.Model(&store.Project{}).
+					Where("id = ?", project.ID).
+					Update("updated_at", now)
+				if result.Error != nil {
+					return result.Error
+				}
+				if result.RowsAffected != 1 {
+					return errGroupConversationProjectMutation
+				}
+			}
+		}
 		return nil
 	}); err != nil {
 		return store.Conversation{}, nil, nil, nil, err
 	}
 
 	return conversation, createdMessage, candidates, memberUserIDs, nil
+}
+
+func lockOwnedGroupConversationProjects(tx *gorm.DB, projectIDs []string, userID string) ([]store.Project, error) {
+	projects := make([]store.Project, 0, len(projectIDs))
+	for _, projectID := range projectIDs {
+		var project store.Project
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("id", "owner_user_id", "is_personal").
+			First(&project, "id = ?", projectID).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errGroupConversationProjectMissing
+		}
+		if err != nil {
+			return nil, err
+		}
+		if project.OwnerUserID != userID {
+			return nil, errGroupConversationProjectUnowned
+		}
+		if project.IsPersonal {
+			return nil, errGroupConversationProjectPersonal
+		}
+		projects = append(projects, project)
+	}
+	return projects, nil
 }
 
 // addGroupConversationMembers godoc
@@ -2279,58 +2359,150 @@ func (s *Server) leaveUserGroupConversation(currentUser store.User, conversation
 func (s *Server) dissolveUserGroupConversation(currentUser store.User, conversationID string) ([]string, error) {
 	memberUserIDs := []string{}
 
-	err := s.db.Transaction(func(tx *gorm.DB) error {
-		var conversation store.Conversation
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&conversation, "id = ?", conversationID).Error; err != nil {
-			return err
-		}
-		if conversation.Status != store.ConversationStatusActive {
-			return errConversationAccessDenied
-		}
-		if conversation.Kind != store.ConversationKindGroup {
-			return errConversationNotGroup
-		}
+	for {
+		err := s.db.Transaction(func(tx *gorm.DB) error {
+			projectIDs, err := loadGroupConversationProjectIDs(tx, conversationID)
+			if err != nil {
+				return err
+			}
+			projectsByID, err := lockGroupConversationProjectsForDissolution(tx, projectIDs)
+			if err != nil {
+				return err
+			}
 
-		var currentMember store.ConversationMember
-		if err := tx.First(
-			&currentMember,
-			"conversation_id = ? AND member_type = ? AND member_id = ? AND left_at IS NULL",
-			conversationID,
-			store.ConversationMemberTypeUser,
-			currentUser.ID,
-		).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
+			var conversation store.Conversation
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&conversation, "id = ?", conversationID).Error; err != nil {
+				return err
+			}
+
+			currentProjectIDs, err := loadGroupConversationProjectIDs(tx, conversationID)
+			if err != nil {
+				return err
+			}
+			if containsAdditionalProjectID(projectIDs, currentProjectIDs) {
+				return errGroupConversationProjectLockChange
+			}
+
+			if conversation.Status != store.ConversationStatusActive {
 				return errConversationAccessDenied
 			}
-			return err
-		}
-		if currentMember.Role != store.ConversationMemberRoleOwner {
-			return errConversationAccessDenied
-		}
+			if conversation.Kind != store.ConversationKindGroup {
+				return errConversationNotGroup
+			}
 
-		ids, err := loadActiveConversationUserIDs(tx, conversationID)
+			var currentMember store.ConversationMember
+			if err := tx.First(
+				&currentMember,
+				"conversation_id = ? AND member_type = ? AND member_id = ? AND left_at IS NULL",
+				conversationID,
+				store.ConversationMemberTypeUser,
+				currentUser.ID,
+			).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return errConversationAccessDenied
+				}
+				return err
+			}
+			if currentMember.Role != store.ConversationMemberRoleOwner {
+				return errConversationAccessDenied
+			}
+
+			ids, err := loadActiveConversationUserIDs(tx, conversationID)
+			if err != nil {
+				return err
+			}
+			memberUserIDs = ids
+
+			now := time.Now().UTC()
+			deleteResult := tx.Where("conversation_id = ?", conversationID).Delete(&store.ProjectGroup{})
+			if deleteResult.Error != nil {
+				return deleteResult.Error
+			}
+			if deleteResult.RowsAffected != int64(len(currentProjectIDs)) {
+				return errGroupConversationProjectMutation
+			}
+
+			for _, projectID := range currentProjectIDs {
+				project, exists := projectsByID[projectID]
+				if !exists || project.DeletedAt.Valid {
+					continue
+				}
+				updateResult := tx.Model(&store.Project{}).
+					Where("id = ?", projectID).
+					Update("updated_at", now)
+				if updateResult.Error != nil {
+					return updateResult.Error
+				}
+				if updateResult.RowsAffected != 1 {
+					return errGroupConversationProjectMutation
+				}
+			}
+
+			updateResult := tx.Model(&store.Conversation{}).
+				Where("id = ?", conversationID).
+				Updates(map[string]any{
+					"dissolved_at": now,
+					"status":       store.ConversationStatusDissolved,
+					"updated_at":   now,
+				})
+			if updateResult.Error != nil {
+				return updateResult.Error
+			}
+			if updateResult.RowsAffected != 1 {
+				return errGroupConversationProjectMutation
+			}
+			return nil
+		})
+		if errors.Is(err, errGroupConversationProjectLockChange) {
+			continue
+		}
 		if err != nil {
-			return err
+			return nil, err
 		}
-		memberUserIDs = ids
+		return memberUserIDs, nil
+	}
+}
 
-		now := time.Now().UTC()
-		if err := tx.Model(&store.Conversation{}).
-			Where("id = ?", conversationID).
-			Updates(map[string]any{
-				"dissolved_at": now,
-				"status":       store.ConversationStatusDissolved,
-				"updated_at":   now,
-			}).Error; err != nil {
-			return err
-		}
-		return nil
-	})
-	if err != nil {
+func loadGroupConversationProjectIDs(tx *gorm.DB, conversationID string) ([]string, error) {
+	projectIDs := []string{}
+	if err := tx.Model(&store.ProjectGroup{}).
+		Where("conversation_id = ?", conversationID).
+		Pluck("project_id", &projectIDs).Error; err != nil {
 		return nil, err
 	}
+	sort.Strings(projectIDs)
+	return projectIDs, nil
+}
 
-	return memberUserIDs, nil
+func lockGroupConversationProjectsForDissolution(tx *gorm.DB, projectIDs []string) (map[string]store.Project, error) {
+	projectsByID := make(map[string]store.Project, len(projectIDs))
+	for _, projectID := range projectIDs {
+		var project store.Project
+		err := tx.Unscoped().Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("id", "deleted_at").
+			First(&project, "id = ?", projectID).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		projectsByID[project.ID] = project
+	}
+	return projectsByID, nil
+}
+
+func containsAdditionalProjectID(lockedProjectIDs []string, currentProjectIDs []string) bool {
+	locked := make(map[string]struct{}, len(lockedProjectIDs))
+	for _, projectID := range lockedProjectIDs {
+		locked[projectID] = struct{}{}
+	}
+	for _, projectID := range currentProjectIDs {
+		if _, exists := locked[projectID]; !exists {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) updateUserGroupConversationAvatar(currentUser store.User, conversationID string, avatarURL string) (store.Conversation, store.Message, []string, error) {
@@ -2974,6 +3146,25 @@ func normalizeGroupAppIDs(rawIDs []string) ([]string, error) {
 	}
 
 	return appIDs, nil
+}
+
+func normalizeGroupProjectIDs(rawIDs []string) ([]string, error) {
+	seen := make(map[string]struct{}, len(rawIDs))
+	projectIDs := make([]string, 0, len(rawIDs))
+	for _, rawID := range rawIDs {
+		parsedID, err := uuid.Parse(strings.TrimSpace(rawID))
+		if err != nil {
+			return nil, errGroupConversationProjectInvalid
+		}
+		projectID := parsedID.String()
+		if _, exists := seen[projectID]; exists {
+			continue
+		}
+		seen[projectID] = struct{}{}
+		projectIDs = append(projectIDs, projectID)
+	}
+	sort.Strings(projectIDs)
+	return projectIDs, nil
 }
 
 func (s *Server) loadActiveGroupMembers(memberIDs []string) ([]store.User, error) {
