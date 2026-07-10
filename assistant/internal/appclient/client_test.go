@@ -203,7 +203,7 @@ func TestHandleServerMessageSendsLLMReply(t *testing.T) {
 		return sink.SendMarkdown(ctx, "你好，我是大模型回复")
 	})
 
-	handleServerMessage(context.Background(), websocket.TextMessage, raw, requester, replyAgent, func(message envelope) error {
+	handleServerMessage(context.Background(), websocket.TextMessage, raw, requester, replyAgent, func(_ context.Context, message envelope) error {
 		sent = append(sent, message)
 		return nil
 	})
@@ -315,7 +315,7 @@ func TestHandleParsedServerMessageIgnoresGroupMessageWithoutDirectAppMention(t *
 		requester,
 		replyAgent,
 		directAgentRunner{},
-		func(envelope) error { return nil },
+		func(context.Context, envelope) error { return nil },
 	)
 
 	if calledRequester {
@@ -352,7 +352,7 @@ func TestHandleParsedServerMessageRunsGroupMessageWithDirectAppMention(t *testin
 		requester,
 		replyAgent,
 		directAgentRunner{},
-		func(message envelope) error {
+		func(_ context.Context, message envelope) error {
 			sent = append(sent, message)
 			return nil
 		},
@@ -395,7 +395,7 @@ func TestHandleParsedServerMessageRunsGroupMessageWithUppercaseDirectAppMention(
 		requester,
 		replyAgent,
 		directAgentRunner{},
-		func(envelope) error { return nil },
+		func(context.Context, envelope) error { return nil },
 	)
 
 	if len(agentRequests) != 1 {
@@ -522,7 +522,7 @@ func TestHandleServerMessageReadsTemporaryFileURLForImageAndFileMessages(t *test
 				requester,
 				replyAgent,
 				directAgentRunner{},
-				func(message envelope) error { return nil },
+				func(context.Context, envelope) error { return nil },
 			)
 
 			if _, ok := readURLPayloadMap["conversation_id"]; ok {
@@ -643,7 +643,7 @@ func TestHandleServerMessagePrefetchesCurrentFileURLAndKeepsHistoryFileIDs(t *te
 		requester,
 		replyAgent,
 		directAgentRunner{},
-		func(message envelope) error { return nil },
+		func(context.Context, envelope) error { return nil },
 	)
 
 	if _, ok := readURLPayloadMap["conversation_id"]; ok {
@@ -766,7 +766,7 @@ func TestHandleServerMessageDoesNotReadHistoryFileURLs(t *testing.T) {
 		requester,
 		replyAgent,
 		directAgentRunner{},
-		func(message envelope) error { return nil },
+		func(context.Context, envelope) error { return nil },
 	)
 
 	if len(readURLCalls) != 0 {
@@ -848,7 +848,7 @@ func TestHandleServerMessageProvidesBuiltinToolScope(t *testing.T) {
 		return err
 	})
 
-	handleParsedServerMessage(context.Background(), testMessageCreatedEnvelope(t, "user-1", "message-1", 1, "帮我发给 Bob"), "", requester, replyAgent, directAgentRunner{}, func(message envelope) error {
+	handleParsedServerMessage(context.Background(), testMessageCreatedEnvelope(t, "user-1", "message-1", 1, "帮我发给 Bob"), "", requester, replyAgent, directAgentRunner{}, func(_ context.Context, message envelope) error {
 		return nil
 	})
 
@@ -1169,7 +1169,7 @@ type sentMessages struct {
 	messages []envelope
 }
 
-func (s *sentMessages) write(message envelope) error {
+func (s *sentMessages) write(_ context.Context, message envelope) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.messages = append(s.messages, message)
