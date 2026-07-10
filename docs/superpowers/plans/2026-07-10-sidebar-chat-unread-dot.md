@@ -467,15 +467,15 @@ pnpm exec vitest run src/components/app-layout.test.tsx
 
 Expected: the initial-load, decrease, and unchanged-total tests remain green, while the increase, restart, and animation-end tests fail because `AppLayout` does not yet add `notification-dot-flash` or replace the dot on consecutive increases.
 
-- [ ] **Step 3: Track unread increases and animation state in AppLayout**
+- [ ] **Step 3: Track unread increases in one animation state snapshot**
 
-Extend the React import:
+Keep the existing React state import:
 
 ```tsx
-import { useEffect, useRef, useState } from "react"
+import { useState } from "react"
 ```
 
-Replace the current unread boolean derivation in `AppLayout` and pass the animation values to the chat navigation item:
+Replace the current unread boolean derivation in `AppLayout` with a state snapshot that also stores the most recently observed total. The guarded state update makes React retry `AppLayout` immediately and terminates after `unreadCount` matches `totalUnreadCount`, avoiding a synchronous state update inside an effect:
 
 ```tsx
 const totalUnreadCount = conversations.reduce(
@@ -483,27 +483,24 @@ const totalUnreadCount = conversations.reduce(
   0
 )
 const hasUnreadMessages = totalUnreadCount > 0
-const previousUnreadCountRef = useRef(totalUnreadCount)
 const [notificationAnimation, setNotificationAnimation] = useState({
   active: false,
+  unreadCount: totalUnreadCount,
   version: 0,
 })
 
-useEffect(() => {
-  const previousUnreadCount = previousUnreadCountRef.current
-  previousUnreadCountRef.current = totalUnreadCount
+if (notificationAnimation.unreadCount !== totalUnreadCount) {
+  const unreadCountIncreased =
+    totalUnreadCount > notificationAnimation.unreadCount
 
-  if (totalUnreadCount > previousUnreadCount) {
-    setNotificationAnimation((current) => ({
-      active: true,
-      version: current.version + 1,
-    }))
-  } else if (totalUnreadCount === 0) {
-    setNotificationAnimation((current) =>
-      current.active ? { ...current, active: false } : current
-    )
-  }
-}, [totalUnreadCount])
+  setNotificationAnimation({
+    active: unreadCountIncreased,
+    unreadCount: totalUnreadCount,
+    version: unreadCountIncreased
+      ? notificationAnimation.version + 1
+      : notificationAnimation.version,
+  })
+}
 
 function handleNotificationAnimationEnd() {
   setNotificationAnimation((current) =>
