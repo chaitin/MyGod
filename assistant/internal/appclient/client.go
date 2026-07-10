@@ -54,6 +54,7 @@ type Client struct {
 	dialer         *websocket.Dialer
 	assistantAgent replyAgent
 	mcpSources     []mcpclient.Source
+	runner         *conversationAgentRunner
 }
 
 type replyAgent interface {
@@ -170,6 +171,7 @@ func New(ctx context.Context, cfg config.Config) (*Client, error) {
 		dialer:         websocket.DefaultDialer,
 		assistantAgent: agent.New(llm.NewAnthropicClient(cfg.LLM), agent.WithToolRegistry(registry), agent.WithMaxTurns(cfg.Agent.MaxTurns)),
 		mcpSources:     sources,
+		runner:         newConversationAgentRunner(ctx),
 	}, nil
 }
 
@@ -193,6 +195,9 @@ func newToolRegistry(ctx context.Context, servers []config.MCPServerConfig) (*mc
 }
 
 func (c *Client) Close() {
+	if c.runner != nil {
+		c.runner.CancelAll()
+	}
 	mcpclient.CloseSources(c.mcpSources)
 }
 
@@ -241,10 +246,10 @@ func (c *Client) connectOnce(ctx context.Context) (bool, error) {
 	defer conn.Close()
 
 	log.Printf("app websocket connected to %s", c.cfg.WebSocketURL)
-	return true, serveConnection(ctx, conn, c.cfg.AppID, c.assistantAgent)
+	return true, serveConnection(ctx, conn, c.cfg.AppID, c.assistantAgent, c.runner)
 }
 
-func serveConnection(ctx context.Context, conn *websocket.Conn, appID string, assistantAgent replyAgent) error {
+func serveConnection(ctx context.Context, conn *websocket.Conn, appID string, assistantAgent replyAgent, runner agentRunner) error {
 	connCtx, cancelConnection := context.WithCancel(ctx)
 	defer cancelConnection()
 
@@ -267,8 +272,6 @@ func serveConnection(ctx context.Context, conn *websocket.Conn, appID string, as
 		return conn.WriteControl(messageType, data, time.Now().Add(writeWait))
 	}
 	requester := newConnectionRequester(writeJSON)
-	runner := newConversationAgentRunner()
-	defer runner.CancelAll()
 
 	conn.SetReadLimit(maxMessageBytes)
 	_ = conn.SetReadDeadline(time.Now().Add(pongWait))

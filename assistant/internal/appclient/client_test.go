@@ -864,7 +864,7 @@ func TestHandleServerMessageProvidesBuiltinToolScope(t *testing.T) {
 }
 
 func TestConversationAgentRunnerCancelAllCancelsOutstandingJobs(t *testing.T) {
-	runner := newConversationAgentRunner()
+	runner := newConversationAgentRunner(context.Background())
 	firstStarted := make(chan struct{})
 	firstCanceled := make(chan struct{})
 	secondStarted := make(chan struct{})
@@ -904,7 +904,7 @@ func TestConversationAgentRunnerCancelAllCancelsOutstandingJobs(t *testing.T) {
 }
 
 func TestConversationAgentRunnerDoesNotRunAppendedMessageWhileSendIsInProgress(t *testing.T) {
-	runner := newConversationAgentRunner()
+	runner := newConversationAgentRunner(context.Background())
 	sendStarted := make(chan struct{})
 	releaseSend := make(chan struct{})
 	secondRequestSeen := make(chan struct{})
@@ -954,7 +954,7 @@ func TestConversationAgentRunnerAppendsSameConversationMessageToActiveSession(t 
 		release: make(chan struct{}),
 	}
 	assistantAgent := agent.New(model, agent.WithToolRegistry(registry), agent.WithMaxTurns(3))
-	runner := newConversationAgentRunner()
+	runner := newConversationAgentRunner(context.Background())
 	defer runner.CancelAll()
 
 	requester := appRequestFunc(func(ctx context.Context, method string, payload any) (json.RawMessage, error) {

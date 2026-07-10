@@ -44,6 +44,7 @@ func (directAgentRunner) Start(ctx context.Context, key string, sink agent.Outpu
 }
 
 type conversationAgentRunner struct {
+	ctx         context.Context
 	idleTimeout time.Duration
 	mu          sync.Mutex
 	jobs        map[string]*conversationAgentJob
@@ -61,8 +62,12 @@ type conversationAgentJob struct {
 	timer          *time.Timer
 }
 
-func newConversationAgentRunner() *conversationAgentRunner {
+func newConversationAgentRunner(ctx context.Context) *conversationAgentRunner {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	return &conversationAgentRunner{
+		ctx:         ctx,
 		idleTimeout: time.Hour,
 		jobs:        map[string]*conversationAgentJob{},
 	}
@@ -104,7 +109,7 @@ func (r *conversationAgentRunner) Start(ctx context.Context, key string, sink ag
 		return
 	}
 
-	jobCtx, cancel := context.WithCancel(ctx)
+	jobCtx, cancel := context.WithCancel(r.ctx)
 	authorizations := newConversationAuthorizationStore()
 	prepared.Request.AuthorizationCandidates = authorizations.Add(prepared.Authorization)
 	prepared.Scope.AuthorizationResolver = authorizations
