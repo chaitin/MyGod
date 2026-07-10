@@ -21,7 +21,7 @@
 - Modify: `assistant/internal/builtintools/sleep.go`
 - Modify: `assistant/internal/agent/agent.go`
 
-- [ ] **Step 1: Write failing limit tests**
+- [x] **Step 1: Write failing limit tests**
 
 Add tests proving an assistant request below 1 MiB is written, an envelope above 1 MiB is rejected, and a server connection configured with defaults accepts a message above 64 KiB but rejects one above 1 MiB. Use an `httptest.Server` WebSocket pair so the test exercises Gorilla's read limit.
 
@@ -39,7 +39,7 @@ func TestDefaultMaxMessageBytesIsOneMiB(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the new tests and confirm failure**
+- [x] **Step 2: Run the new tests and confirm failure**
 
 Run:
 
@@ -50,7 +50,7 @@ cd ../server && go test ./internal/appconnection
 
 Expected: failures report the existing 64 KiB limit.
 
-- [ ] **Step 3: Introduce the shared 1 MiB constants and outbound checks**
+- [x] **Step 3: Introduce the shared 1 MiB constants and outbound checks**
 
 Use explicit constants in the two binaries:
 
@@ -61,11 +61,11 @@ const defaultMaxMessageBytes = 1 << 20
 
 Marshal before every app envelope write and return `app websocket message exceeds 1MiB limit` locally. Server responses that exceed the limit must be replaced by a small `response_too_large` response; oversized events are logged and skipped without intentionally closing the connection.
 
-- [ ] **Step 4: Correct inline file descriptions**
+- [x] **Step 4: Correct inline file descriptions**
 
 Keep `maxAppInlineFileContentBytes` at 64 KiB but change prompt/tool wording from “WebSocket message limit” to “inline file content limit”.
 
-- [ ] **Step 5: Run focused tests**
+- [x] **Step 5: Run focused tests**
 
 ```bash
 cd assistant && go test ./internal/appclient ./internal/agent ./internal/builtintools
@@ -74,7 +74,7 @@ cd ../server && go test ./internal/appconnection
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit the limit change**
+- [x] **Step 6: Commit the limit change**
 
 ```bash
 git add assistant/internal/appclient assistant/internal/agent/agent.go assistant/internal/builtintools/sleep.go server/internal/appconnection
@@ -89,7 +89,7 @@ git commit -m "fix: raise app websocket limit to 1 MiB"
 - Modify: `assistant/internal/appclient/client_test.go`
 - Create: `assistant/internal/appclient/runner_test.go`
 
-- [ ] **Step 1: Write failing lifecycle tests**
+- [x] **Step 1: Write failing lifecycle tests**
 
 Move runner-specific tests into `runner_test.go` and add a test that simulates a connection handler returning while an agent model is blocked. Verify the agent context remains active and that a second message appends to the same `*agent.Session`.
 
@@ -101,7 +101,7 @@ func TestConnectionExitDoesNotCancelConversationSession(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the lifecycle test and confirm failure**
+- [x] **Step 2: Run the lifecycle test and confirm failure**
 
 ```bash
 cd assistant && go test ./internal/appclient -run 'TestConnectionExitDoesNotCancelConversationSession'
@@ -109,7 +109,7 @@ cd assistant && go test ./internal/appclient -run 'TestConnectionExitDoesNotCanc
 
 Expected: the current connection-scoped `defer runner.CancelAll()` cancels the job.
 
-- [ ] **Step 3: Make the runner a `Client` field**
+- [x] **Step 3: Make the runner a `Client` field**
 
 Initialize one runner in `New` and close it only from `Client.Close`/process shutdown:
 
@@ -125,11 +125,11 @@ type Client struct {
 
 Pass this runner into connection message dispatch. Remove connection-level `CancelAll`.
 
-- [ ] **Step 4: Rename shutdown semantics**
+- [x] **Step 4: Rename shutdown semantics**
 
 Expose `Close()` on the runner, keep the one-hour idle timeout, and ensure idle cleanup only removes non-running jobs with no pending instruction.
 
-- [ ] **Step 5: Run focused tests**
+- [x] **Step 5: Run focused tests**
 
 ```bash
 cd assistant && go test ./internal/appclient ./internal/agent
@@ -137,7 +137,7 @@ cd assistant && go test ./internal/appclient ./internal/agent
 
 Expected: PASS, including existing append and idle reuse behavior.
 
-- [ ] **Step 6: Commit process-scoped sessions**
+- [x] **Step 6: Commit process-scoped sessions**
 
 ```bash
 git add assistant/internal/appclient
@@ -155,7 +155,7 @@ git commit -m "refactor: keep assistant sessions across websocket reconnects"
 - Modify: `assistant/internal/appclient/runner.go`
 - Modify: `assistant/internal/appclient/client_test.go`
 
-- [ ] **Step 1: Write failing transport retry tests**
+- [x] **Step 1: Write failing transport retry tests**
 
 Use an injected dial function, fake clock/sleeper, and scripted connection server. Cover ten retries, capped exponential delays, jitter-free deterministic tests, reset after success, non-retryable authentication responses, one active generation, and shutdown cancellation.
 
@@ -167,7 +167,7 @@ var expected = []time.Duration{
 }
 ```
 
-- [ ] **Step 2: Run transport tests and confirm failure**
+- [x] **Step 2: Run transport tests and confirm failure**
 
 ```bash
 cd assistant && go test ./internal/appclient -run 'TestWebSocketManager'
@@ -175,7 +175,7 @@ cd assistant && go test ./internal/appclient -run 'TestWebSocketManager'
 
 Expected: transport types are undefined.
 
-- [ ] **Step 3: Implement `webSocketManager`**
+- [x] **Step 3: Implement `webSocketManager`**
 
 The manager owns the current generation and exposes:
 
@@ -197,7 +197,7 @@ func (m *webSocketManager) Invalidate(generation *connectionGeneration, err erro
 
 `Send` starts or wakes a bounded ten-retry connection cycle when disconnected. A stale generation may close itself but cannot clear a newer generation.
 
-- [ ] **Step 4: Write failing reliable requester tests**
+- [x] **Step 4: Write failing reliable requester tests**
 
 Cover stable request IDs across reconnects, response routing by `reply_to`, generation failure while waiting, request timeout retries, protocol errors without retry, and retry exhaustion without canceling the caller's parent session.
 
@@ -207,7 +207,7 @@ func TestReliableRequesterRetriesSameEnvelopeAfterDisconnect(t *testing.T) {
 }
 ```
 
-- [ ] **Step 5: Implement `reliableRequester`**
+- [x] **Step 5: Implement `reliableRequester`**
 
 Provide the existing interface while moving request state out of physical connections:
 
@@ -224,11 +224,11 @@ func (r *reliableRequester) HandleResponse(response envelope)
 
 Create the request ID once, retry the same envelope at most ten times after the initial failure, and unregister pending state on completion.
 
-- [ ] **Step 6: Route all app-dependent actions through the broker**
+- [x] **Step 6: Route all app-dependent actions through the broker**
 
 Replace direct `writeJSON` use in final replies with a broker request. `prepareAgentRun`, built-in tools, file URL lookup, history lookup, and output sinks all receive the same process-scoped requester.
 
-- [ ] **Step 7: Run assistant tests and race detector**
+- [x] **Step 7: Run assistant tests and race detector**
 
 ```bash
 cd assistant && go test ./...
@@ -237,7 +237,7 @@ go test -race ./internal/appclient ./internal/agent
 
 Expected: PASS with no races.
 
-- [ ] **Step 8: Commit reliable transport**
+- [x] **Step 8: Commit reliable transport**
 
 ```bash
 git add assistant/internal/appclient
@@ -253,7 +253,7 @@ git commit -m "feat: add resilient assistant websocket transport"
 - Modify: `server/internal/appconnection/connection.go`
 - Modify: `server/internal/httpserver/server_test.go`
 
-- [ ] **Step 1: Write failing request-cache tests**
+- [x] **Step 1: Write failing request-cache tests**
 
 Test a completed duplicate, a concurrent duplicate, request-ID conflict, ten-minute expiry, 1,000-entry eviction, and 64 MiB byte-budget eviction.
 
@@ -264,7 +264,7 @@ func TestRequestCacheReplaysCompletedResponse(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run request-cache tests and confirm failure**
+- [x] **Step 2: Run request-cache tests and confirm failure**
 
 ```bash
 cd server && go test ./internal/appconnection -run 'TestRequestCache'
@@ -272,7 +272,7 @@ cd server && go test ./internal/appconnection -run 'TestRequestCache'
 
 Expected: cache type is undefined.
 
-- [ ] **Step 3: Implement bounded response replay**
+- [x] **Step 3: Implement bounded response replay**
 
 Hash method and raw payload with SHA-256. Store running/completed entries keyed by app ID plus request ID. Concurrent duplicates wait on an entry completion channel. Completed entries expire after ten minutes and are LRU-evicted at 1,000 entries or 64 MiB.
 
@@ -282,15 +282,15 @@ func (m *Manager) HandleRequest(appID string, request realtime.Envelope) realtim
 
 Return `request_id_conflict` if a duplicate ID has a different digest.
 
-- [ ] **Step 4: Route connection requests through the manager**
+- [x] **Step 4: Route connection requests through the manager**
 
 Change `Connection.handleAppMessage` to call `manager.HandleRequest`; keep the HTTP server's existing handler as the underlying executor.
 
-- [ ] **Step 5: Add side-effect integration tests**
+- [x] **Step 5: Add side-effect integration tests**
 
 Send duplicate `message.send`, `message.send_as_user`, group create, and add-member requests with the same ID. Assert each database mutation and emitted system message occurs once and both responses are equivalent.
 
-- [ ] **Step 6: Run server tests and race detector**
+- [x] **Step 6: Run server tests and race detector**
 
 ```bash
 cd server && go test ./internal/appconnection ./internal/httpserver
@@ -299,7 +299,7 @@ go test -race ./internal/appconnection
 
 Expected: PASS with no races.
 
-- [ ] **Step 7: Commit request deduplication**
+- [x] **Step 7: Commit request deduplication**
 
 ```bash
 git add server/internal/appconnection server/internal/httpserver/server_test.go
@@ -321,7 +321,7 @@ git commit -m "feat: replay duplicate app request responses"
 - Modify: `assistant/internal/appclient/runner.go`
 - Modify: `assistant/internal/appclient/client_test.go`
 
-- [ ] **Step 1: Write the migration test and migration**
+- [x] **Step 1: Write the migration test and migration**
 
 Create an `app_event_outbox` table with `id BIGSERIAL`, `app_id UUID`, event name, JSONB payload and timestamps, plus an `app_event_acks` table keyed by app ID with the last acknowledged cursor. Add indexes on `(app_id, id)`.
 
@@ -335,7 +335,7 @@ CREATE TABLE app_event_outbox (
 );
 ```
 
-- [ ] **Step 2: Add cursor support to protocol envelopes**
+- [x] **Step 2: Add cursor support to protocol envelopes**
 
 ```go
 type Envelope struct {
@@ -346,19 +346,19 @@ type Envelope struct {
 
 Mirror the field in the assistant envelope.
 
-- [ ] **Step 3: Write failing outbox delivery tests**
+- [x] **Step 3: Write failing outbox delivery tests**
 
 Cover durable insertion before live delivery, reconnect replay after the stored ack, ordered cursor delivery, ack monotonicity, and duplicate delivery deduplication by message ID/seq.
 
-- [ ] **Step 4: Persist and deliver message events**
+- [x] **Step 4: Persist and deliver message events**
 
 Replace direct `SendToApp(NewEvent(...))` with an outbox insert followed by ordered delivery. On app connection, replay rows after the stored ack before normal live delivery. Add app request method `events.ack` whose update only advances the cursor.
 
-- [ ] **Step 5: Ack accepted events from assistant**
+- [x] **Step 5: Ack accepted events from assistant**
 
 After Message Router has accepted an event into Session Manager, send `events.ack` through the reliable requester. Keep an in-memory `(conversation ID, message ID/seq)` dedupe set so replay does not append the same instruction twice.
 
-- [ ] **Step 6: Run migration and integration tests**
+- [x] **Step 6: Run migration and integration tests**
 
 ```bash
 cd server && go test ./internal/store ./internal/httpserver
@@ -367,7 +367,7 @@ cd ../assistant && go test ./internal/appclient
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit event replay**
+- [x] **Step 7: Commit event replay**
 
 ```bash
 git add server/migrations server/internal/store server/internal/httpserver server/internal/realtime assistant/internal/appclient
@@ -381,13 +381,13 @@ git commit -m "feat: replay unacknowledged app events"
 - Modify if generated: `api-docs/swagger.yaml`
 - Modify: `docs/superpowers/plans/2026-07-10-assistant-resilient-websocket.md`
 
-- [ ] **Step 1: Format all modified Go files**
+- [x] **Step 1: Format all modified Go files**
 
 ```bash
 gofmt -w assistant/internal server/internal
 ```
 
-- [ ] **Step 2: Run all backend tests**
+- [x] **Step 2: Run all backend tests**
 
 ```bash
 cd assistant && go test ./...
@@ -396,7 +396,7 @@ cd ../server && go test ./...
 
 Expected: PASS.
 
-- [ ] **Step 3: Run race-sensitive packages**
+- [x] **Step 3: Run race-sensitive packages**
 
 ```bash
 cd assistant && go test -race ./internal/appclient ./internal/agent
@@ -405,7 +405,7 @@ cd ../server && go test -race ./internal/appconnection
 
 Expected: PASS with no race reports.
 
-- [ ] **Step 4: Run deployment verification**
+- [x] **Step 4: Run deployment verification**
 
 ```bash
 ./scripts/verify-deploy-config.sh
@@ -413,7 +413,7 @@ Expected: PASS with no race reports.
 
 Expected: all assertions pass.
 
-- [ ] **Step 5: Check the final diff**
+- [x] **Step 5: Check the final diff**
 
 ```bash
 git status --short
@@ -423,7 +423,7 @@ git log --oneline --decorate -8
 
 Expected: only intended implementation files remain and `git diff --check` is silent.
 
-- [ ] **Step 6: Commit final generated or documentation updates**
+- [x] **Step 6: Commit final generated or documentation updates**
 
 ```bash
 git add api-docs docs/superpowers/plans/2026-07-10-assistant-resilient-websocket.md
