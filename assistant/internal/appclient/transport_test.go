@@ -60,6 +60,7 @@ func TestWebSocketManagerReturnsPermanentAuthenticationError(t *testing.T) {
 			attempts++
 			return nil, &http.Response{StatusCode: http.StatusUnauthorized}, errors.New("unauthorized")
 		},
+		Sleep: func(context.Context, time.Duration) error { return nil },
 	})
 
 	err := manager.Run(context.Background(), func(envelope) {})
