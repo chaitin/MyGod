@@ -39,7 +39,6 @@ const maxImageThumbnailWidth = 320
 const maxImageThumbnailHeight = 360
 
 export function MessageImage({ image }: MessageImageProps) {
-  const previewAreaRef = React.useRef<HTMLDivElement | null>(null)
   const previewDragRef = React.useRef<{
     offset: PreviewOffset
     pointerId: number
@@ -55,6 +54,8 @@ export function MessageImage({ image }: MessageImageProps) {
   } | null>(null)
   const [previewAreaSize, setPreviewAreaSize] =
     React.useState<PreviewSize | null>(null)
+  const [previewAreaElement, setPreviewAreaElement] =
+    React.useState<HTMLDivElement | null>(null)
   const [previewImageSize, setPreviewImageSize] =
     React.useState<PreviewSize | null>(null)
   const [previewZoom, setPreviewZoom] = React.useState(1)
@@ -80,6 +81,32 @@ export function MessageImage({ image }: MessageImageProps) {
           previewZoom
         )
       : { x: 0, y: 0 }
+
+  const handlePreviewWheel = React.useCallback(
+    (event: WheelEvent) => {
+      if (event.deltaY === 0) {
+        return
+      }
+
+      event.preventDefault()
+      const nextZoom = clampPreviewZoom(
+        previewZoom + (event.deltaY < 0 ? previewZoomStep : -previewZoomStep)
+      )
+
+      setPreviewZoom(nextZoom)
+      setPreviewOffset((currentOffset) =>
+        previewAreaSize && previewBaseSize
+          ? clampPreviewOffset(
+              currentOffset,
+              previewAreaSize,
+              previewBaseSize,
+              nextZoom
+            )
+          : { x: 0, y: 0 }
+      )
+    },
+    [previewAreaSize, previewBaseSize, previewZoom]
+  )
 
   React.useEffect(() => {
     let active = true
@@ -125,28 +152,44 @@ export function MessageImage({ image }: MessageImageProps) {
       return
     }
 
-    const previewArea = previewAreaRef.current
-
-    if (!previewArea) {
+    if (!previewAreaElement) {
       return
     }
 
     const updatePreviewAreaSize = () => {
       setPreviewAreaSize({
-        height: previewArea.clientHeight,
-        width: previewArea.clientWidth,
+        height: previewAreaElement.clientHeight,
+        width: previewAreaElement.clientWidth,
       })
     }
 
     updatePreviewAreaSize()
 
     const resizeObserver = new ResizeObserver(updatePreviewAreaSize)
-    resizeObserver.observe(previewArea)
+    resizeObserver.observe(previewAreaElement)
 
     return () => {
       resizeObserver.disconnect()
     }
-  }, [open])
+  }, [open, previewAreaElement])
+
+  React.useEffect(() => {
+    if (!open) {
+      return
+    }
+
+    if (!previewAreaElement) {
+      return
+    }
+
+    previewAreaElement.addEventListener("wheel", handlePreviewWheel, {
+      passive: false,
+    })
+
+    return () => {
+      previewAreaElement.removeEventListener("wheel", handlePreviewWheel)
+    }
+  }, [handlePreviewWheel, open, previewAreaElement])
 
   const currentSource = source?.fileId === image.fileId ? source : null
   const thumbnailFrame = getImageThumbnailFrame(image)
@@ -202,29 +245,6 @@ export function MessageImage({ image }: MessageImageProps) {
     })
   }
 
-  function handlePreviewWheel(event: React.WheelEvent<HTMLDivElement>) {
-    if (event.deltaY === 0) {
-      return
-    }
-
-    event.preventDefault()
-    const nextZoom = clampPreviewZoom(
-      previewZoom + (event.deltaY < 0 ? previewZoomStep : -previewZoomStep)
-    )
-
-    setPreviewZoom(nextZoom)
-    setPreviewOffset((currentOffset) =>
-      previewAreaSize && previewBaseSize
-        ? clampPreviewOffset(
-            currentOffset,
-            previewAreaSize,
-            previewBaseSize,
-            nextZoom
-          )
-        : { x: 0, y: 0 }
-    )
-  }
-
   function handlePreviewClick() {
     resetPreviewState()
     setOpen(true)
@@ -233,7 +253,12 @@ export function MessageImage({ image }: MessageImageProps) {
   function handlePreviewPointerDown(
     event: React.PointerEvent<HTMLDivElement>
   ) {
-    if (!previewAreaSize || !previewBaseSize || previewZoom <= 1) {
+    if (
+      event.button !== 0 ||
+      !previewAreaSize ||
+      !previewBaseSize ||
+      previewZoom <= 1
+    ) {
       return
     }
 
@@ -330,7 +355,6 @@ export function MessageImage({ image }: MessageImageProps) {
         <DialogContent
           className="h-[90vh] w-[90vw] max-w-[90vw] gap-0 overflow-hidden bg-background p-0 sm:max-w-[90vw]"
           onContextMenu={(event) => {
-            event.preventDefault()
             event.stopPropagation()
           }}
           showCloseButton={false}
@@ -340,7 +364,7 @@ export function MessageImage({ image }: MessageImageProps) {
             <DialogDescription>查看图片消息大图</DialogDescription>
           </DialogHeader>
           <div
-            ref={previewAreaRef}
+            ref={setPreviewAreaElement}
             className={cn(
               "relative h-full w-full touch-none overflow-hidden bg-background select-none",
               previewZoom > 1 &&
@@ -350,7 +374,6 @@ export function MessageImage({ image }: MessageImageProps) {
             onPointerDown={handlePreviewPointerDown}
             onPointerMove={handlePreviewPointerMove}
             onPointerUp={handlePreviewPointerEnd}
-            onWheel={handlePreviewWheel}
           >
             <img
               alt="图片消息预览"
