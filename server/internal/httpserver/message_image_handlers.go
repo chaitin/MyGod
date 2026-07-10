@@ -182,6 +182,7 @@ func (s *Server) createConversationImageMessage(c echo.Context) error {
 		staticMessageBodyFinalizer(imageMessageSummary()),
 		createMessageMetadata{
 			ReplyToMessageID: replyToMessageID,
+			EmitAppEvent:     true,
 		},
 	)
 	if err != nil {
@@ -208,9 +209,6 @@ func (s *Server) createConversationImageMessage(c echo.Context) error {
 	if created {
 		s.sendRealtimeMessageCreatedToUsers(c.Request().Context(), memberUserIDs, message)
 		s.sendRealtimeConversationMemberMentionedToUsers(mentionedUserIDs, message)
-		if err := s.dispatchAppMessageCreatedEvent(user, message); err != nil {
-			c.Logger().Warnf("dispatch app message event failed: %v", err)
-		}
 	}
 
 	status := http.StatusOK

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -389,6 +390,32 @@ func insertTestConversation(t *testing.T, db *gorm.DB, input testConversationInp
 	}
 
 	return conversation
+}
+
+func insertTestAppConversationLink(t *testing.T, db *gorm.DB, appID string, userID string, conversationID string, now time.Time) {
+	t.Helper()
+
+	member := store.ConversationMember{
+		ConversationID:        conversationID,
+		MemberType:            store.ConversationMemberTypeApp,
+		MemberID:              appID,
+		Role:                  store.ConversationMemberRoleMember,
+		JoinedAt:              now,
+		HistoryVisibleFromSeq: 1,
+	}
+	if err := db.Create(&member).Error; err != nil {
+		t.Fatalf("create test app conversation member: %v", err)
+	}
+
+	link := store.AppConversation{
+		AppID:          appID,
+		UserID:         userID,
+		ConversationID: conversationID,
+		CreatedAt:      now,
+	}
+	if err := db.Create(&link).Error; err != nil {
+		t.Fatalf("create test app conversation link: %v", err)
+	}
 }
 
 func setTestConversationMemberLastReadSeq(t *testing.T, db *gorm.DB, conversationID string, memberID string, lastReadSeq int64) {
@@ -1067,6 +1094,176 @@ func TestAppWebSocketTracksAdminConnectionStatus(t *testing.T) {
 	t.Fatalf("connection_status did not become offline after websocket close")
 }
 
+func TestUserMessageRollsBackWhenAppEventOutboxInsertFails(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	now := time.Date(2026, 7, 10, 9, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	app := insertTestApp(t, db, store.App{
+		Name:      "Echo App",
+		Enabled:   true,
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
+	conversation := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindApp,
+		memberIDs:       []string{alice.ID},
+		name:            app.Name,
+		now:             now,
+	})
+	insertTestAppConversationLink(t, db, app.ID, alice.ID, conversation.ID, now)
+
+	const callbackName = "test:fail_app_event_outbox_create"
+	if err := db.Callback().Create().Before("gorm:create").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement.Table == "app_event_outbox" {
+			tx.AddError(errors.New("forced outbox failure"))
+		}
+	}); err != nil {
+		t.Fatalf("register create callback: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Callback().Create().Remove(callbackName); err != nil {
+			t.Errorf("remove create callback: %v", err)
+		}
+	})
+
+	subject := &Server{db: db}
+	_, _, _, _, err := subject.createUserMessageWithMetadata(
+		context.Background(),
+		alice.ID,
+		conversation.ID,
+		"message-1",
+		json.RawMessage(`{"type":"text","content":"hello"}`),
+		staticMessageBodyFinalizer("hello"),
+		createMessageMetadata{EmitAppEvent: true},
+	)
+	if err == nil {
+		t.Fatal("createUserMessageWithMetadata() error = nil, want forced outbox failure")
+	}
+
+	var messageCount int64
+	if err := db.Model(&store.Message{}).Count(&messageCount).Error; err != nil {
+		t.Fatalf("count messages: %v", err)
+	}
+	if messageCount != 0 {
+		t.Fatalf("message count = %d, want 0", messageCount)
+	}
+	var outboxCount int64
+	if err := db.Model(&store.AppEventOutbox{}).Count(&outboxCount).Error; err != nil {
+		t.Fatalf("count app event outbox: %v", err)
+	}
+	if outboxCount != 0 {
+		t.Fatalf("app event outbox count = %d, want 0", outboxCount)
+	}
+}
+
+func TestConcurrentAppMessagesPersistOutboxInSequenceOrder(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	now := time.Date(2026, 7, 10, 9, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	app := insertTestApp(t, db, store.App{
+		Name:      "Echo App",
+		Enabled:   true,
+		CreatedAt: now,
+		UpdatedAt: now,
+	})
+	conversation := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindApp,
+		memberIDs:       []string{alice.ID},
+		name:            app.Name,
+		now:             now,
+	})
+	insertTestAppConversationLink(t, db, app.ID, alice.ID, conversation.ID, now)
+
+	firstCommitted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	secondReachedEventLock := make(chan struct{})
+	defer func() {
+		select {
+		case <-releaseFirst:
+		default:
+			close(releaseFirst)
+		}
+	}()
+
+	subject := &Server{db: db}
+	subject.afterUserMessageCommit = func(message store.Message) {
+		if message.Seq == 1 {
+			close(firstCommitted)
+			<-releaseFirst
+		}
+	}
+	subject.beforeAppEventLock = func(message store.Message) {
+		if message.Seq == 2 {
+			close(secondReachedEventLock)
+		}
+	}
+
+	createMessage := func(clientMessageID string) error {
+		_, _, _, _, err := subject.createUserMessageWithMetadata(
+			context.Background(),
+			alice.ID,
+			conversation.ID,
+			clientMessageID,
+			json.RawMessage(`{"type":"text","content":"hello"}`),
+			staticMessageBodyFinalizer("hello"),
+			createMessageMetadata{EmitAppEvent: true},
+		)
+		return err
+	}
+
+	errs := make(chan error, 2)
+	go func() { errs <- createMessage("message-1") }()
+	select {
+	case <-firstCommitted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for first message commit")
+	}
+
+	go func() { errs <- createMessage("message-2") }()
+	select {
+	case <-secondReachedEventLock:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for second message to reach app event lock")
+	}
+	close(releaseFirst)
+
+	for i := 0; i < 2; i++ {
+		select {
+		case err := <-errs:
+			if err != nil {
+				t.Fatalf("create message error = %v", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for message creation")
+		}
+	}
+
+	var events []store.AppEventOutbox
+	if err := db.Order("id ASC").Find(&events).Error; err != nil {
+		t.Fatalf("load app event outbox: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("app event outbox count = %d, want 2", len(events))
+	}
+	seqs := make([]int64, 0, len(events))
+	for _, event := range events {
+		var payload appMessageCreatedPayload
+		if err := json.Unmarshal(event.Payload, &payload); err != nil {
+			t.Fatalf("unmarshal app event payload: %v", err)
+		}
+		seqs = append(seqs, payload.Message.Seq)
+	}
+	if !slices.Equal(seqs, []int64{1, 2}) {
+		t.Fatalf("app event message seqs = %v, want [1 2]", seqs)
+	}
+}
+
 func TestAppWebSocketReceivesTextMessageEvents(t *testing.T) {
 	server, db := newTestRouter(t)
 	defer server.Close()
@@ -1115,6 +1312,23 @@ func TestAppWebSocketReceivesTextMessageEvents(t *testing.T) {
 	}
 	if event.Cursor <= 0 {
 		t.Fatalf("app event cursor = %d, want positive cursor", event.Cursor)
+	}
+	duplicateResp, duplicateBody := postJSON(t, server, "/api/client/conversations/"+conversationID+"/messages", map[string]any{
+		"client_message_id": "client-message-1",
+		"body": map[string]any{
+			"type":    "text",
+			"content": "  你好，应用  ",
+		},
+	}, userCookie)
+	if duplicateResp.StatusCode != http.StatusOK {
+		t.Fatalf("duplicate text status = %d, want 200, body = %#v", duplicateResp.StatusCode, duplicateBody)
+	}
+	var outboxCount int64
+	if err := db.Model(&store.AppEventOutbox{}).Where("app_id = ?", app.ID).Count(&outboxCount).Error; err != nil {
+		t.Fatalf("count app event outbox: %v", err)
+	}
+	if outboxCount != 1 {
+		t.Fatalf("app event outbox count = %d, want 1", outboxCount)
 	}
 	var payload map[string]any
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
