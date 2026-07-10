@@ -1,7 +1,9 @@
 package appconnection
 
 import (
+	"bytes"
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -123,12 +125,43 @@ func TestConnectionWritesEnvelopeAtExactOneMiBBoundary(t *testing.T) {
 	if err := client.WriteJSON(testAppRequest("exact-limit", "test.limit", nil)); err != nil {
 		t.Fatalf("write exact-limit request: %v", err)
 	}
+	_ = client.SetReadDeadline(time.Now().Add(time.Second))
 	messageType, encoded, err := client.ReadMessage()
 	if err != nil {
 		t.Fatalf("read exact-limit response: %v", err)
 	}
 	if messageType != websocket.TextMessage || len(encoded) != 1<<20 {
 		t.Fatalf("message type/bytes = %d/%d, want %d/%d", messageType, len(encoded), websocket.TextMessage, 1<<20)
+	}
+}
+
+func TestLogSkippedOutboundEnvelopeIncludesResponseIdentity(t *testing.T) {
+	var output bytes.Buffer
+	previousWriter := log.Writer()
+	log.SetOutput(&output)
+	t.Cleanup(func() { log.SetOutput(previousWriter) })
+
+	logSkippedOutboundEnvelope("app-1", realtime.NewResponse("request-1", nil))
+
+	for _, want := range []string{"app_id=app-1", "kind=response", "reply_to=request-1"} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("log output = %q, want %q", output.String(), want)
+		}
+	}
+}
+
+func TestLogSkippedOutboundEnvelopeIncludesEventIdentity(t *testing.T) {
+	var output bytes.Buffer
+	previousWriter := log.Writer()
+	log.SetOutput(&output)
+	t.Cleanup(func() { log.SetOutput(previousWriter) })
+
+	logSkippedOutboundEnvelope("app-1", realtime.NewEvent("large.event", nil))
+
+	for _, want := range []string{"app_id=app-1", "kind=event", "event=large.event"} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("log output = %q, want %q", output.String(), want)
+		}
 	}
 }
 

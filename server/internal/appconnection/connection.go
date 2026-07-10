@@ -89,7 +89,7 @@ func (c *Connection) writeLoop() {
 		case message := <-c.send:
 			encoded, ok := encodeOutboundEnvelope(message, c.manager.maxMessageBytes)
 			if !ok {
-				log.Printf("skip oversized app websocket event: app_id=%s event=%s", c.appID, message.Event)
+				logSkippedOutboundEnvelope(c.appID, message)
 				continue
 			}
 			if err := c.writeMessage(encoded); err != nil {
@@ -100,6 +100,17 @@ func (c *Connection) writeLoop() {
 				return
 			}
 		}
+	}
+}
+
+func logSkippedOutboundEnvelope(appID string, message realtime.Envelope) {
+	switch message.Kind {
+	case realtime.KindResponse:
+		log.Printf("skip app websocket outbound message: app_id=%s kind=%s reply_to=%s", appID, message.Kind, message.ReplyTo)
+	case realtime.KindEvent:
+		log.Printf("skip app websocket outbound message: app_id=%s kind=%s event=%s", appID, message.Kind, message.Event)
+	default:
+		log.Printf("skip app websocket outbound message: app_id=%s kind=%s", appID, message.Kind)
 	}
 }
 
