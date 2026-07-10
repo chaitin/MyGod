@@ -26,6 +26,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	gormlogger "gorm.io/gorm/logger"
 )
 
@@ -1181,6 +1182,69 @@ func TestAppWebSocketReceivesTextMessageEvents(t *testing.T) {
 	}
 	if message["created_at"] == "" {
 		t.Fatalf("message.created_at = %#v, want non-empty", message["created_at"])
+	}
+}
+
+func TestAppWebSocketReplaysOutboxInBoundedPages(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	now := time.Date(2026, 7, 10, 6, 0, 0, 0, time.UTC)
+	app := insertTestApp(t, db, store.App{
+		Name:             "Echo App",
+		Enabled:          true,
+		Visibility:       store.AppVisibilityPublic,
+		ConnectionSecret: "echo-app-secret",
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	})
+	events := make([]store.AppEventOutbox, 205)
+	for i := range events {
+		events[i] = store.AppEventOutbox{
+			AppID:     app.ID,
+			Event:     realtime.EventMessageCreated,
+			Payload:   json.RawMessage(`{"message":"queued"}`),
+			CreatedAt: now.Add(time.Duration(i) * time.Second),
+		}
+	}
+	if err := db.Create(&events).Error; err != nil {
+		t.Fatalf("create app events: %v", err)
+	}
+
+	const callbackName = "test:capture_app_event_outbox_query_limits"
+	queryLimits := make(chan int, 8)
+	if err := db.Callback().Query().Before("gorm:query").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement.Table != "app_event_outbox" {
+			return
+		}
+		limit := -1
+		if limitClause, ok := tx.Statement.Clauses["LIMIT"].Expression.(clause.Limit); ok && limitClause.Limit != nil {
+			limit = *limitClause.Limit
+		}
+		queryLimits <- limit
+	}); err != nil {
+		t.Fatalf("register query callback: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Callback().Query().Remove(callbackName); err != nil {
+			t.Errorf("remove query callback: %v", err)
+		}
+	})
+
+	conn := dialAppWebSocket(t, server, app.ID, app.ConnectionSecret)
+	for i := range events {
+		replayed := readRealtimeEvent(t, conn)
+		if replayed.Cursor != events[i].ID {
+			t.Fatalf("replayed cursor %d = %d, want %d", i, replayed.Cursor, events[i].ID)
+		}
+	}
+
+	limits := make([]int, 0, len(queryLimits))
+	for len(queryLimits) > 0 {
+		limits = append(limits, <-queryLimits)
+	}
+	if want := []int{100, 100, 100}; !slices.Equal(limits, want) {
+		t.Fatalf("app event outbox query limits = %v, want %v", limits, want)
 	}
 }
 

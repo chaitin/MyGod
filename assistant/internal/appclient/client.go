@@ -29,6 +29,7 @@ const (
 	writeWait           = 10 * time.Second
 	maxMessageBytes     = 1 << 20
 	maxReconnectBackoff = 30 * time.Second
+	maxQueuedAppEvents  = 256
 )
 
 const (
@@ -48,6 +49,7 @@ const (
 )
 
 var appMentionTokenPattern = regexp.MustCompile(`\{\(@app/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\)\}`)
+var errAppEventQueueFull = errors.New("app event queue full")
 
 type Client struct {
 	cfg            config.Config
@@ -231,8 +233,8 @@ func (c *Client) Run(ctx context.Context) error {
 		if c.requester == nil {
 			c.requester = newReliableRequester(c.transport, reliableRequesterOptions{})
 		}
-		err := c.transport.Run(ctx, func(message envelope) {
-			c.handleTransportMessage(ctx, message)
+		err := c.transport.Run(ctx, func(message envelope) bool {
+			return c.handleTransportMessage(ctx, message)
 		})
 		if ctx.Err() != nil {
 			return nil
@@ -249,23 +251,20 @@ func (c *Client) Run(ctx context.Context) error {
 	}
 }
 
-func (c *Client) handleTransportMessage(ctx context.Context, message envelope) {
+func (c *Client) handleTransportMessage(ctx context.Context, message envelope) bool {
 	if message.Kind == kindResponse {
 		c.requester.HandleResponse(message)
-		return
+		return true
 	}
-	c.enqueueAppEvent(ctx, message)
+	return c.enqueueAppEvent(ctx, message)
 }
 
-func (c *Client) enqueueAppEvent(ctx context.Context, message envelope) {
+func (c *Client) enqueueAppEvent(ctx context.Context, message envelope) bool {
 	c.eventMu.Lock()
 	if message.Cursor > 0 {
 		if message.Cursor <= c.lastAckedCursor {
 			c.eventMu.Unlock()
-			return
-		}
-		if c.eventCursors == nil {
-			c.eventCursors = make(map[int64]struct{})
+			return true
 		}
 		if _, exists := c.eventCursors[message.Cursor]; exists {
 			c.eventVersion++
@@ -273,10 +272,19 @@ func (c *Client) enqueueAppEvent(ctx context.Context, message envelope) {
 				c.eventRunning = true
 				c.eventMu.Unlock()
 				go c.drainAppEvents()
-				return
+				return true
 			}
 			c.eventMu.Unlock()
-			return
+			return true
+		}
+	}
+	if len(c.eventQueue) >= maxQueuedAppEvents {
+		c.eventMu.Unlock()
+		return false
+	}
+	if message.Cursor > 0 {
+		if c.eventCursors == nil {
+			c.eventCursors = make(map[int64]struct{})
 		}
 		c.eventCursors[message.Cursor] = struct{}{}
 	}
@@ -284,11 +292,12 @@ func (c *Client) enqueueAppEvent(ctx context.Context, message envelope) {
 	c.eventVersion++
 	if c.eventRunning {
 		c.eventMu.Unlock()
-		return
+		return true
 	}
 	c.eventRunning = true
 	c.eventMu.Unlock()
 	go c.drainAppEvents()
+	return true
 }
 
 func (c *Client) drainAppEvents() {

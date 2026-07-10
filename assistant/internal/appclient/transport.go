@@ -71,7 +71,7 @@ func newWebSocketManager(cfg config.Config, options webSocketManagerOptions) *we
 	}
 }
 
-func (m *webSocketManager) Run(ctx context.Context, handle func(envelope)) error {
+func (m *webSocketManager) Run(ctx context.Context, handle func(envelope) bool) error {
 	for attempt := 0; attempt <= m.maxRetries; attempt++ {
 		conn, resp, err := m.dial(ctx, m.cfg.WebSocketURL, m.headers())
 		if err != nil {
@@ -194,7 +194,7 @@ func (m *webSocketManager) notifyStateChangeLocked() {
 	m.stateChange = make(chan struct{})
 }
 
-func (m *webSocketManager) serveGeneration(ctx context.Context, generation *connectionGeneration, handle func(envelope)) error {
+func (m *webSocketManager) serveGeneration(ctx context.Context, generation *connectionGeneration, handle func(envelope) bool) error {
 	conn := generation.conn
 	conn.SetReadLimit(maxMessageBytes)
 	_ = conn.SetReadDeadline(time.Now().Add(pongWait))
@@ -216,8 +216,9 @@ func (m *webSocketManager) serveGeneration(ctx context.Context, generation *conn
 				return
 			}
 			message, ok := decodeServerMessage(messageType, data)
-			if ok && handle != nil {
-				handle(message)
+			if ok && handle != nil && !handle(message) {
+				readErr <- errAppEventQueueFull
+				return
 			}
 		}
 	}()

@@ -32,7 +32,7 @@ func TestWebSocketManagerStopsAfterTenRetries(t *testing.T) {
 		},
 	})
 
-	err := manager.Run(context.Background(), func(envelope) {})
+	err := manager.Run(context.Background(), func(envelope) bool { return true })
 	if err == nil || !errors.Is(err, errWebSocketUnavailable) {
 		t.Fatalf("Run() error = %v, want websocket unavailable", err)
 	}
@@ -63,7 +63,7 @@ func TestWebSocketManagerReturnsPermanentAuthenticationError(t *testing.T) {
 		Sleep: func(context.Context, time.Duration) error { return nil },
 	})
 
-	err := manager.Run(context.Background(), func(envelope) {})
+	err := manager.Run(context.Background(), func(envelope) bool { return true })
 	if !errors.Is(err, errWebSocketAuthentication) {
 		t.Fatalf("Run() error = %v, want authentication error", err)
 	}
@@ -85,6 +85,138 @@ func TestClientRunReturnsPermanentAuthenticationError(t *testing.T) {
 	err := client.Run(ctx)
 	if !errors.Is(err, errWebSocketAuthentication) {
 		t.Fatalf("Client.Run() error = %v, want authentication error", err)
+	}
+}
+
+func TestClientRejectsNewCursorWhenEventQueueIsFull(t *testing.T) {
+	client := &Client{
+		eventCursors: make(map[int64]struct{}),
+		eventRunning: true,
+	}
+	ctx := context.Background()
+	for cursor := int64(1); cursor <= maxQueuedAppEvents; cursor++ {
+		if !client.enqueueAppEvent(ctx, envelope{Kind: kindEvent, Cursor: cursor}) {
+			t.Fatalf("enqueueAppEvent() cursor %d = false, want true", cursor)
+		}
+	}
+	if client.enqueueAppEvent(ctx, envelope{Kind: kindEvent, Cursor: maxQueuedAppEvents + 1}) {
+		t.Fatal("enqueueAppEvent() accepted a new cursor when the event queue was full")
+	}
+	if !client.enqueueAppEvent(ctx, envelope{Kind: kindEvent, Cursor: 1}) {
+		t.Fatal("enqueueAppEvent() duplicate cursor = false, want true")
+	}
+}
+
+func TestClientRoutesResponseWhenEventQueueIsFull(t *testing.T) {
+	responseC := make(chan envelope, 1)
+	requester := &reliableRequester{
+		pending: map[string]chan envelope{"request-1": responseC},
+	}
+	client := &Client{
+		requester:    requester,
+		eventCursors: make(map[int64]struct{}),
+		eventRunning: true,
+	}
+	ctx := context.Background()
+	for cursor := int64(1); cursor <= maxQueuedAppEvents; cursor++ {
+		if !client.enqueueAppEvent(ctx, envelope{Kind: kindEvent, Cursor: cursor}) {
+			t.Fatalf("enqueueAppEvent() cursor %d = false, want true", cursor)
+		}
+	}
+
+	ok := true
+	if !client.handleTransportMessage(ctx, envelope{Kind: kindResponse, ReplyTo: "request-1", OK: &ok}) {
+		t.Fatal("handleTransportMessage() response = false, want true")
+	}
+	select {
+	case response := <-responseC:
+		if response.ReplyTo != "request-1" {
+			t.Fatalf("routed response.ReplyTo = %q, want request-1", response.ReplyTo)
+		}
+	default:
+		t.Fatal("response was not routed immediately while the event queue was full")
+	}
+}
+
+func TestClientAcceptsReplayedCursorAfterQueueCapacityReturns(t *testing.T) {
+	client := &Client{
+		eventCursors: make(map[int64]struct{}),
+		eventRunning: true,
+	}
+	ctx := context.Background()
+	for cursor := int64(1); cursor <= maxQueuedAppEvents; cursor++ {
+		if !client.enqueueAppEvent(ctx, envelope{Kind: kindEvent, Cursor: cursor}) {
+			t.Fatalf("enqueueAppEvent() cursor %d = false, want true", cursor)
+		}
+	}
+	replayedCursor := int64(maxQueuedAppEvents + 1)
+	if client.enqueueAppEvent(ctx, envelope{Kind: kindEvent, Cursor: replayedCursor}) {
+		t.Fatal("enqueueAppEvent() accepted a new cursor before queue capacity returned")
+	}
+
+	client.eventMu.Lock()
+	delete(client.eventCursors, 1)
+	client.eventQueue = client.eventQueue[1:]
+	client.lastAckedCursor = 1
+	client.eventMu.Unlock()
+
+	if !client.enqueueAppEvent(ctx, envelope{Kind: kindEvent, Cursor: replayedCursor}) {
+		t.Fatal("enqueueAppEvent() replayed cursor = false after queue capacity returned")
+	}
+	queueLength := len(client.eventQueue)
+	if !client.enqueueAppEvent(ctx, envelope{Kind: kindEvent, Cursor: replayedCursor}) {
+		t.Fatal("enqueueAppEvent() duplicate replayed cursor = false, want true")
+	}
+	if len(client.eventQueue) != queueLength {
+		t.Fatalf("event queue length after duplicate replay = %d, want %d", len(client.eventQueue), queueLength)
+	}
+}
+
+func TestWebSocketManagerInvalidatesGenerationWhenHandlerRejectsEvent(t *testing.T) {
+	event := testMessageCreatedEnvelope(t, "user-1", "message-1", 1, "first")
+	event.Cursor = maxQueuedAppEvents + 1
+
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	clientClosed := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		if err := conn.WriteJSON(event); err != nil {
+			return
+		}
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				close(clientClosed)
+				return
+			}
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil {
+		t.Fatalf("dial websocket: %v", err)
+	}
+	generation := &connectionGeneration{id: 1, conn: conn, done: make(chan struct{})}
+	t.Cleanup(generation.close)
+	manager := newWebSocketManager(config.Config{}, webSocketManagerOptions{})
+	ctx := context.Background()
+	err = manager.serveGeneration(ctx, generation, func(envelope) bool { return false })
+	if !errors.Is(err, errAppEventQueueFull) {
+		t.Fatalf("serveGeneration() error = %v, want app event queue full", err)
+	}
+	if ctx.Err() != nil {
+		t.Fatalf("serveGeneration() canceled process context: %v", ctx.Err())
+	}
+
+	generation.close()
+	select {
+	case <-clientClosed:
+	case <-time.After(time.Second):
+		t.Fatal("server did not observe rejected generation closing")
 	}
 }
 
@@ -111,7 +243,7 @@ func TestWebSocketManagerBacksOffAfterConnectedGenerationDrops(t *testing.T) {
 	})
 	done := make(chan error, 1)
 	go func() {
-		done <- manager.Run(ctx, func(envelope) {})
+		done <- manager.Run(ctx, func(envelope) bool { return true })
 	}()
 
 	select {
@@ -481,7 +613,10 @@ func TestWebSocketManagerSendsAndRoutesEnvelope(t *testing.T) {
 	}, webSocketManagerOptions{})
 	runDone := make(chan error, 1)
 	go func() {
-		runDone <- manager.Run(ctx, func(message envelope) { received <- message })
+		runDone <- manager.Run(ctx, func(message envelope) bool {
+			received <- message
+			return true
+		})
 	}()
 
 	sendCtx, cancelSend := context.WithTimeout(context.Background(), time.Second)

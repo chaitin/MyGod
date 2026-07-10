@@ -12,6 +12,8 @@ import (
 	"gorm.io/gorm"
 )
 
+const appEventReplayPageSize = 100
+
 type appMessageCreatedPayload struct {
 	Conversation appMessageConversationPayload `json:"conversation"`
 	Message      appMessagePayload             `json:"message"`
@@ -129,19 +131,26 @@ func (s *Server) replayAppEvents(appID string, conn *appconnection.Connection) e
 		return err
 	}
 
-	var events []store.AppEventOutbox
-	if err := s.db.
-		Where("app_id = ? AND id > ?", appID, lastAckedCursor).
-		Order("id ASC").
-		Find(&events).Error; err != nil {
-		return err
-	}
-	for _, event := range events {
-		if !conn.EnqueueReliable(realtime.NewCursorEvent(event.ID, event.Event, event.Payload)) {
-			return errors.New("app connection closed during event replay")
+	nextCursor := lastAckedCursor
+	for {
+		var events []store.AppEventOutbox
+		if err := s.db.
+			Where("app_id = ? AND id > ?", appID, nextCursor).
+			Order("id ASC").
+			Limit(appEventReplayPageSize).
+			Find(&events).Error; err != nil {
+			return err
 		}
+		for _, event := range events {
+			if !conn.EnqueueReliable(realtime.NewCursorEvent(event.ID, event.Event, event.Payload)) {
+				return errors.New("app connection closed during event replay")
+			}
+		}
+		if len(events) < appEventReplayPageSize {
+			return nil
+		}
+		nextCursor = events[len(events)-1].ID
 	}
-	return nil
 }
 
 func (s *Server) findMessageConversation(conversationID string) (store.Conversation, error) {
