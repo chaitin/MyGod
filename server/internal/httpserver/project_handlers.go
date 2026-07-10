@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -26,7 +27,12 @@ const (
 	maxProjectPageLimit     = 100
 )
 
-var errInvalidProjectGroup = errors.New("invalid project group")
+var (
+	errInvalidProjectGroup   = errors.New("invalid project group")
+	errProjectOwnerRequired  = errors.New("project owner required")
+	errPersonalProjectDelete = errors.New("personal project cannot be deleted")
+	errPersonalProjectGroup  = errors.New("personal project cannot link groups")
+)
 
 type projectUserSummary struct {
 	ID       string `json:"id"`
@@ -118,30 +124,42 @@ type projectMemberListCursor struct {
 }
 
 type projectMemberSourceRow struct {
-	ID            string `gorm:"column:id"`
-	Name          string `gorm:"column:name"`
-	Nickname      string `gorm:"column:nickname"`
-	Avatar        string `gorm:"column:avatar"`
-	Status        string `gorm:"column:status"`
+	MemberID      string `gorm:"column:member_id"`
 	SourceGroupID string `gorm:"column:source_group_id"`
 }
 
+type projectCountRow struct {
+	ProjectID string `gorm:"column:project_id"`
+	Count     int64  `gorm:"column:count"`
+}
+
+type conversationCountRow struct {
+	ConversationID string `gorm:"column:conversation_id"`
+	Count          int64  `gorm:"column:count"`
+}
+
 type createProjectRequest struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Avatar      string   `json:"avatar"`
-	GroupIDs    []string `json:"group_ids"`
+	Name        projectOptionalString `json:"name"`
+	Description projectOptionalString `json:"description"`
+	Avatar      projectOptionalString `json:"avatar"`
+	GroupIDs    []string              `json:"group_ids"`
 }
 
 type updateProjectRequest struct {
-	Name        *string `json:"name"`
-	Description *string `json:"description"`
-	Avatar      *string `json:"avatar"`
+	Name        projectOptionalString `json:"name"`
+	Description projectOptionalString `json:"description"`
+	Avatar      projectOptionalString `json:"avatar"`
+}
+
+type projectOptionalString struct {
+	Present bool
+	Value   string
 }
 
 type projectTaskStatusCount struct {
-	Status string
-	Count  int64
+	ProjectID string `gorm:"column:project_id"`
+	Status    string `gorm:"column:status"`
+	Count     int64  `gorm:"column:count"`
 }
 
 func createPersonalProject(db *gorm.DB, user store.User, now time.Time) error {
@@ -200,33 +218,35 @@ func (s *Server) listProjects(c echo.Context) error {
 		}
 		nextCursor = &encoded
 	}
-	responses := make([]projectResponse, 0, len(projects))
+	roles := make(map[string]string, len(projects)+1)
 	for _, project := range projects {
 		role := store.ProjectRoleMember
 		if project.OwnerUserID == user.ID {
 			role = store.ProjectRoleOwner
 		}
-		response, err := s.newProjectResponse(c.Request().Context(), project, role)
-		if err != nil {
-			return projectInternalError(c)
-		}
-		responses = append(responses, response)
+		roles[project.ID] = role
 	}
 
-	var personalResponse *projectResponse
+	allProjects := append([]store.Project(nil), projects...)
 	var personal store.Project
 	err = s.db.WithContext(c.Request().Context()).
 		Preload("OwnerUser").
 		Where("owner_user_id = ? AND is_personal = ?", user.ID, true).
 		First(&personal).Error
 	if err == nil {
-		response, responseErr := s.newProjectResponse(c.Request().Context(), personal, store.ProjectRoleOwner)
-		if responseErr != nil {
-			return projectInternalError(c)
-		}
-		personalResponse = &response
+		roles[personal.ID] = store.ProjectRoleOwner
+		allProjects = append(allProjects, personal)
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return projectInternalError(c)
+	}
+	allResponses, err := s.newProjectResponses(c.Request().Context(), allProjects, roles)
+	if err != nil {
+		return projectInternalError(c)
+	}
+	responses := allResponses[:len(projects)]
+	var personalResponse *projectResponse
+	if len(allResponses) > len(projects) {
+		personalResponse = &allResponses[len(projects)]
 	}
 
 	return success(c, http.StatusOK, projectListResponse{
@@ -245,7 +265,7 @@ func (s *Server) createProject(c echo.Context) error {
 	if err := decodeProjectRequest(c, &req); err != nil {
 		return projectInvalidRequest(c, "请求格式错误")
 	}
-	name, err := normalizeProjectName(req.Name)
+	name, err := normalizeProjectName(req.Name.Value)
 	if err != nil {
 		return projectInvalidRequest(c, err.Error())
 	}
@@ -258,8 +278,8 @@ func (s *Server) createProject(c echo.Context) error {
 	project := store.Project{
 		ID:              uuid.NewString(),
 		Name:            name,
-		Description:     req.Description,
-		Avatar:          req.Avatar,
+		Description:     req.Description.Value,
+		Avatar:          req.Avatar.Value,
 		OwnerUserID:     user.ID,
 		CreatedByUserID: user.ID,
 		IsPersonal:      false,
@@ -271,7 +291,7 @@ func (s *Server) createProject(c echo.Context) error {
 			return err
 		}
 		for _, groupID := range groupIDs {
-			if err := requireActiveGroupConversation(tx, groupID); err != nil {
+			if err := requireActiveGroupConversationForUpdate(tx, groupID); err != nil {
 				return err
 			}
 			link := store.ProjectGroup{
@@ -337,38 +357,59 @@ func (s *Server) updateProject(c echo.Context) error {
 		return projectInvalidRequest(c, "请求格式错误")
 	}
 	updates := make(map[string]any, 3)
-	if req.Name != nil {
-		name, err := normalizeProjectName(*req.Name)
+	if req.Name.Present {
+		name, err := normalizeProjectName(req.Name.Value)
 		if err != nil {
 			return projectInvalidRequest(c, err.Error())
 		}
 		updates["name"] = name
 	}
-	if req.Description != nil {
-		updates["description"] = *req.Description
+	if req.Description.Present {
+		updates["description"] = req.Description.Value
 	}
-	if req.Avatar != nil {
-		updates["avatar"] = *req.Avatar
+	if req.Avatar.Present {
+		updates["avatar"] = req.Avatar.Value
 	}
 
-	project, role, err := s.findAccessibleProject(c.Request().Context(), projectID, user.ID)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return projectNotFound(c)
-	}
-	if err != nil {
-		return projectInternalError(c)
-	}
-	if role != store.ProjectRoleOwner {
-		return projectForbidden(c)
-	}
-	if len(updates) > 0 {
-		if err := s.db.WithContext(c.Request().Context()).Model(&project).Updates(updates).Error; err != nil {
-			return projectInternalError(c)
-		}
-		project, _, err = s.findAccessibleProject(c.Request().Context(), projectID, user.ID)
+	var project store.Project
+	err = s.db.WithContext(c.Request().Context()).Transaction(func(tx *gorm.DB) error {
+		var role string
+		var err error
+		project, role, err = findAccessibleProjectForUpdate(tx, projectID, user.ID)
 		if err != nil {
-			return projectInternalError(c)
+			return err
 		}
+		if role != store.ProjectRoleOwner {
+			return errProjectOwnerRequired
+		}
+		if len(updates) == 0 {
+			return nil
+		}
+		now := time.Now().UTC()
+		updates["updated_at"] = now
+		result := tx.Model(&store.Project{}).
+			Where("id = ? AND deleted_at IS NULL", project.ID).
+			Updates(updates)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		if name, exists := updates["name"].(string); exists {
+			project.Name = name
+		}
+		if description, exists := updates["description"].(string); exists {
+			project.Description = description
+		}
+		if avatar, exists := updates["avatar"].(string); exists {
+			project.Avatar = avatar
+		}
+		project.UpdatedAt = now
+		return nil
+	})
+	if err != nil {
+		return projectMutationFailure(c, err)
 	}
 	response, err := s.newProjectResponse(c.Request().Context(), project, store.ProjectRoleOwner)
 	if err != nil {
@@ -386,24 +427,37 @@ func (s *Server) deleteProject(c echo.Context) error {
 	if err != nil {
 		return projectInvalidRequest(c, err.Error())
 	}
-	project, role, err := s.findAccessibleProject(c.Request().Context(), projectID, user.ID)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return projectNotFound(c)
-	}
+	var project store.Project
+	err = s.db.WithContext(c.Request().Context()).Transaction(func(tx *gorm.DB) error {
+		var role string
+		var err error
+		project, role, err = findAccessibleProjectForUpdate(tx, projectID, user.ID)
+		if err != nil {
+			return err
+		}
+		if role != store.ProjectRoleOwner {
+			return errProjectOwnerRequired
+		}
+		if project.IsPersonal {
+			return errPersonalProjectDelete
+		}
+		result := tx.Where("id = ?", project.ID).Delete(&store.Project{})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return nil
+	})
 	if err != nil {
-		return projectInternalError(c)
-	}
-	if role != store.ProjectRoleOwner {
-		return projectForbidden(c)
-	}
-	if project.IsPersonal {
-		return projectInvalidRequest(c, "个人项目不能删除")
+		if errors.Is(err, errPersonalProjectDelete) {
+			return projectInvalidRequest(c, "个人项目不能删除")
+		}
+		return projectMutationFailure(c, err)
 	}
 	response, err := s.newProjectResponse(c.Request().Context(), project, store.ProjectRoleOwner)
 	if err != nil {
-		return projectInternalError(c)
-	}
-	if err := s.db.WithContext(c.Request().Context()).Delete(&project).Error; err != nil {
 		return projectInternalError(c)
 	}
 	return success(c, http.StatusOK, response)
@@ -470,18 +524,22 @@ func (s *Server) listProjectGroups(c echo.Context) error {
 		}
 		nextCursor = &encoded
 	}
+	groupIDs := make([]string, 0, len(rows))
+	for _, row := range rows {
+		groupIDs = append(groupIDs, row.ConversationID)
+	}
+	memberCounts, err := s.activeConversationMemberCounts(c.Request().Context(), groupIDs)
+	if err != nil {
+		return projectInternalError(c)
+	}
 	groups := make([]projectGroupResponse, 0, len(rows))
 	for _, row := range rows {
-		memberCount, err := s.activeConversationMemberCount(c.Request().Context(), row.ConversationID)
-		if err != nil {
-			return projectInternalError(c)
-		}
 		groups = append(groups, projectGroupResponse{
 			ID:          row.ConversationID,
 			Name:        row.Name,
 			Avatar:      row.Avatar,
 			Status:      row.Status,
-			MemberCount: memberCount,
+			MemberCount: memberCounts[row.ConversationID],
 			CreatedAt:   row.CreatedAt,
 		})
 	}
@@ -501,22 +559,18 @@ func (s *Server) bindProjectGroup(c echo.Context) error {
 	if err != nil {
 		return projectInvalidRequest(c, err.Error())
 	}
-	project, role, err := s.findAccessibleProject(c.Request().Context(), projectID, user.ID)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return projectNotFound(c)
-	}
-	if err != nil {
-		return projectInternalError(c)
-	}
-	if role != store.ProjectRoleOwner {
-		return projectForbidden(c)
-	}
-	if project.IsPersonal {
-		return projectInvalidRequest(c, "个人项目不能关联群聊")
-	}
-
 	err = s.db.WithContext(c.Request().Context()).Transaction(func(tx *gorm.DB) error {
-		if err := requireActiveGroupConversation(tx, groupID); err != nil {
+		project, role, err := findAccessibleProjectForUpdate(tx, projectID, user.ID)
+		if err != nil {
+			return err
+		}
+		if role != store.ProjectRoleOwner {
+			return errProjectOwnerRequired
+		}
+		if project.IsPersonal {
+			return errPersonalProjectGroup
+		}
+		if err := requireActiveGroupConversationForUpdate(tx, groupID); err != nil {
 			return err
 		}
 		now := time.Now().UTC()
@@ -533,15 +587,25 @@ func (s *Server) bindProjectGroup(c echo.Context) error {
 		if result.RowsAffected == 0 {
 			return nil
 		}
-		return tx.Model(&store.Project{}).
+		updateResult := tx.Model(&store.Project{}).
 			Where("id = ?", project.ID).
-			Update("updated_at", now).Error
+			Update("updated_at", now)
+		if updateResult.Error != nil {
+			return updateResult.Error
+		}
+		if updateResult.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return nil
 	})
 	if errors.Is(err, errInvalidProjectGroup) {
 		return projectInvalidRequest(c, "群聊不存在或不可用")
 	}
+	if errors.Is(err, errPersonalProjectGroup) {
+		return projectInvalidRequest(c, "个人项目不能关联群聊")
+	}
 	if err != nil {
-		return projectInternalError(c)
+		return projectMutationFailure(c, err)
 	}
 	return success(c, http.StatusOK, map[string]any{})
 }
@@ -559,21 +623,17 @@ func (s *Server) unbindProjectGroup(c echo.Context) error {
 	if err != nil {
 		return projectInvalidRequest(c, err.Error())
 	}
-	project, role, err := s.findAccessibleProject(c.Request().Context(), projectID, user.ID)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return projectNotFound(c)
-	}
-	if err != nil {
-		return projectInternalError(c)
-	}
-	if role != store.ProjectRoleOwner {
-		return projectForbidden(c)
-	}
-	if project.IsPersonal {
-		return projectInvalidRequest(c, "个人项目不能关联群聊")
-	}
-
 	err = s.db.WithContext(c.Request().Context()).Transaction(func(tx *gorm.DB) error {
+		project, role, err := findAccessibleProjectForUpdate(tx, projectID, user.ID)
+		if err != nil {
+			return err
+		}
+		if role != store.ProjectRoleOwner {
+			return errProjectOwnerRequired
+		}
+		if project.IsPersonal {
+			return errPersonalProjectGroup
+		}
 		result := tx.Where(
 			"project_id = ? AND conversation_id = ?",
 			project.ID,
@@ -585,12 +645,22 @@ func (s *Server) unbindProjectGroup(c echo.Context) error {
 		if result.RowsAffected == 0 {
 			return nil
 		}
-		return tx.Model(&store.Project{}).
+		updateResult := tx.Model(&store.Project{}).
 			Where("id = ?", project.ID).
-			Update("updated_at", time.Now().UTC()).Error
+			Update("updated_at", time.Now().UTC())
+		if updateResult.Error != nil {
+			return updateResult.Error
+		}
+		if updateResult.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return nil
 	})
+	if errors.Is(err, errPersonalProjectGroup) {
+		return projectInvalidRequest(c, "个人项目不能关联群聊")
+	}
 	if err != nil {
-		return projectInternalError(c)
+		return projectMutationFailure(c, err)
 	}
 	return success(c, http.StatusOK, map[string]any{})
 }
@@ -620,17 +690,9 @@ func (s *Server) listProjectMembers(c echo.Context) error {
 		return projectInternalError(c)
 	}
 
-	members, err := s.loadProjectMembers(c.Request().Context(), project)
+	members, err := s.loadProjectMemberPage(c.Request().Context(), project, cursor, limit+1)
 	if err != nil {
 		return projectInternalError(c)
-	}
-	if cursor != nil {
-		firstAfterCursor := sort.Search(len(members), func(index int) bool {
-			member := members[index]
-			return member.DisplayName > cursor.DisplayName ||
-				(member.DisplayName == cursor.DisplayName && member.ID > cursor.ID)
-		})
-		members = members[firstAfterCursor:]
 	}
 	var nextCursor *string
 	if len(members) > limit {
@@ -641,114 +703,171 @@ func (s *Server) listProjectMembers(c echo.Context) error {
 		}
 		nextCursor = &encoded
 	}
+	if err := s.loadProjectMemberSources(c.Request().Context(), project, members); err != nil {
+		return projectInternalError(c)
+	}
 	return success(c, http.StatusOK, projectMemberListResponse{Members: members, NextCursor: nextCursor})
 }
 
-func (s *Server) activeConversationMemberCount(ctx context.Context, conversationID string) (int64, error) {
-	var count int64
+func (s *Server) activeConversationMemberCounts(ctx context.Context, conversationIDs []string) (map[string]int64, error) {
+	counts := make(map[string]int64, len(conversationIDs))
+	if len(conversationIDs) == 0 {
+		return counts, nil
+	}
+	var rows []conversationCountRow
 	err := s.db.WithContext(ctx).
 		Model(&store.ConversationMember{}).
-		Where("conversation_id = ? AND left_at IS NULL", conversationID).
-		Count(&count).Error
-	return count, err
+		Select("conversation_id, COUNT(*) AS count").
+		Where("conversation_id IN ? AND left_at IS NULL", conversationIDs).
+		Group("conversation_id").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		counts[row.ConversationID] = row.Count
+	}
+	return counts, nil
 }
 
-func (s *Server) loadProjectMembers(ctx context.Context, project store.Project) ([]projectMemberResponse, error) {
+func (s *Server) loadProjectMemberPage(ctx context.Context, project store.Project, cursor *projectMemberListCursor, limit int) ([]projectMemberResponse, error) {
+	query := `
+		SELECT
+			member_page.id,
+			member_page.name,
+			member_page.nickname,
+			member_page.avatar,
+			member_page.status,
+			member_page.display_name
+		FROM (
+			SELECT
+				member_base.id,
+				member_base.name,
+				member_base.nickname,
+				member_base.avatar,
+				member_base.status,
+				CASE
+					WHEN TRIM(member_base.nickname) <> '' THEN member_base.nickname
+					ELSE member_base.name
+				END AS display_name
+			FROM (
+				SELECT u.id, u.name, u.nickname, u.avatar, u.status
+				FROM users u
+				WHERE u.id = ?
+				UNION
+				SELECT u.id, u.name, u.nickname, u.avatar, u.status
+				FROM users u
+				JOIN conversation_members cm ON cm.member_id = u.id
+				JOIN conversations c ON c.id = cm.conversation_id
+				JOIN project_groups pg ON pg.conversation_id = c.id
+				WHERE pg.project_id = ?
+					AND c.kind = ?
+					AND c.status = ?
+					AND cm.member_type = ?
+					AND cm.left_at IS NULL
+			) member_base
+		) member_page`
+	args := []any{
+		project.OwnerUserID,
+		project.ID,
+		store.ConversationKindGroup,
+		store.ConversationStatusActive,
+		store.ConversationMemberTypeUser,
+	}
+	if cursor != nil {
+		query += `
+			WHERE member_page.display_name > ?
+				OR (member_page.display_name = ? AND member_page.id > ?)`
+		args = append(args, cursor.DisplayName, cursor.DisplayName, cursor.ID)
+	}
+	query += `
+		ORDER BY member_page.display_name ASC, member_page.id ASC
+		LIMIT ?`
+	args = append(args, limit)
+
+	var rows []struct {
+		ID          string `gorm:"column:id"`
+		Name        string `gorm:"column:name"`
+		Nickname    string `gorm:"column:nickname"`
+		Avatar      string `gorm:"column:avatar"`
+		Status      string `gorm:"column:status"`
+		DisplayName string `gorm:"column:display_name"`
+	}
+	if err := s.db.WithContext(ctx).Raw(query, args...).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	members := make([]projectMemberResponse, 0, len(rows))
+	for _, row := range rows {
+		role := store.ProjectRoleMember
+		if row.ID == project.OwnerUserID {
+			role = store.ProjectRoleOwner
+		}
+		members = append(members, projectMemberResponse{
+			ID:             row.ID,
+			Name:           row.Name,
+			Nickname:       row.Nickname,
+			Avatar:         row.Avatar,
+			Status:         row.Status,
+			DisplayName:    row.DisplayName,
+			Role:           role,
+			SourceGroupIDs: []string{},
+		})
+	}
+	return members, nil
+}
+
+func (s *Server) loadProjectMemberSources(ctx context.Context, project store.Project, members []projectMemberResponse) error {
+	memberIDs := make([]string, 0, len(members))
+	byID := make(map[string]*projectMemberResponse, len(members))
+	for index := range members {
+		if members[index].ID == project.OwnerUserID {
+			continue
+		}
+		memberIDs = append(memberIDs, members[index].ID)
+		byID[members[index].ID] = &members[index]
+	}
+	if len(memberIDs) == 0 {
+		return nil
+	}
 	var rows []projectMemberSourceRow
 	err := s.db.WithContext(ctx).
 		Table("conversation_members cm").
-		Select(`
-			u.id,
-			u.name,
-			u.nickname,
-			u.avatar,
-			u.status,
-			cm.conversation_id AS source_group_id
-		`).
-		Joins("JOIN users u ON u.id = cm.member_id").
+		Select("cm.member_id, cm.conversation_id AS source_group_id").
 		Joins("JOIN conversations c ON c.id = cm.conversation_id").
 		Joins("JOIN project_groups pg ON pg.conversation_id = c.id").
 		Where("pg.project_id = ?", project.ID).
 		Where("c.kind = ? AND c.status = ?", store.ConversationKindGroup, store.ConversationStatusActive).
 		Where("cm.member_type = ? AND cm.left_at IS NULL", store.ConversationMemberTypeUser).
+		Where("cm.member_id IN ?", memberIDs).
 		Scan(&rows).Error
 	if err != nil {
-		return nil, err
+		return err
 	}
-
-	type memberAccumulator struct {
-		member  projectMemberResponse
-		sources map[string]struct{}
-	}
-	byID := make(map[string]*memberAccumulator, len(rows)+1)
-	byID[project.OwnerUserID] = &memberAccumulator{
-		member: projectMemberResponse{
-			ID:             project.OwnerUser.ID,
-			Name:           project.OwnerUser.Name,
-			Nickname:       project.OwnerUser.Nickname,
-			Avatar:         project.OwnerUser.Avatar,
-			Status:         project.OwnerUser.Status,
-			DisplayName:    projectMemberDisplayName(project.OwnerUser.Name, project.OwnerUser.Nickname),
-			Role:           store.ProjectRoleOwner,
-			SourceGroupIDs: []string{},
-		},
-		sources: map[string]struct{}{},
-	}
+	sourceSets := make(map[string]map[string]struct{}, len(memberIDs))
 	for _, row := range rows {
-		if row.ID == project.OwnerUserID {
-			continue
+		if sourceSets[row.MemberID] == nil {
+			sourceSets[row.MemberID] = make(map[string]struct{})
 		}
-		accumulator, exists := byID[row.ID]
-		if !exists {
-			accumulator = &memberAccumulator{
-				member: projectMemberResponse{
-					ID:          row.ID,
-					Name:        row.Name,
-					Nickname:    row.Nickname,
-					Avatar:      row.Avatar,
-					Status:      row.Status,
-					DisplayName: projectMemberDisplayName(row.Name, row.Nickname),
-					Role:        store.ProjectRoleMember,
-				},
-				sources: make(map[string]struct{}),
-			}
-			byID[row.ID] = accumulator
-		}
-		accumulator.sources[row.SourceGroupID] = struct{}{}
+		sourceSets[row.MemberID][row.SourceGroupID] = struct{}{}
 	}
-
-	members := make([]projectMemberResponse, 0, len(byID))
-	for _, accumulator := range byID {
-		if accumulator.member.Role != store.ProjectRoleOwner {
-			accumulator.member.SourceGroupIDs = make([]string, 0, len(accumulator.sources))
-			for groupID := range accumulator.sources {
-				accumulator.member.SourceGroupIDs = append(accumulator.member.SourceGroupIDs, groupID)
-			}
-			sort.Strings(accumulator.member.SourceGroupIDs)
+	for memberID, sources := range sourceSets {
+		member := byID[memberID]
+		for sourceGroupID := range sources {
+			member.SourceGroupIDs = append(member.SourceGroupIDs, sourceGroupID)
 		}
-		members = append(members, accumulator.member)
+		sort.Strings(member.SourceGroupIDs)
 	}
-	sort.Slice(members, func(i int, j int) bool {
-		if members[i].DisplayName == members[j].DisplayName {
-			return members[i].ID < members[j].ID
-		}
-		return members[i].DisplayName < members[j].DisplayName
-	})
-	return members, nil
-}
-
-func projectMemberDisplayName(name string, nickname string) string {
-	if strings.TrimSpace(nickname) != "" {
-		return nickname
-	}
-	return name
+	return nil
 }
 
 func decodeProjectRequest(c echo.Context, destination any) error {
 	decoder := json.NewDecoder(c.Request().Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(destination); err != nil {
+	var raw json.RawMessage
+	if err := decoder.Decode(&raw); err != nil {
 		return err
+	}
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return errors.New("请求不能为 null")
 	}
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		if err == nil {
@@ -756,7 +875,17 @@ func decodeProjectRequest(c echo.Context, destination any) error {
 		}
 		return err
 	}
-	return nil
+	strictDecoder := json.NewDecoder(bytes.NewReader(raw))
+	strictDecoder.DisallowUnknownFields()
+	return strictDecoder.Decode(destination)
+}
+
+func (value *projectOptionalString) UnmarshalJSON(raw []byte) error {
+	value.Present = true
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return errors.New("字符串字段不能为 null")
+	}
+	return json.Unmarshal(raw, &value.Value)
 }
 
 func (s *Server) findAccessibleProject(ctx context.Context, projectID string, userID string) (store.Project, string, error) {
@@ -767,6 +896,25 @@ func (s *Server) findAccessibleProject(ctx context.Context, projectID string, us
 		Where(projectAccessSQL(), projectAccessArgs(userID)...).
 		First(&project).Error
 	if err != nil {
+		return store.Project{}, "", err
+	}
+	role := store.ProjectRoleMember
+	if project.OwnerUserID == userID {
+		role = store.ProjectRoleOwner
+	}
+	return project, role, nil
+}
+
+func findAccessibleProjectForUpdate(tx *gorm.DB, projectID string, userID string) (store.Project, string, error) {
+	var project store.Project
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ?", projectID).
+		Where(projectAccessSQL(), projectAccessArgs(userID)...).
+		First(&project).Error
+	if err != nil {
+		return store.Project{}, "", err
+	}
+	if err := tx.First(&project.OwnerUser, "id = ?", project.OwnerUserID).Error; err != nil {
 		return store.Project{}, "", err
 	}
 	role := store.ProjectRoleMember
@@ -804,99 +952,132 @@ func projectAccessArgs(userID string) []any {
 }
 
 func (s *Server) newProjectResponse(ctx context.Context, project store.Project, role string) (projectResponse, error) {
-	groupCount, err := s.projectGroupCount(ctx, project.ID)
+	responses, err := s.newProjectResponses(ctx, []store.Project{project}, map[string]string{project.ID: role})
 	if err != nil {
 		return projectResponse{}, err
 	}
-	memberCount, err := s.projectMemberCount(ctx, project)
-	if err != nil {
-		return projectResponse{}, err
-	}
-	taskCounts, err := s.projectTaskCounts(ctx, project.ID)
-	if err != nil {
-		return projectResponse{}, err
-	}
-	avatar := project.Avatar
-	if project.IsPersonal {
-		avatar = project.OwnerUser.Avatar
-	}
-	return projectResponse{
-		ID:          project.ID,
-		Name:        project.Name,
-		Description: project.Description,
-		Avatar:      avatar,
-		IsPersonal:  project.IsPersonal,
-		Owner: projectUserSummary{
-			ID:       project.OwnerUser.ID,
-			Name:     project.OwnerUser.Name,
-			Nickname: project.OwnerUser.Nickname,
-			Avatar:   project.OwnerUser.Avatar,
-		},
-		CurrentUserRole: role,
-		GroupCount:      groupCount,
-		MemberCount:     memberCount,
-		TaskCounts:      taskCounts,
-		CreatedAt:       project.CreatedAt,
-		UpdatedAt:       project.UpdatedAt,
-	}, nil
+	return responses[0], nil
 }
 
-func (s *Server) projectGroupCount(ctx context.Context, projectID string) (int64, error) {
-	var count int64
+func (s *Server) newProjectResponses(ctx context.Context, projects []store.Project, roles map[string]string) ([]projectResponse, error) {
+	responses := make([]projectResponse, 0, len(projects))
+	if len(projects) == 0 {
+		return responses, nil
+	}
+	projectIDs := make([]string, 0, len(projects))
+	for _, project := range projects {
+		projectIDs = append(projectIDs, project.ID)
+	}
+	groupCounts, err := s.loadProjectGroupCounts(ctx, projectIDs)
+	if err != nil {
+		return nil, err
+	}
+	memberCounts, err := s.loadProjectMemberCounts(ctx, projectIDs)
+	if err != nil {
+		return nil, err
+	}
+	taskCounts, err := s.loadProjectTaskCounts(ctx, projectIDs)
+	if err != nil {
+		return nil, err
+	}
+	for _, project := range projects {
+		avatar := project.Avatar
+		if project.IsPersonal {
+			avatar = project.OwnerUser.Avatar
+		}
+		responses = append(responses, projectResponse{
+			ID:          project.ID,
+			Name:        project.Name,
+			Description: project.Description,
+			Avatar:      avatar,
+			IsPersonal:  project.IsPersonal,
+			Owner: projectUserSummary{
+				ID:       project.OwnerUser.ID,
+				Name:     project.OwnerUser.Name,
+				Nickname: project.OwnerUser.Nickname,
+				Avatar:   project.OwnerUser.Avatar,
+			},
+			CurrentUserRole: roles[project.ID],
+			GroupCount:      groupCounts[project.ID],
+			MemberCount:     memberCounts[project.ID] + 1,
+			TaskCounts:      taskCounts[project.ID],
+			CreatedAt:       project.CreatedAt,
+			UpdatedAt:       project.UpdatedAt,
+		})
+	}
+	return responses, nil
+}
+
+func (s *Server) loadProjectGroupCounts(ctx context.Context, projectIDs []string) (map[string]int64, error) {
+	counts := make(map[string]int64, len(projectIDs))
+	var rows []projectCountRow
 	err := s.db.WithContext(ctx).
 		Table("project_groups pg").
+		Select("pg.project_id, COUNT(DISTINCT pg.conversation_id) AS count").
 		Joins("JOIN conversations c ON c.id = pg.conversation_id").
-		Where("pg.project_id = ? AND c.kind = ? AND c.status = ?", projectID, store.ConversationKindGroup, store.ConversationStatusActive).
-		Distinct("pg.conversation_id").
-		Count(&count).Error
-	return count, err
+		Where("pg.project_id IN ?", projectIDs).
+		Where("c.kind = ? AND c.status = ?", store.ConversationKindGroup, store.ConversationStatusActive).
+		Group("pg.project_id").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		counts[row.ProjectID] = row.Count
+	}
+	return counts, nil
 }
 
-func (s *Server) projectMemberCount(ctx context.Context, project store.Project) (int64, error) {
-	var memberIDs []string
+func (s *Server) loadProjectMemberCounts(ctx context.Context, projectIDs []string) (map[string]int64, error) {
+	counts := make(map[string]int64, len(projectIDs))
+	var rows []projectCountRow
 	err := s.db.WithContext(ctx).
 		Table("conversation_members cm").
-		Select("DISTINCT cm.member_id").
+		Select("pg.project_id, COUNT(DISTINCT cm.member_id) AS count").
 		Joins("JOIN conversations c ON c.id = cm.conversation_id").
 		Joins("JOIN project_groups pg ON pg.conversation_id = c.id").
-		Where("pg.project_id = ?", project.ID).
+		Joins("JOIN projects p ON p.id = pg.project_id").
+		Where("pg.project_id IN ?", projectIDs).
 		Where("c.kind = ? AND c.status = ?", store.ConversationKindGroup, store.ConversationStatusActive).
 		Where("cm.member_type = ? AND cm.left_at IS NULL", store.ConversationMemberTypeUser).
-		Pluck("cm.member_id", &memberIDs).Error
+		Where("cm.member_id <> p.owner_user_id").
+		Group("pg.project_id").
+		Scan(&rows).Error
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	members := map[string]struct{}{project.OwnerUserID: {}}
-	for _, memberID := range memberIDs {
-		members[memberID] = struct{}{}
+	for _, row := range rows {
+		counts[row.ProjectID] = row.Count
 	}
-	return int64(len(members)), nil
+	return counts, nil
 }
 
-func (s *Server) projectTaskCounts(ctx context.Context, projectID string) (projectTaskCountsResponse, error) {
+func (s *Server) loadProjectTaskCounts(ctx context.Context, projectIDs []string) (map[string]projectTaskCountsResponse, error) {
+	counts := make(map[string]projectTaskCountsResponse, len(projectIDs))
 	var rows []projectTaskStatusCount
 	err := s.db.WithContext(ctx).
 		Model(&store.Task{}).
-		Select("status, COUNT(*) AS count").
-		Where("project_id = ?", projectID).
-		Group("status").
+		Select("project_id, status, COUNT(*) AS count").
+		Where("project_id IN ?", projectIDs).
+		Group("project_id, status").
 		Scan(&rows).Error
 	if err != nil {
-		return projectTaskCountsResponse{}, err
+		return nil, err
 	}
-	var counts projectTaskCountsResponse
 	for _, row := range rows {
-		counts.Total += row.Count
+		projectCounts := counts[row.ProjectID]
+		projectCounts.Total += row.Count
 		switch row.Status {
 		case store.TaskStatusTodo:
-			counts.Todo = row.Count
+			projectCounts.Todo = row.Count
 		case store.TaskStatusInProgress:
-			counts.InProgress = row.Count
+			projectCounts.InProgress = row.Count
 		case store.TaskStatusDone:
-			counts.Done = row.Count
+			projectCounts.Done = row.Count
 		case store.TaskStatusCanceled:
-			counts.Canceled = row.Count
+			projectCounts.Canceled = row.Count
 		}
+		counts[row.ProjectID] = projectCounts
 	}
 	return counts, nil
 }
@@ -923,18 +1104,22 @@ func normalizeProjectGroupIDs(values []string) ([]string, error) {
 		seen[id] = struct{}{}
 		result = append(result, id)
 	}
+	sort.Strings(result)
 	return result, nil
 }
 
-func requireActiveGroupConversation(db *gorm.DB, groupID string) error {
-	var count int64
-	err := db.Model(&store.Conversation{}).
-		Where("id = ? AND kind = ? AND status = ?", groupID, store.ConversationKindGroup, store.ConversationStatusActive).
-		Count(&count).Error
+func requireActiveGroupConversationForUpdate(tx *gorm.DB, groupID string) error {
+	var conversation store.Conversation
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Select("id", "kind", "status").
+		First(&conversation, "id = ?", groupID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return errInvalidProjectGroup
+	}
 	if err != nil {
 		return err
 	}
-	if count != 1 {
+	if conversation.Kind != store.ConversationKindGroup || conversation.Status != store.ConversationStatusActive {
 		return errInvalidProjectGroup
 	}
 	return nil
@@ -1082,6 +1267,16 @@ func projectNotFound(c echo.Context) error {
 
 func projectForbidden(c echo.Context) error {
 	return failure(c, http.StatusForbidden, "forbidden", "无权操作项目")
+}
+
+func projectMutationFailure(c echo.Context, err error) error {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return projectNotFound(c)
+	}
+	if errors.Is(err, errProjectOwnerRequired) {
+		return projectForbidden(c)
+	}
+	return projectInternalError(c)
 }
 
 func projectInternalError(c echo.Context) error {

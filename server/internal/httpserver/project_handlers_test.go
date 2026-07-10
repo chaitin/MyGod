@@ -1,11 +1,15 @@
 package httpserver
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,6 +17,8 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 func TestAdminUserCreationProvisionsPersonalWorkspace(t *testing.T) {
@@ -737,6 +743,224 @@ func TestProjectUpdateRejectsUnknownAndImmutableFields(t *testing.T) {
 	}
 }
 
+func TestProjectJSONRejectsNullAndTrailingPayload(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	now := time.Now().UTC()
+	owner := insertTestUser(t, db, "project-json-null@example.com", "JSON Null Owner", store.UserStatusActive, now)
+	project := insertProjectFixture(t, db, projectFixtureInput{Owner: owner, Name: "Unchanged", Description: "Original", Avatar: "/original.webp", UpdatedAt: now})
+	cookie := loginAsUser(t, server, owner.Email)
+
+	testCases := []struct {
+		name   string
+		method string
+		path   string
+		raw    string
+	}{
+		{name: "post top-level null", method: http.MethodPost, path: "/api/client/projects", raw: `null`},
+		{name: "post null name", method: http.MethodPost, path: "/api/client/projects", raw: `{"name":null}`},
+		{name: "post null description", method: http.MethodPost, path: "/api/client/projects", raw: `{"name":"Valid","description":null}`},
+		{name: "post null avatar", method: http.MethodPost, path: "/api/client/projects", raw: `{"name":"Valid","avatar":null}`},
+		{name: "post trailing payload", method: http.MethodPost, path: "/api/client/projects", raw: `{"name":"Valid"} {}`},
+		{name: "patch top-level null", method: http.MethodPatch, path: "/api/client/projects/" + project.ID, raw: `null`},
+		{name: "patch null name", method: http.MethodPatch, path: "/api/client/projects/" + project.ID, raw: `{"name":null}`},
+		{name: "patch null description", method: http.MethodPatch, path: "/api/client/projects/" + project.ID, raw: `{"description":null}`},
+		{name: "patch null avatar", method: http.MethodPatch, path: "/api/client/projects/" + project.ID, raw: `{"avatar":null}`},
+		{name: "patch trailing payload", method: http.MethodPatch, path: "/api/client/projects/" + project.ID, raw: `{} {}`},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			resp, body := requestRawProjectJSON(t, server.URL, server.Client(), testCase.method, testCase.path, testCase.raw, cookie)
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400, body = %#v", resp.StatusCode, body)
+			}
+			requireError(t, body, "invalid_request")
+		})
+	}
+
+	stored := requireProjectByID(t, db, project.ID)
+	if stored.Name != "Unchanged" || stored.Description != "Original" || stored.Avatar != "/original.webp" {
+		t.Fatalf("project changed after rejected null requests: %#v", stored)
+	}
+}
+
+func TestProjectCreateLocksGroupsInSortedOrder(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	now := time.Now().UTC()
+	owner := insertTestUser(t, db, "project-create-locks@example.com", "Create Locks Owner", store.UserStatusActive, now)
+	low := insertProjectConversationFixture(t, db, projectConversationFixtureInput{
+		ID: "00000000-0000-0000-0000-000000000401", Creator: owner, Kind: store.ConversationKindGroup,
+		Status: store.ConversationStatusActive, Name: "Low Lock Group", Now: now,
+	})
+	high := insertProjectConversationFixture(t, db, projectConversationFixtureInput{
+		ID: "00000000-0000-0000-0000-000000000402", Creator: owner, Kind: store.ConversationKindGroup,
+		Status: store.ConversationStatusActive, Name: "High Lock Group", Now: now,
+	})
+	cookie := loginAsUser(t, server, owner.Email)
+	recorder := registerProjectQueryLockRecorder(t, db, "test:project_create_group_locks", map[string]struct{}{
+		low.ID: {}, high.ID: {},
+	})
+
+	resp, body := postJSON(t, server, "/api/client/projects", map[string]any{
+		"name":      "Locked Group Project",
+		"group_ids": []string{high.ID, low.ID, high.ID},
+	}, cookie)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body = %#v", resp.StatusCode, body)
+	}
+
+	records := recorder.snapshot()
+	if len(records) != 2 {
+		t.Fatalf("group lock queries = %#v, want two deduplicated rows", records)
+	}
+	if records[0].ID != low.ID || records[1].ID != high.ID {
+		t.Fatalf("group lock order = [%s %s], want [%s %s]", records[0].ID, records[1].ID, low.ID, high.ID)
+	}
+	for _, record := range records {
+		if !record.Locked || !record.InTransaction {
+			t.Fatalf("group query for %s locked/in-transaction = %v/%v, want true/true", record.ID, record.Locked, record.InTransaction)
+		}
+	}
+}
+
+func TestProjectGroupBindLocksTargetConversation(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	now := time.Now().UTC()
+	owner := insertTestUser(t, db, "project-bind-locks@example.com", "Bind Locks Owner", store.UserStatusActive, now)
+	project := insertProjectFixture(t, db, projectFixtureInput{Owner: owner, Name: "Bind Locks Project", UpdatedAt: now})
+	group := insertProjectConversationFixture(t, db, projectConversationFixtureInput{
+		Creator: owner, Kind: store.ConversationKindGroup, Status: store.ConversationStatusActive, Name: "Bind Lock Group", Now: now,
+	})
+	cookie := loginAsUser(t, server, owner.Email)
+	recorder := registerProjectQueryLockRecorder(t, db, "test:project_bind_group_lock", map[string]struct{}{group.ID: {}})
+
+	resp, body := putJSON(t, server, "/api/client/projects/"+project.ID+"/groups/"+group.ID, map[string]any{}, cookie)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %#v", resp.StatusCode, body)
+	}
+	records := recorder.snapshot()
+	if len(records) != 1 || !records[0].Locked || !records[0].InTransaction {
+		t.Fatalf("bind group lock records = %#v, want one locked transaction query", records)
+	}
+}
+
+func TestProjectMutationsLockProjectRowsInsideTransactions(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	now := time.Now().UTC()
+	owner := insertTestUser(t, db, "project-mutation-locks@example.com", "Mutation Locks Owner", store.UserStatusActive, now)
+	patchProject := insertProjectFixture(t, db, projectFixtureInput{Owner: owner, Name: "Patch Lock", UpdatedAt: now})
+	deleteProjectFixture := insertProjectFixture(t, db, projectFixtureInput{Owner: owner, Name: "Delete Lock", UpdatedAt: now})
+	bindProject := insertProjectFixture(t, db, projectFixtureInput{Owner: owner, Name: "Bind Lock", UpdatedAt: now})
+	unbindProject := insertProjectFixture(t, db, projectFixtureInput{Owner: owner, Name: "Unbind Lock", UpdatedAt: now})
+	group := insertProjectConversationFixture(t, db, projectConversationFixtureInput{
+		Creator: owner, Kind: store.ConversationKindGroup, Status: store.ConversationStatusActive, Name: "Mutation Group", Now: now,
+	})
+	insertProjectGroupFixture(t, db, unbindProject.ID, group.ID, owner.ID, now)
+	cookie := loginAsUser(t, server, owner.Email)
+	projectIDs := map[string]struct{}{
+		patchProject.ID: {}, deleteProjectFixture.ID: {}, bindProject.ID: {}, unbindProject.ID: {},
+	}
+	recorder := registerProjectQueryLockRecorder(t, db, "test:project_mutation_project_locks", projectIDs)
+
+	requests := []struct {
+		name   string
+		method string
+		path   string
+		body   map[string]any
+	}{
+		{name: "patch", method: http.MethodPatch, path: "/api/client/projects/" + patchProject.ID, body: map[string]any{"name": "Patched"}},
+		{name: "delete", method: http.MethodDelete, path: "/api/client/projects/" + deleteProjectFixture.ID, body: map[string]any{}},
+		{name: "bind", method: http.MethodPut, path: "/api/client/projects/" + bindProject.ID + "/groups/" + group.ID, body: map[string]any{}},
+		{name: "unbind", method: http.MethodDelete, path: "/api/client/projects/" + unbindProject.ID + "/groups/" + group.ID, body: map[string]any{}},
+	}
+	for _, request := range requests {
+		resp, body := requestJSON(t, server, request.method, request.path, request.body, cookie)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s status = %d, want 200, body = %#v", request.name, resp.StatusCode, body)
+		}
+	}
+
+	records := recorder.snapshot()
+	byID := make(map[string][]projectQueryLockRecord)
+	for _, record := range records {
+		byID[record.ID] = append(byID[record.ID], record)
+	}
+	for projectID := range projectIDs {
+		projectRecords := byID[projectID]
+		if len(projectRecords) == 0 {
+			t.Fatalf("project %s had no access query; all records = %#v", projectID, records)
+		}
+		lockedInTransaction := false
+		for _, record := range projectRecords {
+			lockedInTransaction = lockedInTransaction || (record.Locked && record.InTransaction)
+		}
+		if !lockedInTransaction {
+			t.Fatalf("project %s records = %#v, want FOR UPDATE inside transaction", projectID, projectRecords)
+		}
+	}
+}
+
+func TestProjectMutationLifecycleMissReturnsNotFoundAndRollsBack(t *testing.T) {
+	testCases := []struct {
+		name   string
+		method string
+		path   func(projectID string, groupID string) string
+		body   map[string]any
+		delete bool
+		linked bool
+	}{
+		{name: "patch", method: http.MethodPatch, path: func(projectID string, _ string) string { return "/api/client/projects/" + projectID }, body: map[string]any{"name": "Must Roll Back"}},
+		{name: "delete", method: http.MethodDelete, path: func(projectID string, _ string) string { return "/api/client/projects/" + projectID }, body: map[string]any{}, delete: true},
+		{name: "bind", method: http.MethodPut, path: func(projectID string, groupID string) string {
+			return "/api/client/projects/" + projectID + "/groups/" + groupID
+		}, body: map[string]any{}},
+		{name: "unbind", method: http.MethodDelete, path: func(projectID string, groupID string) string {
+			return "/api/client/projects/" + projectID + "/groups/" + groupID
+		}, body: map[string]any{}, linked: true},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			server, db := newTestRouter(t)
+			defer server.Close()
+
+			now := time.Now().UTC()
+			owner := insertTestUser(t, db, "project-lifecycle-"+testCase.name+"@example.com", "Lifecycle Owner", store.UserStatusActive, now)
+			project := insertProjectFixture(t, db, projectFixtureInput{Owner: owner, Name: "Original", UpdatedAt: now})
+			group := insertProjectConversationFixture(t, db, projectConversationFixtureInput{
+				Creator: owner, Kind: store.ConversationKindGroup, Status: store.ConversationStatusActive, Name: "Lifecycle Group", Now: now,
+			})
+			if testCase.linked {
+				insertProjectGroupFixture(t, db, project.ID, group.ID, owner.ID, now)
+			}
+			cookie := loginAsUser(t, server, owner.Email)
+			registerProjectZeroRowsCallback(t, db, "test:project_lifecycle_"+testCase.name, testCase.delete)
+
+			resp, body := requestJSON(t, server, testCase.method, testCase.path(project.ID, group.ID), testCase.body, cookie)
+			if resp.StatusCode != http.StatusNotFound {
+				t.Fatalf("status = %d, want 404, body = %#v", resp.StatusCode, body)
+			}
+			requireError(t, body, "not_found")
+
+			stored := requireProjectByID(t, db, project.ID)
+			if stored.Name != "Original" || stored.DeletedAt.Valid {
+				t.Fatalf("project lifecycle mutation was not rolled back: %#v", stored)
+			}
+			wantLinks := int64(0)
+			if testCase.linked {
+				wantLinks = 1
+			}
+			requireRowCount(t, db, &store.ProjectGroup{}, wantLinks, "project_id = ? AND conversation_id = ?", project.ID, group.ID)
+		})
+	}
+}
+
 func TestProjectDeleteSoftDeletesCollaborativeAndRejectsPersonal(t *testing.T) {
 	server, db := newTestRouter(t)
 	defer server.Close()
@@ -1276,6 +1500,120 @@ func TestProjectMemberListPaginatesDisplayNameTies(t *testing.T) {
 	}
 }
 
+func TestProjectListQueryCountStaysConstantAcrossPageSize(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	now := time.Now().UTC()
+	owner := insertTestUser(t, db, "project-list-query-count@example.com", "List Query Owner", store.UserStatusActive, now)
+	for index := 0; index < 12; index++ {
+		insertProjectFixture(t, db, projectFixtureInput{
+			Owner: owner, Name: "Query Project", UpdatedAt: now.Add(time.Duration(index) * time.Second),
+		})
+	}
+	cookie := loginAsUser(t, server, owner.Email)
+	recorder := installProjectSQLRecorder(t, db)
+
+	resp, body := getJSON(t, server, "/api/client/projects?limit=1", cookie)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("small page status = %d, want 200, body = %#v", resp.StatusCode, body)
+	}
+	smallCount := recorder.count()
+	recorder.reset()
+
+	resp, body = getJSON(t, server, "/api/client/projects?limit=12", cookie)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("large page status = %d, want 200, body = %#v", resp.StatusCode, body)
+	}
+	largeCount := recorder.count()
+	if largeCount > smallCount+1 {
+		t.Fatalf("project list query count grew with page size: limit=1 used %d, limit=12 used %d", smallCount, largeCount)
+	}
+}
+
+func TestProjectGroupListQueryCountStaysConstantAcrossPageSize(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	now := time.Now().UTC()
+	owner := insertTestUser(t, db, "project-group-query-count@example.com", "Group Query Owner", store.UserStatusActive, now)
+	project := insertProjectFixture(t, db, projectFixtureInput{Owner: owner, Name: "Group Query Project", UpdatedAt: now})
+	for index := 0; index < 12; index++ {
+		group := insertProjectConversationFixture(t, db, projectConversationFixtureInput{
+			Creator: owner, Kind: store.ConversationKindGroup, Status: store.ConversationStatusActive, Name: "Query Group", Now: now,
+		})
+		insertProjectGroupFixture(t, db, project.ID, group.ID, owner.ID, now.Add(time.Duration(index)*time.Second))
+	}
+	cookie := loginAsUser(t, server, owner.Email)
+	recorder := installProjectSQLRecorder(t, db)
+
+	resp, body := getJSON(t, server, "/api/client/projects/"+project.ID+"/groups?limit=1", cookie)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("small page status = %d, want 200, body = %#v", resp.StatusCode, body)
+	}
+	smallCount := recorder.count()
+	recorder.reset()
+
+	resp, body = getJSON(t, server, "/api/client/projects/"+project.ID+"/groups?limit=12", cookie)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("large page status = %d, want 200, body = %#v", resp.StatusCode, body)
+	}
+	largeCount := recorder.count()
+	if largeCount > smallCount+1 {
+		t.Fatalf("project group list query count grew with page size: limit=1 used %d, limit=12 used %d", smallCount, largeCount)
+	}
+}
+
+func TestProjectMemberListPaginatesInSQLBeforeLoadingSources(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	now := time.Now().UTC()
+	owner := insertTestUser(t, db, "project-member-sql-owner@example.com", "A Owner", store.UserStatusActive, now)
+	project := insertProjectFixture(t, db, projectFixtureInput{Owner: owner, Name: "Member SQL Project", UpdatedAt: now})
+	members := make([]store.User, 0, 8)
+	memberRows := make([]store.ConversationMember, 0, 8)
+	for index := 0; index < 8; index++ {
+		member := insertTestUser(t, db, "project-member-sql-"+strconv.Itoa(index)+"@example.com", "Member "+strconv.Itoa(index), store.UserStatusActive, now)
+		members = append(members, member)
+		memberRows = append(memberRows, store.ConversationMember{MemberType: store.ConversationMemberTypeUser, MemberID: member.ID})
+	}
+	group := insertProjectConversationFixture(t, db, projectConversationFixtureInput{
+		Creator: owner, Kind: store.ConversationKindGroup, Status: store.ConversationStatusActive,
+		Name: "Member SQL Group", Now: now, Members: memberRows,
+	})
+	insertProjectGroupFixture(t, db, project.ID, group.ID, owner.ID, now)
+	cookie := loginAsUser(t, server, owner.Email)
+	recorder := installProjectSQLRecorder(t, db)
+
+	resp, body := getJSON(t, server, "/api/client/projects/"+project.ID+"/members?limit=2", cookie)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %#v", resp.StatusCode, body)
+	}
+	queries := recorder.snapshot()
+	pageQueryFound := false
+	sourceQueryFound := false
+	lateMemberID := strings.ToLower(members[len(members)-1].ID)
+	for _, query := range queries {
+		lowerQuery := strings.ToLower(query)
+		if strings.Contains(lowerQuery, "as display_name") && strings.Contains(lowerQuery, "limit 3") {
+			pageQueryFound = true
+		}
+		if strings.Contains(lowerQuery, "as source_group_id") && strings.Contains(lowerQuery, "member_id in") {
+			sourceQueryFound = true
+			if strings.Contains(lowerQuery, lateMemberID) {
+				t.Fatalf("source query loaded a member outside the selected page: %s", query)
+			}
+		}
+	}
+	if !pageQueryFound {
+		t.Fatalf("no SQL member page query with display_name and LIMIT 3; queries = %#v", queries)
+	}
+	if !sourceQueryFound {
+		t.Fatalf("no page-scoped source_group_ids query; queries = %#v", queries)
+	}
+}
+
 type projectFixtureInput struct {
 	ID          string
 	Owner       store.User
@@ -1467,4 +1805,158 @@ func assertStringList(t *testing.T, value any, want []string) {
 	if !slices.Equal(got, want) {
 		t.Fatalf("string array = %#v, want %#v", got, want)
 	}
+}
+
+func requestRawProjectJSON(t *testing.T, serverURL string, client *http.Client, method string, path string, raw string, cookie *http.Cookie) (*http.Response, map[string]any) {
+	t.Helper()
+
+	req, err := http.NewRequest(method, serverURL+path, strings.NewReader(raw))
+	if err != nil {
+		t.Fatalf("create raw project request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(cookie)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("send raw project request: %v", err)
+	}
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode raw project response: %v", err)
+	}
+	return resp, body
+}
+
+type projectQueryLockRecord struct {
+	ID            string
+	Locked        bool
+	InTransaction bool
+}
+
+type projectQueryLockRecorder struct {
+	mu      sync.Mutex
+	records []projectQueryLockRecord
+}
+
+func (recorder *projectQueryLockRecorder) snapshot() []projectQueryLockRecord {
+	recorder.mu.Lock()
+	defer recorder.mu.Unlock()
+	return append([]projectQueryLockRecord(nil), recorder.records...)
+}
+
+func registerProjectQueryLockRecorder(t *testing.T, db *gorm.DB, callbackName string, targetIDs map[string]struct{}) *projectQueryLockRecorder {
+	t.Helper()
+
+	recorder := &projectQueryLockRecorder{}
+	if err := db.Callback().Query().After("gorm:query").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement.Schema == nil {
+			return
+		}
+		if tx.Statement.Schema.Table != "projects" && tx.Statement.Schema.Table != "conversations" {
+			return
+		}
+		id := ""
+		for _, variable := range tx.Statement.Vars {
+			candidate, ok := variable.(string)
+			if !ok {
+				continue
+			}
+			if _, exists := targetIDs[candidate]; exists {
+				id = candidate
+				break
+			}
+		}
+		if id == "" {
+			return
+		}
+		locking, hasLock := tx.Statement.Clauses["FOR"].Expression.(clause.Locking)
+		_, inTransaction := tx.Statement.ConnPool.(*sql.Tx)
+		recorder.mu.Lock()
+		recorder.records = append(recorder.records, projectQueryLockRecord{
+			ID:            id,
+			Locked:        hasLock && locking.Strength == "UPDATE",
+			InTransaction: inTransaction,
+		})
+		recorder.mu.Unlock()
+	}); err != nil {
+		t.Fatalf("register project query lock recorder: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Callback().Query().Remove(callbackName); err != nil {
+			t.Errorf("remove project query lock recorder: %v", err)
+		}
+	})
+	return recorder
+}
+
+func registerProjectZeroRowsCallback(t *testing.T, db *gorm.DB, callbackName string, deleteOperation bool) {
+	t.Helper()
+
+	callback := func(tx *gorm.DB) {
+		if tx.Statement.Schema == nil || tx.Statement.Schema.Table != "projects" {
+			return
+		}
+		tx.Statement.AddClause(clause.Where{Exprs: []clause.Expression{clause.Expr{SQL: "1 = 0"}}})
+	}
+	if deleteOperation {
+		if err := db.Callback().Delete().Before("gorm:delete").Register(callbackName, callback); err != nil {
+			t.Fatalf("register project delete zero-rows callback: %v", err)
+		}
+		t.Cleanup(func() {
+			if err := db.Callback().Delete().Remove(callbackName); err != nil {
+				t.Errorf("remove project delete zero-rows callback: %v", err)
+			}
+		})
+		return
+	}
+	if err := db.Callback().Update().Before("gorm:update").Register(callbackName, callback); err != nil {
+		t.Fatalf("register project update zero-rows callback: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Callback().Update().Remove(callbackName); err != nil {
+			t.Errorf("remove project update zero-rows callback: %v", err)
+		}
+	})
+}
+
+type projectSQLRecorder struct {
+	gormlogger.Interface
+	mu      sync.Mutex
+	queries []string
+}
+
+func (recorder *projectSQLRecorder) Trace(ctx context.Context, begin time.Time, query func() (string, int64), err error) {
+	sqlText, _ := query()
+	recorder.mu.Lock()
+	recorder.queries = append(recorder.queries, sqlText)
+	recorder.mu.Unlock()
+}
+
+func (recorder *projectSQLRecorder) reset() {
+	recorder.mu.Lock()
+	recorder.queries = nil
+	recorder.mu.Unlock()
+}
+
+func (recorder *projectSQLRecorder) count() int {
+	recorder.mu.Lock()
+	defer recorder.mu.Unlock()
+	return len(recorder.queries)
+}
+
+func (recorder *projectSQLRecorder) snapshot() []string {
+	recorder.mu.Lock()
+	defer recorder.mu.Unlock()
+	return append([]string(nil), recorder.queries...)
+}
+
+func installProjectSQLRecorder(t *testing.T, db *gorm.DB) *projectSQLRecorder {
+	t.Helper()
+
+	original := db.Config.Logger
+	recorder := &projectSQLRecorder{Interface: original}
+	db.Config.Logger = recorder
+	t.Cleanup(func() { db.Config.Logger = original })
+	return recorder
 }
