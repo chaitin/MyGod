@@ -53,6 +53,51 @@ func TestWebSocketManagerStopsAfterTenRetries(t *testing.T) {
 	}
 }
 
+func TestWebSocketManagerBacksOffAfterConnectedGenerationDrops(t *testing.T) {
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		_ = conn.Close()
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	delays := make(chan time.Duration, 1)
+	manager := newWebSocketManager(config.Config{WebSocketURL: "ws" + strings.TrimPrefix(server.URL, "http")}, webSocketManagerOptions{
+		Sleep: func(ctx context.Context, delay time.Duration) error {
+			delays <- delay
+			cancel()
+			return ctx.Err()
+		},
+	})
+	done := make(chan error, 1)
+	go func() {
+		done <- manager.Run(ctx, func(envelope) {})
+	}()
+
+	select {
+	case delay := <-delays:
+		if delay != time.Second {
+			t.Fatalf("disconnect retry delay = %s, want 1s", delay)
+		}
+	case <-time.After(250 * time.Millisecond):
+		cancel()
+		t.Fatal("connected generations retried without backoff")
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run() error = %v, want nil after cancellation", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Run() did not stop after cancellation")
+	}
+}
+
 func TestClientRetriesInFlightRequestAcrossReconnect(t *testing.T) {
 	var connections atomic.Int32
 	historyRequestIDs := make(chan string, 2)
@@ -198,6 +243,179 @@ func TestClientAcknowledgesAcceptedCursorEvent(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for event acknowledgement")
+	}
+}
+
+func TestClientRoutesCursorEventsInArrivalOrder(t *testing.T) {
+	firstHistoryStarted := make(chan struct{})
+	secondHistoryStarted := make(chan struct{})
+	releaseFirstHistory := make(chan struct{})
+	acknowledged := make(chan int64, 2)
+	var historyCalls atomic.Int32
+	var requester *reliableRequester
+	transport := requestTransportFunc(func(ctx context.Context, message envelope) (<-chan struct{}, error) {
+		done := make(chan struct{})
+		payload := json.RawMessage(`{}`)
+		switch message.Method {
+		case methodConversationMessagesList:
+			call := historyCalls.Add(1)
+			if call == 1 {
+				close(firstHistoryStarted)
+				<-releaseFirstHistory
+			} else if call == 2 {
+				close(secondHistoryStarted)
+			}
+			payload = json.RawMessage(`{"messages":[]}`)
+		case methodEventsAck:
+			var ack struct {
+				Cursor int64 `json:"cursor"`
+			}
+			if err := json.Unmarshal(message.Payload, &ack); err != nil {
+				t.Errorf("unmarshal ack payload: %v", err)
+			} else {
+				acknowledged <- ack.Cursor
+			}
+		}
+		ok := true
+		requester.HandleResponse(envelope{V: protocolVersion, Kind: kindResponse, ReplyTo: message.ID, OK: &ok, Payload: payload})
+		return done, nil
+	})
+	requester = newReliableRequester(transport, reliableRequesterOptions{
+		Sleep: func(context.Context, time.Duration) error { return nil },
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	client := &Client{
+		cfg:       config.Config{AppID: "app-1"},
+		requester: requester,
+		runner:    newConversationAgentRunner(ctx),
+		assistantAgent: replyAgentFunc(func(ctx context.Context, request agent.Request, sink agent.OutputSink) error {
+			return sink.SendMarkdown(ctx, "完成")
+		}),
+	}
+	first := testMessageCreatedEnvelope(t, "user-1", "message-1", 1, "第一条")
+	first.Cursor = 10
+	second := testMessageCreatedEnvelope(t, "user-1", "message-2", 2, "第二条")
+	second.Cursor = 20
+	client.handleTransportMessage(ctx, first)
+	waitForSignal(t, firstHistoryStarted, "first history request")
+	client.handleTransportMessage(ctx, second)
+
+	select {
+	case <-secondHistoryStarted:
+		close(releaseFirstHistory)
+		t.Fatal("second cursor started before the first cursor was accepted")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(releaseFirstHistory)
+	waitForSignal(t, secondHistoryStarted, "second history request")
+
+	for _, want := range []int64{10, 20} {
+		select {
+		case cursor := <-acknowledged:
+			if cursor != want {
+				t.Fatalf("acknowledged cursor = %d, want %d", cursor, want)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for cursor %d acknowledgement", want)
+		}
+	}
+}
+
+func TestClientDoesNotAcknowledgeEventThatWasNotAcceptedOrDelivered(t *testing.T) {
+	acknowledged := make(chan struct{}, 1)
+	var requester *reliableRequester
+	transport := requestTransportFunc(func(ctx context.Context, message envelope) (<-chan struct{}, error) {
+		done := make(chan struct{})
+		if message.Method == methodEventsAck {
+			acknowledged <- struct{}{}
+		}
+		ok := false
+		requester.HandleResponse(envelope{
+			V:       protocolVersion,
+			Kind:    kindResponse,
+			ReplyTo: message.ID,
+			OK:      &ok,
+			Error:   &errorPayload{Code: "unavailable", Message: "try later"},
+		})
+		return done, nil
+	})
+	requester = newReliableRequester(transport, reliableRequesterOptions{
+		Sleep: func(context.Context, time.Duration) error { return nil },
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	client := &Client{
+		cfg:       config.Config{AppID: "app-1"},
+		requester: requester,
+		runner:    newConversationAgentRunner(ctx),
+		assistantAgent: replyAgentFunc(func(ctx context.Context, request agent.Request, sink agent.OutputSink) error {
+			return sink.SendMarkdown(ctx, "完成")
+		}),
+	}
+	event := testMessageCreatedEnvelope(t, "user-1", "message-1", 1, "第一条")
+	event.Cursor = 42
+	client.handleTransportMessage(ctx, event)
+
+	select {
+	case <-acknowledged:
+		t.Fatal("unaccepted cursor event was acknowledged")
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func TestClientReplayRetriesAcknowledgementWithoutReprocessingEvent(t *testing.T) {
+	firstAckFailed := make(chan struct{})
+	acknowledged := make(chan struct{})
+	var ackAttempts atomic.Int32
+	var replyCalls atomic.Int32
+	var requester *reliableRequester
+	transport := requestTransportFunc(func(ctx context.Context, message envelope) (<-chan struct{}, error) {
+		done := make(chan struct{})
+		ok := true
+		payload := json.RawMessage(`{}`)
+		switch message.Method {
+		case methodConversationMessagesList:
+			payload = json.RawMessage(`{"messages":[]}`)
+		case methodMessageSend:
+			replyCalls.Add(1)
+		case methodEventsAck:
+			if ackAttempts.Add(1) == 1 {
+				ok = false
+				close(firstAckFailed)
+			} else {
+				close(acknowledged)
+			}
+		}
+		response := envelope{V: protocolVersion, Kind: kindResponse, ReplyTo: message.ID, OK: &ok, Payload: payload}
+		if !ok {
+			response.Error = &errorPayload{Code: "unavailable", Message: "try later"}
+		}
+		requester.HandleResponse(response)
+		return done, nil
+	})
+	requester = newReliableRequester(transport, reliableRequesterOptions{
+		Sleep: func(context.Context, time.Duration) error { return nil },
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	client := &Client{
+		cfg:       config.Config{AppID: "app-1"},
+		requester: requester,
+		runner:    newConversationAgentRunner(ctx),
+		assistantAgent: replyAgentFunc(func(ctx context.Context, request agent.Request, sink agent.OutputSink) error {
+			return sink.SendMarkdown(ctx, "完成")
+		}),
+	}
+	event := testMessageCreatedEnvelope(t, "user-1", "message-1", 1, "第一条")
+	event.Cursor = 42
+	client.handleTransportMessage(ctx, event)
+	waitForSignal(t, firstAckFailed, "first acknowledgement failure")
+
+	client.handleTransportMessage(ctx, event)
+	waitForSignal(t, acknowledged, "replayed event acknowledgement")
+	if calls := replyCalls.Load(); calls != 1 {
+		t.Fatalf("agent reply calls = %d, want 1", calls)
 	}
 }
 

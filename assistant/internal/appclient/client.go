@@ -57,6 +57,19 @@ type Client struct {
 	runner         *conversationAgentRunner
 	transport      *webSocketManager
 	requester      *reliableRequester
+
+	eventMu         sync.Mutex
+	eventQueue      []*queuedAppEvent
+	eventCursors    map[int64]struct{}
+	eventRunning    bool
+	eventVersion    uint64
+	lastAckedCursor int64
+}
+
+type queuedAppEvent struct {
+	ctx     context.Context
+	message envelope
+	handled bool
 }
 
 type replyAgent interface {
@@ -238,27 +251,110 @@ func (c *Client) handleTransportMessage(ctx context.Context, message envelope) {
 		c.requester.HandleResponse(message)
 		return
 	}
-	go func() {
-		handleParsedServerMessage(
-			ctx,
-			message,
-			c.cfg.AppID,
-			c.requester,
-			c.assistantAgent,
-			c.runner,
-			func(writeCtx context.Context, outgoing envelope) error {
-				_, err := c.requester.RequestEnvelope(writeCtx, outgoing)
-				return err
-			},
-		)
-		if message.Cursor > 0 {
-			if _, err := c.requester.Request(ctx, methodEventsAck, struct {
-				Cursor int64 `json:"cursor"`
-			}{Cursor: message.Cursor}); err != nil && ctx.Err() == nil {
-				log.Printf("ack app event failed: cursor=%d error=%v", message.Cursor, err)
+	c.enqueueAppEvent(ctx, message)
+}
+
+func (c *Client) enqueueAppEvent(ctx context.Context, message envelope) {
+	c.eventMu.Lock()
+	if message.Cursor > 0 {
+		if message.Cursor <= c.lastAckedCursor {
+			c.eventMu.Unlock()
+			return
+		}
+		if c.eventCursors == nil {
+			c.eventCursors = make(map[int64]struct{})
+		}
+		if _, exists := c.eventCursors[message.Cursor]; exists {
+			c.eventVersion++
+			if !c.eventRunning {
+				c.eventRunning = true
+				c.eventMu.Unlock()
+				go c.drainAppEvents()
+				return
+			}
+			c.eventMu.Unlock()
+			return
+		}
+		c.eventCursors[message.Cursor] = struct{}{}
+	}
+	c.eventQueue = append(c.eventQueue, &queuedAppEvent{ctx: ctx, message: message})
+	c.eventVersion++
+	if c.eventRunning {
+		c.eventMu.Unlock()
+		return
+	}
+	c.eventRunning = true
+	c.eventMu.Unlock()
+	go c.drainAppEvents()
+}
+
+func (c *Client) drainAppEvents() {
+	for {
+		c.eventMu.Lock()
+		if len(c.eventQueue) == 0 {
+			c.eventRunning = false
+			c.eventMu.Unlock()
+			return
+		}
+		queued := c.eventQueue[0]
+		version := c.eventVersion
+		c.eventMu.Unlock()
+
+		if !queued.handled {
+			queued.handled = handleParsedServerMessage(
+				queued.ctx,
+				queued.message,
+				c.cfg.AppID,
+				c.requester,
+				c.assistantAgent,
+				c.runner,
+				func(writeCtx context.Context, outgoing envelope) error {
+					_, err := c.requester.RequestEnvelope(writeCtx, outgoing)
+					return err
+				},
+			)
+			if !queued.handled {
+				if c.stopOrRetryAppEvent(version) {
+					continue
+				}
+				return
 			}
 		}
-	}()
+
+		if queued.message.Cursor > 0 {
+			if _, err := c.requester.Request(queued.ctx, methodEventsAck, struct {
+				Cursor int64 `json:"cursor"`
+			}{Cursor: queued.message.Cursor}); err != nil {
+				if queued.ctx.Err() == nil {
+					log.Printf("ack app event failed: cursor=%d error=%v", queued.message.Cursor, err)
+				}
+				if c.stopOrRetryAppEvent(version) {
+					continue
+				}
+				return
+			}
+		}
+
+		c.eventMu.Lock()
+		if queued.message.Cursor > 0 {
+			delete(c.eventCursors, queued.message.Cursor)
+			if queued.message.Cursor > c.lastAckedCursor {
+				c.lastAckedCursor = queued.message.Cursor
+			}
+		}
+		c.eventQueue = c.eventQueue[1:]
+		c.eventMu.Unlock()
+	}
+}
+
+func (c *Client) stopOrRetryAppEvent(version uint64) bool {
+	c.eventMu.Lock()
+	defer c.eventMu.Unlock()
+	if c.eventVersion != version {
+		return true
+	}
+	c.eventRunning = false
+	return false
 }
 
 type pendingResponse struct {
@@ -385,29 +481,29 @@ func handleServerMessage(ctx context.Context, messageType int, data []byte, requ
 	handleParsedServerMessage(ctx, message, "", requester, assistantAgent, directAgentRunner{}, writeJSON)
 }
 
-func handleParsedServerMessage(ctx context.Context, message envelope, appID string, requester appRequester, assistantAgent replyAgent, runner agentRunner, writeJSON func(context.Context, envelope) error) {
+func handleParsedServerMessage(ctx context.Context, message envelope, appID string, requester appRequester, assistantAgent replyAgent, runner agentRunner, writeJSON func(context.Context, envelope) error) bool {
 	if message.Kind == kindResponse {
-		return
+		return true
 	}
 	if message.Kind != kindEvent || message.Event != eventMessageCreated {
-		return
+		return true
 	}
 
 	var payload messageCreatedPayload
 	if err := json.Unmarshal(message.Payload, &payload); err != nil {
 		log.Printf("ignore invalid message.created payload: %v", err)
-		return
+		return true
 	}
 	var body messageBody
 	if err := json.Unmarshal(payload.Message.Body, &body); err != nil {
 		log.Printf("ignore invalid message body: %v", err)
-		return
+		return true
 	}
 	if !isSupportedIncomingMessageType(body.Type) {
-		return
+		return true
 	}
 	if !shouldHandleIncomingMessage(appID, payload, body) {
-		return
+		return true
 	}
 
 	senderName := payload.Sender.Name
@@ -428,13 +524,13 @@ func handleParsedServerMessage(ctx context.Context, message envelope, appID stri
 	})
 	prepared, err := prepareAgentRun(ctx, requester, payload, body, senderName)
 	if err != nil {
-		if !errors.Is(err, context.Canceled) {
-			log.Printf("prepare agent run failed: %v", err)
-			sendAgentFallback(ctx, sink)
+		if errors.Is(err, context.Canceled) {
+			return false
 		}
-		return
+		log.Printf("prepare agent run failed: %v", err)
+		return sendAgentFallback(ctx, sink) == nil
 	}
-	runner.Start(ctx, payload.Conversation.ID, sink, assistantAgent, prepared)
+	return runner.Start(ctx, payload.Conversation.ID, sink, assistantAgent, prepared)
 }
 
 func prepareAgentRun(ctx context.Context, requester appRequester, payload messageCreatedPayload, body messageBody, senderName string) (preparedAgentRun, error) {

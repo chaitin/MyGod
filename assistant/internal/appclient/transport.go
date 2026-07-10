@@ -104,6 +104,12 @@ func (m *webSocketManager) Run(ctx context.Context, handle func(envelope)) error
 		if err != nil {
 			log.Printf("app websocket disconnected: %v", err)
 		}
+		if err := m.sleep(ctx, retryDelay(0)); err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			return err
+		}
 		attempt = -1
 	}
 	return nil

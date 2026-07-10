@@ -133,6 +133,8 @@ func (m *Manager) SendToApp(appID string, message realtime.Envelope) int {
 	for _, conn := range connections {
 		if conn.Enqueue(message) {
 			sent++
+		} else {
+			conn.Close()
 		}
 	}
 

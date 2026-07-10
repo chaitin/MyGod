@@ -2,10 +2,15 @@ package appconnection
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"app/internal/realtime"
+
+	"github.com/gorilla/websocket"
 )
 
 func TestDefaultMaxMessageBytesIsOneMiB(t *testing.T) {
@@ -13,6 +18,84 @@ func TestDefaultMaxMessageBytesIsOneMiB(t *testing.T) {
 	if manager.maxMessageBytes != 1<<20 {
 		t.Fatalf("maxMessageBytes = %d, want %d", manager.maxMessageBytes, 1<<20)
 	}
+}
+
+func TestConnectionAcceptsRequestLargerThan64KiB(t *testing.T) {
+	received := make(chan int, 1)
+	manager := NewManager(Options{RequestHandler: func(appID string, request realtime.Envelope) realtime.Envelope {
+		received <- len(request.Payload)
+		return realtime.NewResponse(request.ID, map[string]any{"received": true})
+	}})
+	client := dialManagedWebSocket(t, manager)
+	request := testAppRequest("large-request", "test.large", map[string]any{
+		"content": strings.Repeat("x", 128<<10),
+	})
+	if err := client.WriteJSON(request); err != nil {
+		t.Fatalf("write request: %v", err)
+	}
+	var response realtime.Envelope
+	if err := client.ReadJSON(&response); err != nil {
+		t.Fatalf("read response: %v", err)
+	}
+	if response.OK == nil || !*response.OK {
+		t.Fatalf("response = %#v, want success", response)
+	}
+	select {
+	case payloadBytes := <-received:
+		if payloadBytes <= 64<<10 {
+			t.Fatalf("received payload bytes = %d, want above 64 KiB", payloadBytes)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("large request did not reach handler")
+	}
+}
+
+func TestConnectionRejectsRequestLargerThanOneMiB(t *testing.T) {
+	called := make(chan struct{}, 1)
+	manager := NewManager(Options{RequestHandler: func(appID string, request realtime.Envelope) realtime.Envelope {
+		called <- struct{}{}
+		return realtime.NewResponse(request.ID, nil)
+	}})
+	client := dialManagedWebSocket(t, manager)
+	request := testAppRequest("oversized-request", "test.large", map[string]any{
+		"content": strings.Repeat("x", (1<<20)+1),
+	})
+	if err := client.WriteJSON(request); err != nil {
+		t.Fatalf("write oversized request: %v", err)
+	}
+	_ = client.SetReadDeadline(time.Now().Add(time.Second))
+	var response realtime.Envelope
+	if err := client.ReadJSON(&response); err == nil {
+		t.Fatalf("ReadJSON() error = nil, response = %#v; want read-limit disconnect", response)
+	}
+	select {
+	case <-called:
+		t.Fatal("oversized request reached handler")
+	default:
+	}
+}
+
+func dialManagedWebSocket(t *testing.T, manager *Manager) *websocket.Conn {
+	t.Helper()
+
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		managed := manager.NewConnection("app-1", conn)
+		manager.Register(managed)
+		managed.Serve()
+		manager.Unregister(managed)
+	}))
+	t.Cleanup(server.Close)
+	client, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil {
+		t.Fatalf("dial websocket: %v", err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	return client
 }
 
 func TestLimitOutboundEnvelopeReplacesOversizedResponse(t *testing.T) {
@@ -57,5 +140,38 @@ func TestManagerHandleRequestReplaysDuplicateResponse(t *testing.T) {
 	}
 	if string(first.Payload) != string(second.Payload) {
 		t.Fatalf("responses differ: %s != %s", first.Payload, second.Payload)
+	}
+}
+
+func TestManagerClosesLaggingConnectionInsteadOfSkippingCursor(t *testing.T) {
+	serverSocket := make(chan *websocket.Conn, 1)
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		serverSocket <- conn
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+	client, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil {
+		t.Fatalf("dial websocket: %v", err)
+	}
+	defer client.Close()
+
+	manager := NewManager(Options{SendBuffer: 1})
+	conn := manager.NewConnection("app-1", <-serverSocket)
+	manager.Register(conn)
+	if !conn.Enqueue(realtime.NewCursorEvent(1, "test.event", map[string]any{"value": 1})) {
+		t.Fatal("failed to fill connection send queue")
+	}
+	manager.SendToApp("app-1", realtime.NewCursorEvent(2, "test.event", map[string]any{"value": 2}))
+
+	select {
+	case <-conn.done:
+	case <-time.After(time.Second):
+		t.Fatal("lagging connection remained open after cursor enqueue failed")
 	}
 }

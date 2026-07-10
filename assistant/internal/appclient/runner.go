@@ -11,8 +11,10 @@ import (
 	"assistant/internal/builtintools"
 )
 
+const maxConversationSequenceWatermarks = 10_000
+
 type agentRunner interface {
-	Start(context.Context, string, agent.OutputSink, replyAgent, preparedAgentRun)
+	Start(context.Context, string, agent.OutputSink, replyAgent, preparedAgentRun) bool
 }
 
 type preparedAgentRun struct {
@@ -34,20 +36,27 @@ type sessionReplyAgent interface {
 
 type directAgentRunner struct{}
 
-func (directAgentRunner) Start(ctx context.Context, key string, sink agent.OutputSink, assistantAgent replyAgent, prepared preparedAgentRun) {
+func (directAgentRunner) Start(ctx context.Context, key string, sink agent.OutputSink, assistantAgent replyAgent, prepared preparedAgentRun) bool {
 	store := newConversationAuthorizationStore()
 	prepared.Request.AuthorizationCandidates = store.Add(prepared.Authorization)
 	prepared.Scope.AuthorizationResolver = store
-	if err := assistantAgent.Run(builtintools.WithScope(ctx, prepared.Scope), prepared.Request, sink); err != nil && !errors.Is(err, context.Canceled) {
+	if err := assistantAgent.Run(builtintools.WithScope(ctx, prepared.Scope), prepared.Request, sink); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return false
+		}
 		log.Printf("agent reply failed: %v", err)
+		return sendAgentFallback(ctx, sink) == nil
 	}
+	return true
 }
 
 type conversationAgentRunner struct {
-	ctx         context.Context
-	idleTimeout time.Duration
-	mu          sync.Mutex
-	jobs        map[string]*conversationAgentJob
+	ctx              context.Context
+	idleTimeout      time.Duration
+	mu               sync.Mutex
+	jobs             map[string]*conversationAgentJob
+	lastSeenSeq      map[string]int64
+	lastSeenSeqOrder []string
 }
 
 type conversationAgentJob struct {
@@ -70,25 +79,32 @@ func newConversationAgentRunner(ctx context.Context) *conversationAgentRunner {
 		ctx:         ctx,
 		idleTimeout: time.Hour,
 		jobs:        map[string]*conversationAgentJob{},
+		lastSeenSeq: map[string]int64{},
 	}
 }
 
-func (r *conversationAgentRunner) Start(ctx context.Context, key string, sink agent.OutputSink, assistantAgent replyAgent, prepared preparedAgentRun) {
+func (r *conversationAgentRunner) Start(ctx context.Context, key string, sink agent.OutputSink, assistantAgent replyAgent, prepared preparedAgentRun) bool {
 	if key == "" {
 		key = "unknown"
 	}
+	r.mu.Lock()
+	if prepared.MessageSeq > 0 && prepared.MessageSeq <= r.lastSeenSeq[key] {
+		r.mu.Unlock()
+		return true
+	}
 	sessionAgent, ok := assistantAgent.(sessionReplyAgent)
 	if !ok {
-		directAgentRunner{}.Start(ctx, key, sink, assistantAgent, prepared)
-		return
+		r.mu.Unlock()
+		accepted := directAgentRunner{}.Start(ctx, key, sink, assistantAgent, prepared)
+		if accepted {
+			r.mu.Lock()
+			r.recordSequenceLocked(key, prepared.MessageSeq)
+			r.mu.Unlock()
+		}
+		return accepted
 	}
 
-	r.mu.Lock()
 	if job, ok := r.jobs[key]; ok {
-		if prepared.MessageSeq > 0 && prepared.MessageSeq <= job.lastSeenSeq {
-			r.mu.Unlock()
-			return
-		}
 		if job.timer != nil {
 			job.timer.Stop()
 			job.timer = nil
@@ -99,18 +115,18 @@ func (r *conversationAgentRunner) Start(ctx context.Context, key string, sink ag
 		if err := job.session.Append(request); err != nil {
 			r.mu.Unlock()
 			log.Printf("append agent instruction failed: %v", err)
-			sendAgentFallback(ctx, sink)
-			return
+			return sendAgentFallback(ctx, sink) == nil
 		}
 		if prepared.MessageSeq > job.lastSeenSeq {
 			job.lastSeenSeq = prepared.MessageSeq
 		}
+		r.recordSequenceLocked(key, prepared.MessageSeq)
 		if !job.running {
 			job.running = true
 			go r.runJob(key, job)
 		}
 		r.mu.Unlock()
-		return
+		return true
 	}
 
 	jobCtx, cancel := context.WithCancel(r.ctx)
@@ -122,8 +138,7 @@ func (r *conversationAgentRunner) Start(ctx context.Context, key string, sink ag
 		r.mu.Unlock()
 		cancel()
 		log.Printf("create agent session failed: %v", err)
-		sendAgentFallback(ctx, sink)
-		return
+		return sendAgentFallback(ctx, sink) == nil
 	}
 	job := &conversationAgentJob{
 		authorizations: authorizations,
@@ -136,9 +151,26 @@ func (r *conversationAgentRunner) Start(ctx context.Context, key string, sink ag
 		sink:           sink,
 	}
 	r.jobs[key] = job
+	r.recordSequenceLocked(key, prepared.MessageSeq)
 	r.mu.Unlock()
 
 	go r.runJob(key, job)
+	return true
+}
+
+func (r *conversationAgentRunner) recordSequenceLocked(key string, seq int64) {
+	if seq <= 0 || seq <= r.lastSeenSeq[key] {
+		return
+	}
+	if _, exists := r.lastSeenSeq[key]; !exists {
+		r.lastSeenSeqOrder = append(r.lastSeenSeqOrder, key)
+	}
+	r.lastSeenSeq[key] = seq
+	for len(r.lastSeenSeqOrder) > maxConversationSequenceWatermarks {
+		oldest := r.lastSeenSeqOrder[0]
+		r.lastSeenSeqOrder = r.lastSeenSeqOrder[1:]
+		delete(r.lastSeenSeq, oldest)
+	}
 }
 
 func (r *conversationAgentRunner) CancelAll() {
@@ -309,11 +341,15 @@ func filterHistoryAfterSeq(history []agent.HistoryMessage, afterSeq int64) []age
 	return filtered
 }
 
-func sendAgentFallback(ctx context.Context, sink agent.OutputSink) {
+func sendAgentFallback(ctx context.Context, sink agent.OutputSink) error {
 	if sink == nil {
-		return
+		return errors.New("agent output sink unavailable")
 	}
-	if err := sink.SendMarkdown(ctx, agent.ModelErrorFallback); err != nil && !errors.Is(err, context.Canceled) {
-		log.Printf("send agent fallback failed: %v", err)
+	if err := sink.SendMarkdown(ctx, agent.ModelErrorFallback); err != nil {
+		if !errors.Is(err, context.Canceled) {
+			log.Printf("send agent fallback failed: %v", err)
+		}
+		return err
 	}
+	return nil
 }
