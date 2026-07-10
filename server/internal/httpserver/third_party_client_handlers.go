@@ -1184,6 +1184,9 @@ func (s *Server) findOrCreateThirdPartyBoundUser(tx *gorm.DB, provider store.Thi
 		}
 		return store.User{}, err
 	}
+	if err := createPersonalProject(tx, user, time.Now().UTC()); err != nil {
+		return store.User{}, err
+	}
 
 	return user, nil
 }

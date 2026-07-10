@@ -273,8 +273,16 @@ func (s *Server) createUser(c echo.Context) error {
 		PasswordHash: passwordHash,
 		Status:       store.UserStatusActive,
 	}
-	if err := s.db.Create(&user).Error; err != nil {
-		if isUniqueConstraintError(err) {
+	var userInsertErr error
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&user).Error; err != nil {
+			userInsertErr = err
+			return err
+		}
+
+		return createPersonalProject(tx, user, time.Now().UTC())
+	}); err != nil {
+		if userInsertErr != nil && isUniqueConstraintError(userInsertErr) {
 			return failure(c, http.StatusConflict, "conflict", "邮箱或手机号已存在")
 		}
 		return failure(c, http.StatusInternalServerError, "internal_error", "服务端错误")
