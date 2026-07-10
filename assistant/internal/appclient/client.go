@@ -28,7 +28,7 @@ const (
 	pongWait            = 60 * time.Second
 	requestWait         = 30 * time.Second
 	writeWait           = 10 * time.Second
-	maxMessageBytes     = 64 * 1024
+	maxMessageBytes     = 1 << 20
 	maxReconnectBackoff = 30 * time.Second
 )
 
@@ -253,8 +253,12 @@ func serveConnection(ctx context.Context, conn *websocket.Conn, appID string, as
 		writeMu.Lock()
 		defer writeMu.Unlock()
 
+		encoded, err := encodeEnvelope(message)
+		if err != nil {
+			return err
+		}
 		_ = conn.SetWriteDeadline(time.Now().Add(writeWait))
-		return conn.WriteJSON(message)
+		return conn.WriteMessage(websocket.TextMessage, encoded)
 	}
 	writeControl := func(messageType int, data []byte) error {
 		writeMu.Lock()
@@ -350,7 +354,7 @@ func (r *connectionRequester) Request(ctx context.Context, method string, payloa
 		return nil, err
 	}
 	if len(encodedRequest) > maxMessageBytes {
-		return nil, fmt.Errorf("app websocket request exceeds 64KiB limit")
+		return nil, fmt.Errorf("app websocket request exceeds 1MiB limit")
 	}
 
 	responseCh := make(chan envelope, 1)
@@ -417,6 +421,17 @@ func decodeServerMessage(messageType int, data []byte) (envelope, bool) {
 	}
 
 	return message, true
+}
+
+func encodeEnvelope(message envelope) ([]byte, error) {
+	encoded, err := json.Marshal(message)
+	if err != nil {
+		return nil, err
+	}
+	if len(encoded) > maxMessageBytes {
+		return nil, fmt.Errorf("app websocket message exceeds 1MiB limit")
+	}
+	return encoded, nil
 }
 
 func handleServerMessage(ctx context.Context, messageType int, data []byte, requester appRequester, assistantAgent replyAgent, writeJSON func(envelope) error) {

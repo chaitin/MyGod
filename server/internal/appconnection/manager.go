@@ -14,7 +14,7 @@ const (
 	defaultPingInterval    = 30 * time.Second
 	defaultPongWait        = 60 * time.Second
 	defaultWriteWait       = 10 * time.Second
-	defaultMaxMessageBytes = 64 * 1024
+	defaultMaxMessageBytes = 1 << 20
 )
 
 type Options struct {

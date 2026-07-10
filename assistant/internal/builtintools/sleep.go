@@ -862,7 +862,7 @@ func messageInputSchema(requireContact bool) map[string]any {
 		},
 		"content": map[string]any{
 			"type":        "string",
-			"description": "text/markdown 时为消息内容；image 时为可下载 URL；file 且没有 url 时为 assistant 生成的小文件内容，受 64KiB websocket 消息上限约束。",
+			"description": "text/markdown 时为消息内容；image 时为可下载 URL；file 且没有 url 时为 assistant 生成的小文件内容，受 64KiB 内联文件内容上限约束。",
 		},
 		"name": map[string]any{
 			"type":        "string",

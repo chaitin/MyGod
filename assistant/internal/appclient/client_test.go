@@ -51,11 +51,57 @@ func TestConnectionRequesterRejectsOversizedOutgoingEnvelope(t *testing.T) {
 	if err == nil {
 		t.Fatal("Request() error = nil, want oversized message error")
 	}
-	if !strings.Contains(err.Error(), "64KiB") {
-		t.Fatalf("Request() error = %v, want 64KiB limit", err)
+	if !strings.Contains(err.Error(), "1MiB") {
+		t.Fatalf("Request() error = %v, want 1MiB limit", err)
 	}
 	if wrote {
 		t.Fatal("write called for oversized message")
+	}
+}
+
+func TestConnectionRequesterAllowsEnvelopeLargerThan64KiB(t *testing.T) {
+	var requester *connectionRequester
+	requester = newConnectionRequester(func(message envelope) error {
+		ok := true
+		requester.HandleResponse(envelope{
+			V:       protocolVersion,
+			Kind:    kindResponse,
+			ReplyTo: message.ID,
+			OK:      &ok,
+			Payload: json.RawMessage(`{"accepted":true}`),
+		})
+		return nil
+	})
+
+	raw, err := requester.Request(context.Background(), methodMessageSend, map[string]any{
+		"message": map[string]any{
+			"type":    "markdown",
+			"content": strings.Repeat("x", 128*1024),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Request() error = %v, want nil", err)
+	}
+	if string(raw) != `{"accepted":true}` {
+		t.Fatalf("Request() payload = %s, want accepted response", raw)
+	}
+}
+
+func TestEncodeEnvelopeRejectsMessageLargerThanOneMiB(t *testing.T) {
+	payload, err := json.Marshal(map[string]any{"content": strings.Repeat("x", maxMessageBytes)})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	_, err = encodeEnvelope(envelope{
+		V:       protocolVersion,
+		Kind:    kindRequest,
+		ID:      "request-1",
+		Method:  methodMessageSend,
+		Payload: payload,
+	})
+	if err == nil || !strings.Contains(err.Error(), "1MiB") {
+		t.Fatalf("encodeEnvelope() error = %v, want 1MiB limit", err)
 	}
 }
 

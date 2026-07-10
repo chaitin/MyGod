@@ -1,6 +1,8 @@
 package appconnection
 
 import (
+	"encoding/json"
+	"log"
 	"sync"
 	"time"
 
@@ -76,7 +78,12 @@ func (c *Connection) writeLoop() {
 		case <-c.done:
 			return
 		case message := <-c.send:
-			if err := c.writeJSON(message); err != nil {
+			limited, ok := limitOutboundEnvelope(message, c.manager.maxMessageBytes)
+			if !ok {
+				log.Printf("skip oversized app websocket event: app_id=%s event=%s", c.appID, message.Event)
+				continue
+			}
+			if err := c.writeJSON(limited); err != nil {
 				return
 			}
 		case <-ticker.C:
@@ -85,6 +92,17 @@ func (c *Connection) writeLoop() {
 			}
 		}
 	}
+}
+
+func limitOutboundEnvelope(message realtime.Envelope, maxMessageBytes int64) (realtime.Envelope, bool) {
+	encoded, err := json.Marshal(message)
+	if err == nil && int64(len(encoded)) <= maxMessageBytes {
+		return message, true
+	}
+	if message.Kind == realtime.KindResponse {
+		return realtime.NewErrorResponse(message.ReplyTo, "response_too_large", "应用响应超过 1MiB 限制"), true
+	}
+	return realtime.Envelope{}, false
 }
 
 func (c *Connection) writeJSON(message realtime.Envelope) error {
