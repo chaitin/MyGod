@@ -1,12 +1,13 @@
 import { render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter } from "react-router"
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { AppLayout } from "@/components/app-layout"
 
 const mocks = vi.hoisted(() => ({
   clientData: {
+    conversations: [] as Array<{ unreadCount: number }>,
     me: {
       avatar: "",
       createdAt: "2026-07-09T00:00:00Z",
@@ -25,6 +26,10 @@ const mocks = vi.hoisted(() => ({
   updateCurrentClientUser: vi.fn(),
   uploadCurrentClientAvatar: vi.fn(),
 }))
+
+beforeEach(() => {
+  mocks.clientData.conversations = []
+})
 
 vi.mock("@/lib/client-data-context", () => ({
   useClientData: () => mocks.clientData,
@@ -47,6 +52,46 @@ vi.mock("@/lib/client-data-api", () => ({
 }))
 
 describe("AppLayout", () => {
+  it("shows a notification dot when any conversation is unread", () => {
+    mocks.clientData.conversations = [
+      { unreadCount: 0 },
+      { unreadCount: 2 },
+    ]
+
+    render(
+      <MemoryRouter initialEntries={["/chat"]}>
+        <AppLayout />
+      </MemoryRouter>
+    )
+
+    const chatLink = screen.getByRole("link", {
+      name: "聊天，有未读消息",
+    })
+
+    expect(
+      chatLink.querySelector('[data-slot="notification-dot"]')
+    ).toBeInTheDocument()
+  })
+
+  it("hides the notification dot when every conversation is read", () => {
+    mocks.clientData.conversations = [
+      { unreadCount: 0 },
+      { unreadCount: 0 },
+    ]
+
+    render(
+      <MemoryRouter initialEntries={["/chat"]}>
+        <AppLayout />
+      </MemoryRouter>
+    )
+
+    const chatLink = screen.getByRole("link", { name: "聊天" })
+
+    expect(
+      chatLink.querySelector('[data-slot="notification-dot"]')
+    ).not.toBeInTheDocument()
+  })
+
   it("splits profile and settings actions in the user avatar menu", async () => {
     const user = userEvent.setup()
 

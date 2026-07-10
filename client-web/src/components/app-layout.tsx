@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
+import { NotificationDot } from "@/components/ui/notification-dot"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -67,7 +68,10 @@ const themeItems = [
 type ThemeValue = (typeof themeItems)[number]["value"]
 
 export function AppLayout() {
-  const { me, refreshMe } = useClientData()
+  const { conversations, me, refreshMe } = useClientData()
+  const hasUnreadMessages = conversations.some(
+    (conversation) => conversation.unreadCount > 0
+  )
 
   return (
     <div className="flex h-svh min-h-0 bg-background text-foreground">
@@ -75,7 +79,11 @@ export function AppLayout() {
         <UserAvatarMenu user={me} refreshMe={refreshMe} />
         <nav aria-label="主导航" className="flex flex-1 flex-col gap-2">
           {navItems.map((item) => (
-            <MainNavItem key={item.to} item={item} />
+            <MainNavItem
+              key={item.to}
+              item={item}
+              showNotification={item.to === "/chat" && hasUnreadMessages}
+            />
           ))}
         </nav>
         <ThemeSwitcher />
@@ -282,19 +290,35 @@ function UserMenuProfileSummary({ user }: { user: ClientUser }) {
   )
 }
 
-function MainNavItem({ item }: { item: (typeof navItems)[number] }) {
+function MainNavItem({
+  item,
+  showNotification,
+}: {
+  item: (typeof navItems)[number]
+  showNotification: boolean
+}) {
   const active = Boolean(useMatch({ path: item.to, end: true }))
   const Icon = item.icon
+  const accessibleLabel = showNotification
+    ? `${item.label}，有未读消息`
+    : item.label
 
   return (
     <Button
       asChild
       variant={active ? "default" : "ghost"}
       size="icon-sm"
-      className={active ? "rounded-full" : "rounded-full text-muted-foreground"}
+      className={
+        active
+          ? "relative rounded-full"
+          : "relative rounded-full text-muted-foreground"
+      }
     >
-      <NavLink to={item.to} aria-label={item.label} title={item.label}>
+      <NavLink to={item.to} aria-label={accessibleLabel} title={item.label}>
         <Icon className="size-4" strokeWidth={active ? 2.5 : 2} />
+        {showNotification && (
+          <NotificationDot className="absolute top-0 right-0 ring-sidebar" />
+        )}
       </NavLink>
     </Button>
   )
