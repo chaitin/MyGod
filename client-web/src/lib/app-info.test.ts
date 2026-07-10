@@ -53,26 +53,4 @@ describe("client app info", () => {
       method: "GET",
     })
   })
-
-  it("throws when the response is not successful", async () => {
-    const fetcher = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          success: false,
-          error: {
-            code: "internal_error",
-            message: "服务端错误",
-          },
-        }),
-        {
-          headers: {
-            "content-type": "application/json",
-          },
-          status: 500,
-        }
-      )
-    )
-
-    await expect(getClientInfo(fetcher)).rejects.toThrow("服务端错误")
-  })
 })

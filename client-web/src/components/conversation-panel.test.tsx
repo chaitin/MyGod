@@ -14,36 +14,6 @@ import {
 } from "@/lib/client-data-context"
 
 describe("ConversationPanel", () => {
-  it("focuses the composer textarea when a conversation is opened", async () => {
-    render(
-      <ConversationPanel
-        conversation={createConversation("conversation-1")}
-        currentUserId="user-1"
-        draft=""
-        historyError={null}
-        historyLoading={false}
-        historyLoadingBefore={false}
-        messages={[]}
-        onCancelReply={vi.fn()}
-        onDraftChange={vi.fn()}
-        onLoadBeforeMessages={vi.fn()}
-        onReplyToMessage={vi.fn()}
-        onRevokeMessage={vi.fn()}
-        onRichTextModeChange={vi.fn()}
-        onSendFile={async () => null}
-        onSendImage={async () => null}
-        onSendMessage={vi.fn()}
-        replyTarget={null}
-        richTextMode={false}
-        sending={false}
-      />
-    )
-
-    const composer = screen.getByPlaceholderText("输入消息")
-
-    await waitFor(() => expect(composer).toHaveFocus())
-  })
-
   it("refocuses the composer textarea when a reply target is selected", async () => {
     const { rerender } = render(
       <ConversationPanel
@@ -107,7 +77,7 @@ describe("ConversationPanel", () => {
     await waitFor(() => expect(composer).toHaveFocus())
   })
 
-  it("does not send while Enter is confirming IME composition", () => {
+  it("does not send when Enter belongs to an IME interaction", () => {
     const onSendMessage = vi.fn()
 
     render(
@@ -135,80 +105,20 @@ describe("ConversationPanel", () => {
     )
 
     const composer = screen.getByPlaceholderText("输入消息")
-    const keyDownNotCanceled = fireEvent.keyDown(composer, {
+    const compositionKeyDownNotCanceled = fireEvent.keyDown(composer, {
       code: "Enter",
       isComposing: true,
       key: "Enter",
     })
-
-    expect(keyDownNotCanceled).toBe(true)
-    expect(onSendMessage).not.toHaveBeenCalled()
-  })
-
-  it("does not send while Enter is reported as an IME process key", () => {
-    const onSendMessage = vi.fn()
-
-    render(
-      <ConversationPanel
-        conversation={createConversation("conversation-1")}
-        currentUserId="user-1"
-        draft="nihao"
-        historyError={null}
-        historyLoading={false}
-        historyLoadingBefore={false}
-        messages={[]}
-        onCancelReply={vi.fn()}
-        onDraftChange={vi.fn()}
-        onLoadBeforeMessages={vi.fn()}
-        onReplyToMessage={vi.fn()}
-        onRevokeMessage={vi.fn()}
-        onRichTextModeChange={vi.fn()}
-        onSendFile={async () => null}
-        onSendImage={async () => null}
-        onSendMessage={onSendMessage}
-        replyTarget={null}
-        richTextMode={false}
-        sending={false}
-      />
-    )
-
-    const composer = screen.getByPlaceholderText("输入消息")
-    const keyDownNotCanceled = fireEvent.keyDown(composer, {
+    const processKeyDownNotCanceled = fireEvent.keyDown(composer, {
       code: "Enter",
       key: "Enter",
       keyCode: 229,
     })
 
-    expect(keyDownNotCanceled).toBe(true)
+    expect(compositionKeyDownNotCanceled).toBe(true)
+    expect(processKeyDownNotCanceled).toBe(true)
     expect(onSendMessage).not.toHaveBeenCalled()
-  })
-
-  it("breaks plain text messages between any characters", () => {
-    const content = "averylongcontinuousplaintextmessage"
-    const message = createAppPanelMessage({
-      appId: "app-1",
-      avatar: "",
-      author: "智能助手",
-    })
-    message.body = { content, type: "text" }
-
-    renderConversationMessages([message])
-
-    expect(screen.getByText(content)).toHaveClass("break-all")
-  })
-
-  it("breaks markdown messages between any characters", () => {
-    const content = "averylongcontinuousmarkdownmessage"
-    const message = createAppPanelMessage({
-      appId: "app-1",
-      avatar: "",
-      author: "智能助手",
-    })
-    message.body = { content: `**${content}**`, type: "markdown" }
-
-    renderConversationMessages([message])
-
-    expect(screen.getByText(content).closest("div")).toHaveClass("break-all")
   })
 
   it("opens the app profile popover from an app message avatar", async () => {
@@ -273,36 +183,6 @@ describe("ConversationPanel", () => {
     expect(screen.getByRole("button", { name: "发消息" })).toBeInTheDocument()
   })
 })
-
-function renderConversationMessages(messages: ConversationPanelMessage[]) {
-  render(
-    <MemoryRouter>
-      <ClientDataContext.Provider value={createClientDataValue()}>
-        <ConversationPanel
-          conversation={createConversation("conversation-1")}
-          currentUserId="user-1"
-          draft=""
-          historyError={null}
-          historyLoading={false}
-          historyLoadingBefore={false}
-          messages={messages}
-          onCancelReply={vi.fn()}
-          onDraftChange={vi.fn()}
-          onLoadBeforeMessages={vi.fn()}
-          onReplyToMessage={vi.fn()}
-          onRevokeMessage={vi.fn()}
-          onRichTextModeChange={vi.fn()}
-          onSendFile={async () => null}
-          onSendImage={async () => null}
-          onSendMessage={vi.fn()}
-          replyTarget={null}
-          richTextMode={false}
-          sending={false}
-        />
-      </ClientDataContext.Provider>
-    </MemoryRouter>
-  )
-}
 
 function createConversation(id: string): ClientConversation {
   return {

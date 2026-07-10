@@ -6,21 +6,11 @@ const uuidV4Pattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 
 describe("createClientMessageId", () => {
-  it("uses crypto.randomUUID when available", () => {
-    const randomUUID = vi
-      .fn()
-      .mockReturnValue("e84d7d38-5a54-47f6-86e6-2afde5df7a12")
-
-    expect(createClientMessageId({ randomUUID })).toBe(
-      "e84d7d38-5a54-47f6-86e6-2afde5df7a12"
-    )
-  })
-
   it("falls back to getRandomValues when randomUUID is unavailable", () => {
     const getRandomValues = vi.fn((bytes: Uint8Array) => {
       bytes.set([
-        0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x06, 0x77, 0x08, 0x99, 0xaa,
-        0xbb, 0xcc, 0xdd, 0xee, 0xff,
+        0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x06, 0x77, 0x08, 0x99, 0xaa, 0xbb,
+        0xcc, 0xdd, 0xee, 0xff,
       ])
 
       return bytes

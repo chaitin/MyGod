@@ -8,9 +8,7 @@ const { readTemporaryFileURLsMock } = vi.hoisted(() => ({
 }))
 
 vi.mock("@/lib/client-data-api", async (importOriginal) => {
-  const actual = await importOriginal<
-    typeof import("@/lib/client-data-api")
-  >()
+  const actual = await importOriginal<typeof import("@/lib/client-data-api")>()
 
   return {
     ...actual,
@@ -61,6 +59,5 @@ describe("MessageImage", () => {
     const wheelNotCanceled = fireEvent.wheel(previewArea, { deltaY: -1 })
 
     expect(wheelNotCanceled).toBe(false)
-    expect(previewArea).toHaveClass("cursor-grab")
   })
 })

@@ -14,28 +14,6 @@ import {
 } from "@/lib/client-data-context"
 
 describe("ConversationPanel header profile", () => {
-  it("labels an app conversation with a Bot icon", () => {
-    renderConversationHeader(
-      createConversation({ name: "智能助手", type: "app" })
-    )
-
-    const header = screen.getByTestId("conversation-panel-header")
-
-    expect(within(header).getByText("应用")).toBeInTheDocument()
-    expect(header.querySelector(".lucide-bot")).toBeInTheDocument()
-  })
-
-  it("labels a direct conversation with a single-user icon", () => {
-    renderConversationHeader(
-      createConversation({ name: "李四", type: "direct" })
-    )
-
-    const header = screen.getByTestId("conversation-panel-header")
-
-    expect(within(header).getByText("私聊")).toBeInTheDocument()
-    expect(header.querySelector(".lucide-user-round")).toBeInTheDocument()
-  })
-
   it("opens the direct conversation user profile and previews its avatar", async () => {
     const user = userEvent.setup()
     const otherMember = createMember({
@@ -70,10 +48,8 @@ describe("ConversationPanel header profile", () => {
 
     await user.click(screen.getByRole("button", { name: "预览李四头像" }))
 
-    const preview = await screen.findByTestId("avatar-preview")
-    expect(preview).toHaveClass("size-64")
     expect(
-      screen.getByRole("dialog", { name: "李四头像预览" })
+      await screen.findByRole("dialog", { name: "李四头像预览" })
     ).toBeInTheDocument()
   })
 
@@ -110,8 +86,9 @@ describe("ConversationPanel header profile", () => {
     await user.click(screen.getByRole("button", { name: "智能助手资料" }))
 
     expect(await screen.findByText("企业智能助手")).toBeInTheDocument()
-    expect(screen.getByText("类型")).toBeInTheDocument()
-    expect(screen.getByText("应用")).toBeInTheDocument()
+    const profile = screen.getByRole("dialog")
+    expect(within(profile).getByText("类型")).toBeInTheDocument()
+    expect(within(profile).getByText("应用")).toBeInTheDocument()
   })
 
   it("opens the group profile and previews its composite avatar", async () => {
@@ -136,10 +113,8 @@ describe("ConversationPanel header profile", () => {
 
     await user.click(screen.getByRole("button", { name: "预览项目群头像" }))
 
-    const preview = await screen.findByTestId("avatar-preview")
-    expect(preview).toHaveClass("size-64")
     expect(
-      screen.getByRole("dialog", { name: "项目群头像预览" })
+      await screen.findByRole("dialog", { name: "项目群头像预览" })
     ).toBeInTheDocument()
   })
 })

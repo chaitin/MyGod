@@ -59,13 +59,15 @@ describe("linkifyMessageText", () => {
     ])
   })
 
-  it.each([
-    "www.example.com",
-    "ftp://example.com/file",
-    "https://user:pass@example.com",
-    "https://example.com:0/path",
-    "https://example.com:65536/path",
-  ])("does not link an unsupported URL candidate: %s", (value) => {
-    expect(linkifyMessageText(value)).toEqual([{ type: "text", value }])
+  it("does not link unsupported URL candidates", () => {
+    for (const value of [
+      "www.example.com",
+      "ftp://example.com/file",
+      "https://user:pass@example.com",
+      "https://example.com:0/path",
+      "https://example.com:65536/path",
+    ]) {
+      expect(linkifyMessageText(value)).toEqual([{ type: "text", value }])
+    }
   })
 })

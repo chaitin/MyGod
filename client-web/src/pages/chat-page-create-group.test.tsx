@@ -11,45 +11,31 @@ import {
 } from "@/lib/client-data-context"
 
 describe("ChatPage create group dialog", () => {
-  it("defaults the group name to 新建群聊", async () => {
-    const user = userEvent.setup()
+  it("creates groups with and without selected apps", async () => {
+    for (const appIds of [[], ["app-1"]]) {
+      const user = userEvent.setup()
+      const createGroupConversation = vi
+        .fn()
+        .mockResolvedValue(createGroupConversationResponse())
+      const view = renderChatPage({ createGroupConversation })
 
-    renderChatPage()
-    await openCreateGroupDialog(user)
+      await openCreateGroupDialog(user)
+      expect(screen.getByLabelText("群聊名称")).toHaveValue("新建群聊")
 
-    expect(screen.getByLabelText("群聊名称")).toHaveValue("新建群聊")
-  })
+      if (appIds.length > 0) {
+        await user.click(screen.getByRole("tab", { name: "应用" }))
+        await user.click(screen.getByRole("checkbox", { name: "AI 女菩萨" }))
+      }
 
-  it("creates an owner-only group without selecting invitees", async () => {
-    const user = userEvent.setup()
-    const createGroupConversation = vi
-      .fn()
-      .mockResolvedValue(createGroupConversationResponse())
+      await user.click(screen.getByRole("button", { name: "创建" }))
+      expect(createGroupConversation).toHaveBeenCalledWith(
+        "新建群聊",
+        [],
+        appIds
+      )
 
-    renderChatPage({ createGroupConversation })
-    await openCreateGroupDialog(user)
-    await user.click(screen.getByRole("button", { name: "创建" }))
-
-    expect(createGroupConversation).toHaveBeenCalledWith("新建群聊", [], [])
-  })
-
-  it("creates a group with selected apps", async () => {
-    const user = userEvent.setup()
-    const createGroupConversation = vi
-      .fn()
-      .mockResolvedValue(createGroupConversationResponse())
-
-    renderChatPage({ createGroupConversation })
-    await openCreateGroupDialog(user)
-    await user.click(screen.getByRole("tab", { name: "应用" }))
-    await user.click(screen.getByRole("checkbox", { name: "AI 女菩萨" }))
-    await user.click(screen.getByRole("button", { name: "创建" }))
-
-    expect(createGroupConversation).toHaveBeenCalledWith(
-      "新建群聊",
-      [],
-      ["app-1"]
-    )
+      view.unmount()
+    }
   })
 })
 
@@ -59,7 +45,7 @@ async function openCreateGroupDialog(user: ReturnType<typeof userEvent.setup>) {
 }
 
 function renderChatPage(overrides: Partial<ClientDataContextValue> = {}) {
-  render(
+  return render(
     <MemoryRouter initialEntries={["/chat"]}>
       <ClientDataContext.Provider value={createClientDataValue(overrides)}>
         <ChatPage />

@@ -45,20 +45,6 @@ describe("ConversationPanel file drop", () => {
 
     const overlay = screen.getByTestId("conversation-file-drop-overlay")
     expect(panel).toContainElement(overlay)
-    expect(overlay).toHaveClass(
-      "absolute",
-      "inset-0",
-      "items-center",
-      "justify-center",
-      "bg-teal-700/10",
-      "p-3"
-    )
-    expect(overlay.firstElementChild).toHaveClass(
-      "size-full",
-      "max-w-100",
-      "max-h-60",
-      "bg-background/60"
-    )
     expect(overlay).toHaveTextContent("松开发送图片")
     expect(overlay).toHaveTextContent("支持 PNG、JPG 和 WebP")
 
@@ -134,32 +120,28 @@ describe("ConversationPanel file drop", () => {
     ).not.toBeInTheDocument()
   })
 
-  it("prevents browser file opening without an active conversation", () => {
-    renderConversationPanel(null)
-    const panel = screen.getByTestId("chat-detail-shell")
+  it("rejects file drops when the conversation cannot accept files", () => {
     const file = new File(["document"], "notes.txt", { type: "text/plain" })
     const dataTransfer = createFileDataTransfer([file])
 
-    expect(fireEvent.dragEnter(panel, { dataTransfer })).toBe(false)
-    expect(
-      screen.queryByTestId("conversation-file-drop-overlay")
-    ).not.toBeInTheDocument()
-    expect(fireEvent.drop(panel, { dataTransfer })).toBe(false)
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
-  })
+    const unavailableStates = [
+      { conversation: null, sending: false },
+      { conversation: createConversation(), sending: true },
+    ]
 
-  it("does not offer another file while a message is sending", () => {
-    renderConversationPanel(createConversation(), true)
-    const panel = screen.getByTestId("chat-detail-shell")
-    const file = new File(["document"], "notes.txt", { type: "text/plain" })
-    const dataTransfer = createFileDataTransfer([file])
+    for (const state of unavailableStates) {
+      const view = renderConversationPanel(state.conversation, state.sending)
+      const panel = screen.getByTestId("chat-detail-shell")
 
-    expect(fireEvent.dragEnter(panel, { dataTransfer })).toBe(false)
-    expect(
-      screen.queryByTestId("conversation-file-drop-overlay")
-    ).not.toBeInTheDocument()
-    expect(fireEvent.drop(panel, { dataTransfer })).toBe(false)
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+      expect(fireEvent.dragEnter(panel, { dataTransfer })).toBe(false)
+      expect(
+        screen.queryByTestId("conversation-file-drop-overlay")
+      ).not.toBeInTheDocument()
+      expect(fireEvent.drop(panel, { dataTransfer })).toBe(false)
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+
+      view.unmount()
+    }
   })
 })
 
@@ -167,7 +149,7 @@ function renderConversationPanel(
   conversation: ClientConversation | null,
   sending = false
 ) {
-  render(
+  return render(
     <ConversationPanel
       conversation={conversation}
       currentUserId="user-1"

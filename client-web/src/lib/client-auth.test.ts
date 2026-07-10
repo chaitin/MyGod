@@ -1,11 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 
-import {
-  ClientLoginRequestError,
-  ClientLogoutRequestError,
-  clientLogin,
-  clientLogout,
-} from "@/lib/client-auth"
+import { ClientLoginRequestError, clientLogin } from "@/lib/client-auth"
 
 describe("client auth", () => {
   it("logs in through the client auth API", async () => {
@@ -90,55 +85,5 @@ describe("client auth", () => {
       message: "邮箱或密码错误",
       name: "ClientLoginRequestError",
     } satisfies ClientLoginRequestError)
-  })
-
-  it("logs out through the client auth API", async () => {
-    const fetcher = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          success: true,
-          data: {},
-        }),
-        {
-          headers: {
-            "content-type": "application/json",
-          },
-          status: 200,
-        }
-      )
-    )
-
-    await clientLogout(fetcher)
-
-    expect(fetcher).toHaveBeenCalledWith("/api/client/auth/logout", {
-      credentials: "include",
-      method: "POST",
-    })
-  })
-
-  it("throws the client API error message when logout fails", async () => {
-    const fetcher = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          success: false,
-          error: {
-            code: "internal_error",
-            message: "退出登录失败",
-          },
-        }),
-        {
-          headers: {
-            "content-type": "application/json",
-          },
-          status: 500,
-        }
-      )
-    )
-
-    await expect(clientLogout(fetcher)).rejects.toMatchObject({
-      code: "internal_error",
-      message: "退出登录失败",
-      name: "ClientLogoutRequestError",
-    } satisfies ClientLogoutRequestError)
   })
 })

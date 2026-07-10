@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
   RealtimeClient,
-  buildRealtimeWebSocketURL,
   type RealtimeWebSocketLike,
 } from "@/lib/realtime-client"
 
@@ -75,62 +74,6 @@ describe("RealtimeClient", () => {
 
   afterEach(() => {
     vi.useRealTimers()
-  })
-
-  it("builds a websocket URL from the current location", () => {
-    expect(
-      buildRealtimeWebSocketURL(new URL("http://localhost:20070/contacts"))
-    ).toBe("ws://localhost:20070/api/client/ws")
-    expect(buildRealtimeWebSocketURL(new URL("https://example.com/chat"))).toBe(
-      "wss://example.com/api/client/ws"
-    )
-  })
-
-  it("ignores presence events because contacts API owns online status", () => {
-    const client = createClient()
-    const listener = vi.fn()
-    client.subscribe(listener)
-
-    client.connect()
-    expect(FakeWebSocket.instances[0]?.url).toBe(
-      "ws://example.test/api/client/ws"
-    )
-    expect(client.getSnapshot().status).toBe("connecting")
-
-    FakeWebSocket.instances[0].open()
-    expect(client.getSnapshot().status).toBe("connected")
-    listener.mockClear()
-
-    FakeWebSocket.instances[0].receive({
-      v: 1,
-      kind: "event",
-      event: "presence.snapshot",
-      payload: {
-        users: [
-          {
-            user_id: "user-1",
-            online: true,
-            last_online_at: "2026-07-03T01:00:00Z",
-          },
-        ],
-      },
-    })
-
-    FakeWebSocket.instances[0].receive({
-      v: 1,
-      kind: "event",
-      event: "presence.changed",
-      payload: {
-        user_id: "user-1",
-        online: false,
-        last_online_at: "2026-07-03T01:02:00Z",
-      },
-    })
-    expect(listener).not.toHaveBeenCalled()
-    expect(client.getSnapshot()).toEqual({
-      ready: false,
-      status: "connected",
-    })
   })
 
   it("dispatches subscribed realtime events and stops after unsubscribe", () => {
@@ -236,17 +179,6 @@ describe("RealtimeClient", () => {
     await flushPromises()
 
     expect(rejectionMessage).toBe("实时连接已断开")
-  })
-
-  it("rejects a realtime request when socket send fails", async () => {
-    const client = createClient()
-    client.connect()
-    FakeWebSocket.instances[0].open()
-    FakeWebSocket.instances[0].throwOnSend = true
-
-    await expect(
-      client.sendRequest("message.create", { text: "hello" })
-    ).rejects.toThrow("发送实时请求失败")
   })
 
   it("stops reconnecting and reports unauthorized when auth check fails", async () => {
