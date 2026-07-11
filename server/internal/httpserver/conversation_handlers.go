@@ -60,7 +60,7 @@ var (
 type createGroupConversationRequest struct {
 	AppIDs     []string                   `json:"app_ids" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
 	MemberIDs  []string                   `json:"member_ids" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
-	Name       string                     `json:"name" example:"产品讨论组"`
+	Name       string                     `json:"name" binding:"required" example:"产品讨论组"`
 	ProjectIDs projectOptionalStringSlice `json:"project_ids" swaggertype:"array,string" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
 }
 
@@ -712,7 +712,9 @@ func (s *Server) createAppConversation(c echo.Context) error {
 // @Success 201 {object} successEnvelope{data=createGroupConversationResponse}
 // @Failure 400 {object} errorEnvelope
 // @Failure 401 {object} errorEnvelope
+// @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
+// @Security UserSession
 // @Router /api/client/conversations/groups [post]
 func (s *Server) createGroupConversation(c echo.Context) error {
 	user, ok := currentUser(c)
@@ -1414,7 +1416,9 @@ func (s *Server) leaveGroupConversation(c echo.Context) error {
 // @Failure 401 {object} errorEnvelope
 // @Failure 403 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
+// @Failure 409 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
+// @Security UserSession
 // @Router /api/client/conversations/groups/{conversation_id} [delete]
 func (s *Server) dissolveGroupConversation(c echo.Context) error {
 	user, ok := currentUser(c)

@@ -1974,6 +1974,11 @@ const docTemplate = `{
         },
         "/api/client/conversations/groups": {
             "post": {
+                "security": [
+                    {
+                        "UserSession": []
+                    }
+                ],
                 "description": "普通用户创建群聊。当前登录用户会自动成为群主，member_ids 和 app_ids 可选择其他成员或应用，project_ids 可选填要关联的本人普通项目。",
                 "consumes": [
                     "application/json"
@@ -2027,6 +2032,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/httpserver.errorEnvelope"
                         }
                     },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -2038,6 +2049,11 @@ const docTemplate = `{
         },
         "/api/client/conversations/groups/{conversation_id}": {
             "delete": {
+                "security": [
+                    {
+                        "UserSession": []
+                    }
+                ],
                 "description": "群主解散 active 群聊。解散后所有成员将不再看到该群聊。",
                 "produces": [
                     "application/json"
@@ -2094,6 +2110,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/httpserver.errorEnvelope"
                         }
@@ -3581,6 +3603,11 @@ const docTemplate = `{
         },
         "/api/client/projects": {
             "get": {
+                "security": [
+                    {
+                        "UserSession": []
+                    }
+                ],
                 "description": "获取当前用户可访问的项目及个人项目，按更新时间倒序分页。",
                 "produces": [
                     "application/json"
@@ -3643,6 +3670,11 @@ const docTemplate = `{
                 }
             },
             "post": {
+                "security": [
+                    {
+                        "UserSession": []
+                    }
+                ],
                 "description": "创建普通项目，可同时关联当前可用的群聊。",
                 "consumes": [
                     "application/json"
@@ -3707,6 +3739,11 @@ const docTemplate = `{
         },
         "/api/client/projects/{project_id}": {
             "get": {
+                "security": [
+                    {
+                        "UserSession": []
+                    }
+                ],
                 "description": "获取当前用户可访问的项目详情和任务统计。",
                 "produces": [
                     "application/json"
@@ -3770,6 +3807,11 @@ const docTemplate = `{
                 }
             },
             "delete": {
+                "security": [
+                    {
+                        "UserSession": []
+                    }
+                ],
                 "description": "项目所有者删除普通项目；个人项目不能删除。",
                 "produces": [
                     "application/json"
@@ -3839,6 +3881,11 @@ const docTemplate = `{
                 }
             },
             "patch": {
+                "security": [
+                    {
+                        "UserSession": []
+                    }
+                ],
                 "description": "项目所有者更新项目名称、描述或头像。",
                 "consumes": [
                     "application/json"
@@ -3922,6 +3969,11 @@ const docTemplate = `{
         },
         "/api/client/projects/{project_id}/groups": {
             "get": {
+                "security": [
+                    {
+                        "UserSession": []
+                    }
+                ],
                 "description": "获取项目关联的可用群聊，按关联时间倒序分页。",
                 "produces": [
                     "application/json"
@@ -3999,6 +4051,11 @@ const docTemplate = `{
         },
         "/api/client/projects/{project_id}/groups/{group_id}": {
             "put": {
+                "security": [
+                    {
+                        "UserSession": []
+                    }
+                ],
                 "description": "项目所有者将可用群聊关联到普通项目；重复关联保持成功。",
                 "consumes": [
                     "application/json"
@@ -4078,6 +4135,11 @@ const docTemplate = `{
                 }
             },
             "delete": {
+                "security": [
+                    {
+                        "UserSession": []
+                    }
+                ],
                 "description": "项目所有者解除普通项目与群聊的关联；未关联时保持成功。",
                 "produces": [
                     "application/json"
@@ -4156,6 +4218,11 @@ const docTemplate = `{
         },
         "/api/client/projects/{project_id}/members": {
             "get": {
+                "security": [
+                    {
+                        "UserSession": []
+                    }
+                ],
                 "description": "获取项目成员及其来源群聊，按显示名称分页。",
                 "produces": [
                     "application/json"
@@ -4233,6 +4300,11 @@ const docTemplate = `{
         },
         "/api/client/projects/{project_id}/tasks": {
             "get": {
+                "security": [
+                    {
+                        "UserSession": []
+                    }
+                ],
                 "description": "获取项目任务，支持关键字、状态、优先级、负责人、标签和日期范围筛选。",
                 "produces": [
                     "application/json"
@@ -4362,6 +4434,11 @@ const docTemplate = `{
                 }
             },
             "post": {
+                "security": [
+                    {
+                        "UserSession": []
+                    }
+                ],
                 "description": "在当前用户可访问的项目中创建任务，可指定负责人、状态、优先级、日期和标签。",
                 "consumes": [
                     "application/json"
@@ -4439,6 +4516,11 @@ const docTemplate = `{
         },
         "/api/client/projects/{project_id}/tasks/{task_id}": {
             "get": {
+                "security": [
+                    {
+                        "UserSession": []
+                    }
+                ],
                 "description": "获取当前用户可访问的项目任务详情。",
                 "produces": [
                     "application/json"
@@ -4509,6 +4591,11 @@ const docTemplate = `{
                 }
             },
             "delete": {
+                "security": [
+                    {
+                        "UserSession": []
+                    }
+                ],
                 "description": "删除当前用户可访问的项目任务。",
                 "produces": [
                     "application/json"
@@ -4579,6 +4666,11 @@ const docTemplate = `{
                 }
             },
             "patch": {
+                "security": [
+                    {
+                        "UserSession": []
+                    }
+                ],
                 "description": "更新当前用户可访问的项目任务字段。",
                 "consumes": [
                     "application/json"
@@ -5159,6 +5251,9 @@ const docTemplate = `{
         },
         "httpserver.createGroupConversationRequest": {
             "type": "object",
+            "required": [
+                "name"
+            ],
             "properties": {
                 "app_ids": {
                     "type": "array",
@@ -5857,12 +5952,7 @@ const docTemplate = `{
                     "x-nullable": true
                 },
                 "personal_project": {
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/httpserver.projectResponse"
-                        }
-                    ],
-                    "x-nullable": true
+                    "$ref": "#/definitions/httpserver.projectResponse"
                 },
                 "projects": {
                     "type": "array",
@@ -6442,6 +6532,14 @@ const docTemplate = `{
                     "example": "active"
                 }
             }
+        }
+    },
+    "securityDefinitions": {
+        "UserSession": {
+            "description": "使用 user_session=\u003ctoken\u003e 格式的会话 Cookie。",
+            "type": "apiKey",
+            "name": "Cookie",
+            "in": "header"
         }
     }
 }`

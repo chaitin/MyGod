@@ -16,6 +16,11 @@ import (
 // @version 0.1.0
 // @description 私有部署企业协作产品的服务端 API。当前阶段包含管理员登录、管理员创建普通用户、普通用户登录。
 // @BasePath /
+//
+// @securityDefinitions.apikey UserSession
+// @in header
+// @name Cookie
+// @description 使用 user_session=<token> 格式的会话 Cookie。
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 

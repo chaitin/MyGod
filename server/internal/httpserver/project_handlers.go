@@ -201,6 +201,7 @@ func createPersonalProject(db *gorm.DB, user store.User, now time.Time) error {
 // @Failure 400 {object} errorEnvelope
 // @Failure 401 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
+// @Security UserSession
 // @Router /api/client/projects [get]
 func (s *Server) listProjects(c echo.Context) error {
 	user, ok := currentUser(c)
@@ -288,6 +289,7 @@ func (s *Server) listProjects(c echo.Context) error {
 // @Failure 400 {object} errorEnvelope
 // @Failure 401 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
+// @Security UserSession
 // @Router /api/client/projects [post]
 func (s *Server) createProject(c echo.Context) error {
 	user, ok := currentUser(c)
@@ -371,6 +373,7 @@ func (s *Server) createProject(c echo.Context) error {
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
+// @Security UserSession
 // @Router /api/client/projects/{project_id} [get]
 func (s *Server) getProject(c echo.Context) error {
 	user, ok := currentUser(c)
@@ -410,6 +413,7 @@ func (s *Server) getProject(c echo.Context) error {
 // @Failure 403 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
+// @Security UserSession
 // @Router /api/client/projects/{project_id} [patch]
 func (s *Server) updateProject(c echo.Context) error {
 	user, ok := currentUser(c)
@@ -513,6 +517,7 @@ func (s *Server) updateProject(c echo.Context) error {
 // @Failure 403 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
+// @Security UserSession
 // @Router /api/client/projects/{project_id} [delete]
 func (s *Server) deleteProject(c echo.Context) error {
 	user, ok := currentUser(c)
@@ -573,6 +578,7 @@ func (s *Server) deleteProject(c echo.Context) error {
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
+// @Security UserSession
 // @Router /api/client/projects/{project_id}/groups [get]
 func (s *Server) listProjectGroups(c echo.Context) error {
 	user, ok := currentUser(c)
@@ -672,6 +678,7 @@ func (s *Server) listProjectGroups(c echo.Context) error {
 // @Failure 403 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
+// @Security UserSession
 // @Router /api/client/projects/{project_id}/groups/{group_id} [put]
 func (s *Server) bindProjectGroup(c echo.Context) error {
 	user, ok := currentUser(c)
@@ -763,6 +770,7 @@ func (s *Server) bindProjectGroup(c echo.Context) error {
 // @Failure 403 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
+// @Security UserSession
 // @Router /api/client/projects/{project_id}/groups/{group_id} [delete]
 func (s *Server) unbindProjectGroup(c echo.Context) error {
 	user, ok := currentUser(c)
@@ -833,6 +841,7 @@ func (s *Server) unbindProjectGroup(c echo.Context) error {
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
+// @Security UserSession
 // @Router /api/client/projects/{project_id}/members [get]
 func (s *Server) listProjectMembers(c echo.Context) error {
 	user, ok := currentUser(c)

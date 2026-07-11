@@ -272,6 +272,8 @@ definitions:
         items:
           type: string
         type: array
+    required:
+    - name
     type: object
   httpserver.createGroupConversationResponse:
     properties:
@@ -734,9 +736,7 @@ definitions:
         type: string
         x-nullable: true
       personal_project:
-        allOf:
-        - $ref: '#/definitions/httpserver.projectResponse'
-        x-nullable: true
+        $ref: '#/definitions/httpserver.projectResponse'
       projects:
         items:
           $ref: '#/definitions/httpserver.projectResponse'
@@ -2844,10 +2844,16 @@ paths:
           description: Unauthorized
           schema:
             $ref: '#/definitions/httpserver.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
             $ref: '#/definitions/httpserver.errorEnvelope'
+      security:
+      - UserSession: []
       summary: 创建群聊
       tags:
       - 客户端会话
@@ -2888,10 +2894,16 @@ paths:
           description: Not Found
           schema:
             $ref: '#/definitions/httpserver.errorEnvelope'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/httpserver.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
             $ref: '#/definitions/httpserver.errorEnvelope'
+      security:
+      - UserSession: []
       summary: 解散群聊
       tags:
       - 客户端会话
@@ -3378,6 +3390,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/httpserver.errorEnvelope'
+      security:
+      - UserSession: []
       summary: 列出项目
       tags:
       - 客户端项目
@@ -3416,6 +3430,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/httpserver.errorEnvelope'
+      security:
+      - UserSession: []
       summary: 创建项目
       tags:
       - 客户端项目
@@ -3460,6 +3476,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/httpserver.errorEnvelope'
+      security:
+      - UserSession: []
       summary: 删除项目
       tags:
       - 客户端项目
@@ -3499,6 +3517,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/httpserver.errorEnvelope'
+      security:
+      - UserSession: []
       summary: 获取项目
       tags:
       - 客户端项目
@@ -3550,6 +3570,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/httpserver.errorEnvelope'
+      security:
+      - UserSession: []
       summary: 更新项目
       tags:
       - 客户端项目
@@ -3598,6 +3620,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/httpserver.errorEnvelope'
+      security:
+      - UserSession: []
       summary: 列出项目群聊
       tags:
       - 客户端项目
@@ -3647,6 +3671,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/httpserver.errorEnvelope'
+      security:
+      - UserSession: []
       summary: 解除项目群聊
       tags:
       - 客户端项目
@@ -3697,6 +3723,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/httpserver.errorEnvelope'
+      security:
+      - UserSession: []
       summary: 关联项目群聊
       tags:
       - 客户端项目
@@ -3745,6 +3773,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/httpserver.errorEnvelope'
+      security:
+      - UserSession: []
       summary: 列出项目成员
       tags:
       - 客户端项目
@@ -3829,6 +3859,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/httpserver.errorEnvelope'
+      security:
+      - UserSession: []
       summary: 列出项目任务
       tags:
       - 客户端任务
@@ -3876,6 +3908,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/httpserver.errorEnvelope'
+      security:
+      - UserSession: []
       summary: 创建项目任务
       tags:
       - 客户端任务
@@ -3921,6 +3955,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/httpserver.errorEnvelope'
+      security:
+      - UserSession: []
       summary: 删除项目任务
       tags:
       - 客户端任务
@@ -3965,6 +4001,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/httpserver.errorEnvelope'
+      security:
+      - UserSession: []
       summary: 获取项目任务
       tags:
       - 客户端任务
@@ -4017,6 +4055,8 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/httpserver.errorEnvelope'
+      security:
+      - UserSession: []
       summary: 更新项目任务
       tags:
       - 客户端任务
@@ -4105,4 +4145,10 @@ paths:
       summary: 批量申请临时文件访问地址
       tags:
       - 客户端文件
+securityDefinitions:
+  UserSession:
+    description: 使用 user_session=<token> 格式的会话 Cookie。
+    in: header
+    name: Cookie
+    type: apiKey
 swagger: "2.0"

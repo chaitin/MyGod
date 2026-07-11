@@ -188,6 +188,7 @@ func (value *taskOptionalStringSlice) UnmarshalJSON(raw []byte) error {
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
+// @Security UserSession
 // @Router /api/client/projects/{project_id}/tasks [get]
 func (s *Server) listTasks(c echo.Context) error {
 	user, ok := currentUser(c)
@@ -256,6 +257,7 @@ func (s *Server) listTasks(c echo.Context) error {
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
+// @Security UserSession
 // @Router /api/client/projects/{project_id}/tasks [post]
 func (s *Server) createTask(c echo.Context) error {
 	user, ok := currentUser(c)
@@ -336,6 +338,7 @@ func (s *Server) createTask(c echo.Context) error {
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
+// @Security UserSession
 // @Router /api/client/projects/{project_id}/tasks/{task_id} [get]
 func (s *Server) getTask(c echo.Context) error {
 	user, ok := currentUser(c)
@@ -371,6 +374,7 @@ func (s *Server) getTask(c echo.Context) error {
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
+// @Security UserSession
 // @Router /api/client/projects/{project_id}/tasks/{task_id} [patch]
 func (s *Server) updateTask(c echo.Context) error {
 	user, ok := currentUser(c)
@@ -466,6 +470,7 @@ func (s *Server) updateTask(c echo.Context) error {
 // @Failure 401 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
+// @Security UserSession
 // @Router /api/client/projects/{project_id}/tasks/{task_id} [delete]
 func (s *Server) deleteTask(c echo.Context) error {
 	user, ok := currentUser(c)
