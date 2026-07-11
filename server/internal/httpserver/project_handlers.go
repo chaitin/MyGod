@@ -288,6 +288,7 @@ func (s *Server) listProjects(c echo.Context) error {
 // @Success 201 {object} successEnvelope{data=projectResponse}
 // @Failure 400 {object} errorEnvelope
 // @Failure 401 {object} errorEnvelope
+// @Failure 409 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
 // @Security UserSession
 // @Router /api/client/projects [post]
@@ -677,6 +678,7 @@ func (s *Server) listProjectGroups(c echo.Context) error {
 // @Failure 401 {object} errorEnvelope
 // @Failure 403 {object} errorEnvelope
 // @Failure 404 {object} errorEnvelope
+// @Failure 409 {object} errorEnvelope
 // @Failure 500 {object} errorEnvelope
 // @Security UserSession
 // @Router /api/client/projects/{project_id}/groups/{group_id} [put]
