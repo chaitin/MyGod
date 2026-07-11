@@ -18,7 +18,11 @@ import { cn } from "@/lib/utils"
 import { formatContactPhone } from "@/lib/contact-format"
 import { sortContactsByDisplayName } from "@/lib/contact-sort"
 import { useClientData } from "@/lib/client-data-context"
-import type { ContactApp, ContactGroup, ContactUser } from "@/lib/client-data-api"
+import type {
+  ContactApp,
+  ContactGroup,
+  ContactUser,
+} from "@/lib/client-data-api"
 import { GroupAvatar } from "@/components/group-avatar"
 import {
   Avatar,
@@ -107,7 +111,9 @@ export function ContactsPage() {
           contact.nickname,
           contact.phone,
           formatContactPhone(contact.phone),
-        ].some((value) => value.toLowerCase().includes(normalizedContactKeyword))
+        ].some((value) =>
+          value.toLowerCase().includes(normalizedContactKeyword)
+        )
       )
     )
   }, [contacts, normalizedContactKeyword])
@@ -137,7 +143,7 @@ export function ContactsPage() {
 
     try {
       const conversation = await openDirectConversation(contact.id)
-      navigate(`/chat?conversation_id=${encodeURIComponent(conversation.id)}`)
+      navigate(`/chat/${encodeURIComponent(conversation.id)}`)
     } catch {
       toast.error("无法发起私聊")
     } finally {
@@ -153,7 +159,7 @@ export function ContactsPage() {
 
     try {
       const conversation = await openAppConversation(app.id)
-      navigate(`/chat?conversation_id=${encodeURIComponent(conversation.id)}`)
+      navigate(`/chat/${encodeURIComponent(conversation.id)}`)
     } catch {
       toast.error("无法发起应用会话")
     } finally {
@@ -167,7 +173,7 @@ export function ContactsPage() {
     const itemKey = directoryItemKey("group", group.id)
 
     if (group.joined) {
-      navigate(`/chat?conversation_id=${encodeURIComponent(group.id)}`)
+      navigate(`/chat/${encodeURIComponent(group.id)}`)
       return
     }
 
@@ -175,7 +181,7 @@ export function ContactsPage() {
 
     try {
       const conversation = await joinGroupConversation(group.id)
-      navigate(`/chat?conversation_id=${encodeURIComponent(conversation.id)}`)
+      navigate(`/chat/${encodeURIComponent(conversation.id)}`)
     } catch {
       toast.error("无法加入群聊")
     } finally {
@@ -395,11 +401,7 @@ function DirectoryList({
   children: React.ReactNode
 }) {
   return (
-    <SidebarMenu
-      aria-label={ariaLabel}
-      className="px-2 pb-3"
-      role="listbox"
-    >
+    <SidebarMenu aria-label={ariaLabel} className="px-2 pb-3" role="listbox">
       {children}
     </SidebarMenu>
   )
@@ -436,7 +438,11 @@ function AppDetailPanel({
             data-testid="contact-detail-avatar"
           >
             {app.avatar && (
-              <AvatarImage alt={app.name} className="rounded-sm" src={app.avatar} />
+              <AvatarImage
+                alt={app.name}
+                className="rounded-sm"
+                src={app.avatar}
+              />
             )}
             <AvatarFallback className="rounded-sm text-xl">
               <Bot className="size-7" />
@@ -496,7 +502,11 @@ function GroupDetailPanel({
     >
       <div className="flex flex-col gap-5">
         <div className="flex flex-col items-center gap-3 text-center">
-          <GroupAvatar avatar={group.avatar} className="size-20" name={group.name} />
+          <GroupAvatar
+            avatar={group.avatar}
+            className="size-20"
+            name={group.name}
+          />
           <div>
             <div className="text-base font-medium">{group.name}</div>
             <div className="mt-1 text-sm text-muted-foreground">
@@ -704,7 +714,11 @@ function GroupListItem({
       actionLabel={group.joined ? `进入 ${group.name}` : `加入 ${group.name}`}
       actionLoading={startingConversation}
       media={
-        <GroupAvatar avatar={group.avatar} className="size-8" name={group.name} />
+        <GroupAvatar
+          avatar={group.avatar}
+          className="size-8"
+          name={group.name}
+        />
       }
       onAction={onStartConversation}
       onSelect={onSelect}
@@ -836,7 +850,9 @@ function ContactAvatarBadge({ online }: { online: boolean }) {
   return (
     <AvatarBadge
       aria-label={online ? "在线" : "离线"}
-      className={online ? "bg-emerald-500" : "bg-neutral-400 dark:bg-neutral-500"}
+      className={
+        online ? "bg-emerald-500" : "bg-neutral-400 dark:bg-neutral-500"
+      }
     />
   )
 }

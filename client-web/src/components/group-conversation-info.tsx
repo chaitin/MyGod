@@ -20,6 +20,7 @@ import {
   type CroppedAvatar,
 } from "@/components/custom-avatar-picker"
 import { GroupAvatar } from "@/components/group-avatar"
+import { GroupConversationProjects } from "@/components/group-conversation-projects"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
   AlertDialog,
@@ -61,6 +62,9 @@ export function GroupConversationInfo({
     getConversation,
     leaveGroupConversation,
     me,
+    projects,
+    refreshConversations,
+    refreshProjects,
     removeGroupConversationMember,
     setGroupConversationPrivate,
     setGroupConversationPublic,
@@ -109,6 +113,7 @@ export function GroupConversationInfo({
   const currentMember = members.find((member) => member.id === me.id)
   const canChangeAvatar = canManageGroupAvatar(currentMember?.role)
   const canManageMembers = canManageGroupMembers(currentMember?.role)
+  const canManageProjects = canManageGroupProjects(currentMember?.role)
   const canChangeName = canManageGroupName(currentMember?.role)
   const canLeaveGroup = Boolean(currentMember && currentMember.role !== "owner")
   const canDissolveGroup = currentMember?.role === "owner"
@@ -271,6 +276,16 @@ export function GroupConversationInfo({
             name={conversationName}
             onSave={handleNameSave}
             saving={nameSaving}
+          />
+
+          <GroupConversationProjects
+            availableProjects={projects}
+            canManage={canManageProjects}
+            conversationId={activeConversation.id}
+            key={activeConversation.id}
+            linkedProjects={activeConversation.projects ?? []}
+            onConversationsChanged={refreshConversations}
+            onProjectsChanged={refreshProjects}
           />
 
           <div className="grid gap-2">
@@ -822,6 +837,12 @@ function canManageGroupName(
 }
 
 function canManageGroupMembers(
+  role: ClientConversationMember["role"] | undefined
+) {
+  return role === "owner" || role === "admin"
+}
+
+function canManageGroupProjects(
   role: ClientConversationMember["role"] | undefined
 ) {
   return role === "owner" || role === "admin"

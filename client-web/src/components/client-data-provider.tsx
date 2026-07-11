@@ -46,12 +46,18 @@ import {
   type SendConversationMessageOptions,
 } from "@/lib/client-data-context"
 import { createClientMessageId } from "@/lib/message-id"
+import {
+  createClientProject as createClientProjectRequest,
+  listClientProjects,
+  type ClientProjectDetail,
+  type ClientProjectSummary,
+} from "@/lib/project-data-api"
 import { Button } from "@/components/ui/button"
 import { ClientLoadingPage } from "@/components/client-loading-page"
 
 type BootstrapState = "loading" | "ready" | "error"
 
-const minimumBootstrapLoadingMs = 2_000
+const minimumBootstrapLoadingMs = 1_000
 const messagePageLimit = 20
 const refreshIntervalMs = 15_000
 const emptyConversationMessageState: ClientConversationMessageState = {
@@ -85,6 +91,17 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
   const [meError, setMeError] = useState<ClientDataRequestError | null>(null)
   const [meLoading, setMeLoading] = useState(true)
   const [meRefreshing, setMeRefreshing] = useState(false)
+  const [personalProject, setPersonalProject] =
+    useState<ClientProjectSummary | null>(null)
+  const [projects, setProjects] = useState<ClientProjectSummary[]>([])
+  const [projectsError, setProjectsError] =
+    useState<ClientDataRequestError | null>(null)
+  const [projectsLoading, setProjectsLoading] = useState(true)
+  const [projectsLoadingMore, setProjectsLoadingMore] = useState(false)
+  const [projectsNextCursor, setProjectsNextCursor] = useState<string | null>(
+    null
+  )
+  const [projectsRefreshing, setProjectsRefreshing] = useState(false)
   const conversationMessageStatesRef = useRef(conversationMessageStates)
   const conversationsRef = useRef(conversations)
   const loadingConversationIdsRef = useRef<Set<string>>(new Set())
@@ -111,6 +128,8 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
         setContactApps([])
         setContactGroups([])
         setContacts([])
+        setPersonalProject(null)
+        setProjects([])
         setMe(null)
         navigate("/login", { replace: true })
       }
@@ -169,6 +188,79 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
       throw handleError(error, "加载会话列表失败")
     }
   }, [handleError])
+
+  const refreshProjects = useCallback(async () => {
+    const isInitialLoad = personalProject === null && projects.length === 0
+    setProjectsError(null)
+    setProjectsLoading(isInitialLoad)
+    setProjectsRefreshing(!isInitialLoad)
+
+    try {
+      const page = await listClientProjects({ limit: 100 })
+      setPersonalProject(page.personalProject)
+      setProjects(page.projects)
+      setProjectsNextCursor(page.nextCursor)
+    } catch (error) {
+      const requestError = handleError(error, "加载项目列表失败")
+      setProjectsError(requestError)
+      throw requestError
+    } finally {
+      setProjectsLoading(false)
+      setProjectsRefreshing(false)
+    }
+  }, [handleError, personalProject, projects.length])
+
+  const loadMoreProjects = useCallback(async () => {
+    if (!projectsNextCursor || projectsLoadingMore) {
+      return
+    }
+
+    setProjectsLoadingMore(true)
+    try {
+      const page = await listClientProjects({
+        cursor: projectsNextCursor,
+        limit: 100,
+      })
+      setPersonalProject(page.personalProject)
+      setProjects((currentProjects) => {
+        const projectById = new Map(
+          currentProjects.map((project) => [project.id, project])
+        )
+
+        for (const project of page.projects) {
+          projectById.set(project.id, project)
+        }
+
+        return Array.from(projectById.values())
+      })
+      setProjectsNextCursor(page.nextCursor)
+    } catch (error) {
+      throw handleError(error, "加载更多项目失败")
+    } finally {
+      setProjectsLoadingMore(false)
+    }
+  }, [handleError, projectsLoadingMore, projectsNextCursor])
+
+  const createProject = useCallback(
+    async (name: string, groupIds: string[] = []) => {
+      let project: ClientProjectDetail
+
+      try {
+        project = await createClientProjectRequest({ groupIds, name })
+      } catch (error) {
+        throw handleError(error, "创建项目失败")
+      }
+
+      try {
+        await refreshProjects()
+      } catch {
+        throw new ClientDataRequestError("项目已创建，但刷新项目列表失败")
+      }
+
+      return project
+    },
+    [handleError, refreshProjects]
+  )
 
   const updateConversationMessageState = useCallback(
     (
@@ -767,14 +859,20 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
   )
 
   const upsertConversation = useCallback((conversation: ClientConversation) => {
-    setConversations((currentConversations) =>
-      pinAppConversations([
-        conversation,
-        ...currentConversations.filter(
-          (currentConversation) => currentConversation.id !== conversation.id
-        ),
+    setConversations((currentConversations) => {
+      const currentConversation = currentConversations.find(
+        (item) => item.id === conversation.id
+      )
+      const nextConversation =
+        conversation.projects === undefined && currentConversation?.projects
+          ? { ...conversation, projects: currentConversation.projects }
+          : conversation
+
+      return pinAppConversations([
+        nextConversation,
+        ...currentConversations.filter((item) => item.id !== conversation.id),
       ])
-    )
+    })
   }, [])
 
   const removeConversation = useCallback((conversationId: string) => {
@@ -1012,11 +1110,13 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     const minimumLoading = wait(minimumBootstrapLoadingMs)
 
     try {
-      const [nextMe, nextContacts, nextConversations] = await Promise.all([
-        getCurrentClientUser(),
-        listClientContacts(),
-        listClientConversations(),
-      ])
+      const [nextMe, nextContacts, nextConversations, nextProjects] =
+        await Promise.all([
+          getCurrentClientUser(),
+          listClientContacts(),
+          listClientConversations(),
+          listClientProjects({ limit: 100 }),
+        ])
 
       await minimumLoading
       setMe(nextMe)
@@ -1024,6 +1124,9 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
       setContactGroups(nextContacts.groups)
       setContacts(nextContacts.users)
       setConversations(pinAppConversations(nextConversations))
+      setPersonalProject(nextProjects.personalProject)
+      setProjects(nextProjects.projects)
+      setProjectsNextCursor(nextProjects.nextCursor)
       setBootstrapState("ready")
     } catch (error) {
       const requestError = handleError(error, "加载工作区失败")
@@ -1037,6 +1140,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     } finally {
       setMeLoading(false)
       setContactsLoading(false)
+      setProjectsLoading(false)
     }
   }, [handleError])
 
@@ -1050,6 +1154,13 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     setContactsError(null)
     setContactsLoading(true)
     setContactsRefreshing(false)
+    setPersonalProject(null)
+    setProjects([])
+    setProjectsError(null)
+    setProjectsLoading(true)
+    setProjectsLoadingMore(false)
+    setProjectsNextCursor(null)
+    setProjectsRefreshing(false)
     setMeError(null)
     setMeLoading(true)
     setMeRefreshing(false)
@@ -1082,6 +1193,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
       void refreshMe().catch(() => undefined)
       void refreshContacts().catch(() => undefined)
       void refreshConversations().catch(() => undefined)
+      void refreshProjects().catch(() => undefined)
     }
 
     const interval = window.setInterval(refresh, refreshIntervalMs)
@@ -1098,7 +1210,13 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
       window.clearInterval(interval)
       document.removeEventListener("visibilitychange", handleVisibilityChange)
     }
-  }, [bootstrapState, refreshContacts, refreshConversations, refreshMe])
+  }, [
+    bootstrapState,
+    refreshContacts,
+    refreshConversations,
+    refreshMe,
+    refreshProjects,
+  ])
 
   if (bootstrapState === "loading") {
     return <ClientLoadingPage />
@@ -1113,7 +1231,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     )
   }
 
-  if (!me) {
+  if (!me || !personalProject) {
     return <ClientLoadingPage />
   }
 
@@ -1127,6 +1245,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     contactsLoading,
     contactsRefreshing,
     createGroupConversation,
+    createProject,
     dissolveGroupConversation,
     ensureConversationMessages,
     getConversation,
@@ -1144,9 +1263,18 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     mergeIncomingConversationMessage,
     openAppConversation,
     openDirectConversation,
+    personalProject,
+    projects,
+    projectsError,
+    projectsLoading,
+    projectsLoadingMore,
+    projectsNextCursor,
+    projectsRefreshing,
     refreshConversations,
     refreshContacts,
     refreshMe,
+    refreshProjects,
+    loadMoreProjects,
     removeConversation,
     removeGroupConversationMember,
     revokeConversationMessage,

@@ -9,11 +9,9 @@ import { ClientRealtimeProvider } from "@/components/client-realtime-provider"
 import { GlobalBeforeUnloadGuard } from "@/components/global-before-unload-guard"
 import { AppInfoProvider } from "@/components/app-info-provider"
 import { ChatPage } from "@/pages/chat-page"
-import { ConnectionsPage } from "@/pages/connections-page"
 import { ContactsPage } from "@/pages/contacts-page"
 import { LoginPage } from "@/pages/login-page"
 import { ProjectsPage } from "@/pages/projects-page"
-import { TasksPage } from "@/pages/tasks-page"
 
 export function App() {
   return (
@@ -53,7 +51,7 @@ export function App() {
             }
           />
           <Route
-            path="/chat"
+            path="/chat/:conversationId?"
             element={
               <>
                 <ClientDocumentTitle title="聊天" />
@@ -71,29 +69,11 @@ export function App() {
             }
           />
           <Route
-            path="/projects"
+            path="/projects/:projectId?"
             element={
               <>
                 <ClientDocumentTitle title="项目" />
                 <ProjectsPage />
-              </>
-            }
-          />
-          <Route
-            path="/tasks"
-            element={
-              <>
-                <ClientDocumentTitle title="任务" />
-                <TasksPage />
-              </>
-            }
-          />
-          <Route
-            path="/connections"
-            element={
-              <>
-                <ClientDocumentTitle title="连接" />
-                <ConnectionsPage />
               </>
             }
           />

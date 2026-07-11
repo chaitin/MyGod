@@ -1,5 +1,5 @@
 import * as React from "react"
-import { useSearchParams } from "react-router"
+import { useNavigate, useParams } from "react-router"
 import { Loader2Icon, Plus, Search } from "lucide-react"
 import { toast } from "sonner"
 
@@ -24,7 +24,7 @@ import {
   emptyConversationDraft,
   type ConversationDraftMention,
 } from "@/lib/conversation-drafts"
-import { formatConversationLastMessageTime } from "@/lib/conversation-format"
+import { formatActivityTime } from "@/lib/activity-time"
 import {
   formatMentionTemplateText,
   type MentionLabelResolver,
@@ -121,6 +121,8 @@ function getMessageTime(createdAt: string) {
 }
 
 export function ChatPage() {
+  const navigate = useNavigate()
+  const { conversationId } = useParams<{ conversationId?: string }>()
   const {
     contactApps,
     contacts,
@@ -145,11 +147,10 @@ export function ChatPage() {
     flushDrafts,
     updateConversationDraft,
   } = useConversationDrafts(me.id)
-  const [searchParams, setSearchParams] = useSearchParams()
   const [richTextMode, setRichTextMode] = React.useState(false)
   const [createGroupDialogOpen, setCreateGroupDialogOpen] =
     React.useState(false)
-  const requestedConversationId = searchParams.get("conversation_id") ?? ""
+  const requestedConversationId = conversationId ?? ""
 
   const activeConversation = React.useMemo(
     () =>
@@ -416,7 +417,7 @@ export function ChatPage() {
 
   function selectConversation(conversationId: string) {
     flushDrafts()
-    setSearchParams({ conversation_id: conversationId }, { replace: true })
+    navigate(`/chat/${encodeURIComponent(conversationId)}`, { replace: true })
   }
 
   async function startGroupConversation(
@@ -426,7 +427,7 @@ export function ChatPage() {
   ) {
     const conversation = await createGroupConversation(name, memberIds, appIds)
     flushDrafts()
-    setSearchParams({ conversation_id: conversation.id })
+    navigate(`/chat/${encodeURIComponent(conversation.id)}`)
   }
 
   function handleConversationListContextMenu(
@@ -501,7 +502,7 @@ export function ChatPage() {
             )}
             {conversations.map((conversation) => {
               const selected = conversation.id === activeConversation?.id
-              const lastMessageTime = formatConversationLastMessageTime(
+              const lastMessageTime = formatActivityTime(
                 conversation.lastMessageAt ?? conversation.createdAt
               )
               const mentionLabelResolver =
@@ -525,9 +526,7 @@ export function ChatPage() {
 
               return (
                 <ConversationListItemMenu key={conversation.id}>
-                  <SidebarMenuItem
-                    data-conversation-list-item-trigger
-                  >
+                  <SidebarMenuItem data-conversation-list-item-trigger>
                     <SidebarMenuButton
                       className="h-16 gap-3 py-2 data-active:bg-foreground/10 data-active:hover:bg-foreground/10"
                       isActive={selected}
@@ -537,9 +536,7 @@ export function ChatPage() {
                     >
                       <ConversationListAvatar conversation={conversation} />
                       <div className="min-w-0 flex-1 overflow-hidden">
-                        <div
-                          className="flex w-full min-w-0 items-center justify-between gap-2 overflow-hidden text-sm leading-snug font-medium underline-offset-4"
-                        >
+                        <div className="flex w-full min-w-0 items-center justify-between gap-2 overflow-hidden text-sm leading-snug font-medium underline-offset-4">
                           <span className="flex min-w-0 flex-1 items-center overflow-hidden">
                             <span className="block min-w-0 flex-1 truncate">
                               {conversation.name}
@@ -551,9 +548,7 @@ export function ChatPage() {
                             </span>
                           )}
                         </div>
-                        <p
-                          className="w-full min-w-0 truncate text-left text-xs leading-normal font-normal text-muted-foreground"
-                        >
+                        <p className="w-full min-w-0 truncate text-left text-xs leading-normal font-normal text-muted-foreground">
                           {preview.alertLabel && (
                             <span className="mr-1 font-medium text-rose-700 dark:text-rose-300">
                               {preview.alertLabel}

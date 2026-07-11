@@ -102,8 +102,16 @@ function createClientDataValue(
     meError: null,
     meLoading: false,
     meRefreshing: false,
+    personalProject: createPersonalProject(me),
+    projects: [],
+    projectsError: null,
+    projectsLoading: false,
+    projectsLoadingMore: false,
+    projectsNextCursor: null,
+    projectsRefreshing: false,
     addGroupConversationMembers: vi.fn(),
     createGroupConversation: vi.fn(),
+    createProject: vi.fn(),
     dissolveGroupConversation: vi.fn(),
     ensureConversationMessages: vi.fn(),
     getConversation: vi.fn(() => null),
@@ -113,6 +121,7 @@ function createClientDataValue(
     joinGroupConversation: vi.fn(),
     leaveGroupConversation: vi.fn(),
     loadBeforeConversationMessages: vi.fn(),
+    loadMoreProjects: vi.fn(),
     markConversationRead: vi.fn(),
     mergeIncomingConversationMessage: vi.fn(),
     openAppConversation: vi.fn(),
@@ -120,6 +129,7 @@ function createClientDataValue(
     refreshContacts: vi.fn(),
     refreshConversations: vi.fn(),
     refreshMe: vi.fn(),
+    refreshProjects: vi.fn(),
     removeConversation: vi.fn(),
     removeGroupConversationMember: vi.fn(),
     revokeConversationMessage: vi.fn(),
@@ -136,6 +146,34 @@ function createClientDataValue(
     updateGroupConversationAvatar: vi.fn(),
     updateGroupConversationName: vi.fn(),
     ...overrides,
+  }
+}
+
+function createPersonalProject(me: ClientUser) {
+  return {
+    avatar: "",
+    createdAt: "2026-07-10T00:00:00Z",
+    currentUserRole: "owner" as const,
+    description: "",
+    groupCount: 0,
+    id: "personal-project-1",
+    isPersonal: true,
+    memberCount: 1,
+    name: "个人工作区",
+    owner: {
+      avatar: me.avatar,
+      id: me.id,
+      name: me.name,
+      nickname: me.nickname,
+    },
+    taskCounts: {
+      canceled: 0,
+      done: 0,
+      inProgress: 0,
+      todo: 0,
+      total: 0,
+    },
+    updatedAt: "2026-07-10T00:00:00Z",
   }
 }
 

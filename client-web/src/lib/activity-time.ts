@@ -1,12 +1,9 @@
-export function formatConversationLastMessageTime(
-  lastMessageAt: string | null,
-  now = new Date()
-) {
-  if (!lastMessageAt) {
+export function formatActivityTime(activityAt: string | null, now = new Date()) {
+  if (!activityAt) {
     return ""
   }
 
-  const date = new Date(lastMessageAt)
+  const date = new Date(activityAt)
 
   if (Number.isNaN(date.getTime())) {
     return ""

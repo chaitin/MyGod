@@ -67,7 +67,7 @@ export function UserProfilePopover({
     try {
       const conversation = await openDirectConversation(profile.id)
       setOpen(false)
-      navigate(`/chat?conversation_id=${encodeURIComponent(conversation.id)}`)
+      navigate(`/chat/${encodeURIComponent(conversation.id)}`)
     } catch {
       toast.error("无法发起私聊")
     } finally {

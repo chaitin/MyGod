@@ -63,7 +63,7 @@ export function AppProfilePopover({
     try {
       const conversation = await openAppConversation(profile.id)
       setOpen(false)
-      navigate(`/chat?conversation_id=${encodeURIComponent(conversation.id)}`)
+      navigate(`/chat/${encodeURIComponent(conversation.id)}`)
     } catch {
       toast.error("无法发起应用会话")
     } finally {

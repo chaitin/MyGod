@@ -1,7 +1,5 @@
 import {
   BriefcaseBusiness,
-  Cable,
-  CircleCheckBig,
   CircleUserRound,
   KeyRound,
   Loader2Icon,
@@ -56,8 +54,6 @@ const navItems = [
   { label: "聊天", to: "/chat", icon: MessageCircleMore },
   { label: "通讯录", to: "/contacts", icon: CircleUserRound },
   { label: "项目", to: "/projects", icon: BriefcaseBusiness },
-  { label: "任务", to: "/tasks", icon: CircleCheckBig },
-  { label: "连接", to: "/connections", icon: Cable },
 ]
 
 const themeItems = [
@@ -335,7 +331,7 @@ function MainNavItem({
   onNotificationAnimationEnd: () => void
   showNotification: boolean
 }) {
-  const active = Boolean(useMatch({ path: item.to, end: true }))
+  const active = Boolean(useMatch({ path: item.to, end: false }))
   const Icon = item.icon
   const accessibleLabel = showNotification
     ? `${item.label}，有未读消息`

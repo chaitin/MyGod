@@ -1,31 +1,35 @@
 import * as React from "react"
-import {
-  BriefcaseBusiness,
-  CalendarDays,
-  ChartNoAxesGantt,
-  ChevronDown,
-  Circle,
-  CircleCheckBig,
-  Columns3,
-  Ellipsis,
-  Flag,
-  ListTodo,
-  LockKeyhole,
-  Plus,
-  Search,
-  UserRound,
-} from "lucide-react"
+import { Loader2, Plus, Search } from "lucide-react"
+import { useNavigate, useParams } from "react-router"
+import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
+import { ProjectAvatar } from "@/components/projects/project-avatar"
+import { ProjectMembersTab } from "@/components/projects/project-members-tab"
+import { ProjectSettingsMenu } from "@/components/projects/project-settings-menu"
+import { ProjectTasksTab } from "@/components/projects/project-tasks-tab"
+import { ProjectTopicsTab } from "@/components/projects/project-topics-tab"
+import type { ProjectTask } from "@/components/projects/project-types"
+import { GroupAvatar } from "@/components/group-avatar"
 import {
   Avatar,
   AvatarFallback,
   AvatarGroup,
   AvatarGroupCount,
+  AvatarImage,
 } from "@/components/ui/avatar"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Sidebar,
@@ -41,263 +45,47 @@ import {
   SidebarMenuItem,
   SidebarProvider,
 } from "@/components/ui/sidebar"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import type { ClientConversation, ClientUser } from "@/lib/client-data-api"
+import { useClientData } from "@/lib/client-data-context"
+import { formatActivityTime } from "@/lib/activity-time"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+  getClientProject,
+  type ClientProjectDetail,
+  type ClientProjectMember,
+  type ClientProjectSummary,
+  listClientProjectMembers,
+} from "@/lib/project-data-api"
 
-type ProjectMember = {
-  initials: string
-  name: string
-  tone: string
-}
-
-type ProjectTask = {
-  assignee: ProjectMember
-  dueAt: string
-  id: string
-  priority: "低" | "中" | "高"
-  status: "待处理" | "进行中" | "已完成"
-  title: string
-}
-
-type ProjectListItem = {
-  accent: string
-  description: string
-  documentCount: number
-  doneTasks: number
-  fileCount: number
-  groupCount: number
-  id: string
-  isPersonal?: boolean
-  memberCount: number
-  members: ProjectMember[]
-  name: string
-  tasks: ProjectTask[]
-  totalTasks: number
-  updatedAt: string
-}
-
-const members = {
-  chen: {
-    initials: "陈",
-    name: "陈曦",
-    tone: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
-  },
-  li: {
-    initials: "李",
-    name: "李然",
-    tone: "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
-  },
-  lin: {
-    initials: "林",
-    name: "林悦",
-    tone: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
-  },
-  me: {
-    initials: "我",
-    name: "我",
-    tone: "bg-neutral-200 text-neutral-700 dark:bg-neutral-700 dark:text-neutral-100",
-  },
-  wang: {
-    initials: "王",
-    name: "王宁",
-    tone: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
-  },
-  zhou: {
-    initials: "周",
-    name: "周遥",
-    tone: "bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300",
-  },
-} satisfies Record<string, ProjectMember>
-
-const personalWorkspace: ProjectListItem = {
-  accent: "bg-neutral-800 text-white dark:bg-neutral-100 dark:text-neutral-900",
-  description: "个人任务与资料",
-  documentCount: 3,
-  doneTasks: 7,
-  fileCount: 8,
-  groupCount: 0,
-  id: "personal",
-  isPersonal: true,
-  memberCount: 1,
-  members: [members.me],
-  name: "个人工作区",
-  tasks: [
-    {
-      assignee: members.me,
-      dueAt: "今天",
-      id: "personal-1",
-      priority: "高",
-      status: "进行中",
-      title: "整理本周工作计划",
-    },
-    {
-      assignee: members.me,
-      dueAt: "明天",
-      id: "personal-2",
-      priority: "中",
-      status: "待处理",
-      title: "跟进项目评审反馈",
-    },
-    {
-      assignee: members.me,
-      dueAt: "7 月 8 日",
-      id: "personal-3",
-      priority: "低",
-      status: "已完成",
-      title: "更新个人工作记录",
-    },
-  ],
-  totalTasks: 12,
-  updatedAt: "刚刚",
-}
-
-const projects: ProjectListItem[] = [
-  {
-    accent: "bg-sky-600 text-white",
-    description: "客户端、服务端与发布计划",
-    documentCount: 12,
-    doneTasks: 18,
-    fileCount: 24,
-    groupCount: 2,
-    id: "dianbao",
-    memberCount: 6,
-    members: [members.li, members.wang, members.chen],
-    name: "Dianbao 研发",
-    tasks: [
-      {
-        assignee: members.chen,
-        dueAt: "今天",
-        id: "dianbao-1",
-        priority: "高",
-        status: "进行中",
-        title: "完成项目数据模型设计",
-      },
-      {
-        assignee: members.li,
-        dueAt: "明天",
-        id: "dianbao-2",
-        priority: "中",
-        status: "待处理",
-        title: "整理项目列表交互细节",
-      },
-      {
-        assignee: members.wang,
-        dueAt: "7 月 13 日",
-        id: "dianbao-3",
-        priority: "中",
-        status: "待处理",
-        title: "定义项目成员权限规则",
-      },
-      {
-        assignee: members.li,
-        dueAt: "7 月 9 日",
-        id: "dianbao-4",
-        priority: "低",
-        status: "已完成",
-        title: "梳理群组关联场景",
-      },
-    ],
-    totalTasks: 32,
-    updatedAt: "15 分钟前",
-  },
-  {
-    accent: "bg-emerald-600 text-white",
-    description: "内容、活动与版本发布安排",
-    documentCount: 8,
-    doneTasks: 9,
-    fileCount: 16,
-    groupCount: 1,
-    id: "operations",
-    memberCount: 4,
-    members: [members.zhou, members.lin, members.chen],
-    name: "产品运营",
-    tasks: [
-      {
-        assignee: members.zhou,
-        dueAt: "今天",
-        id: "operations-1",
-        priority: "高",
-        status: "进行中",
-        title: "确认新版本发布内容",
-      },
-      {
-        assignee: members.lin,
-        dueAt: "7 月 12 日",
-        id: "operations-2",
-        priority: "中",
-        status: "待处理",
-        title: "准备用户访谈提纲",
-      },
-      {
-        assignee: members.chen,
-        dueAt: "7 月 8 日",
-        id: "operations-3",
-        priority: "低",
-        status: "已完成",
-        title: "汇总上周运营数据",
-      },
-    ],
-    totalTasks: 14,
-    updatedAt: "昨天",
-  },
-  {
-    accent: "bg-amber-500 text-white",
-    description: "品牌视觉、页面设计与上线交付",
-    documentCount: 6,
-    doneTasks: 5,
-    fileCount: 32,
-    groupCount: 1,
-    id: "website",
-    memberCount: 5,
-    members: [members.wang, members.li, members.lin],
-    name: "官网改版",
-    tasks: [
-      {
-        assignee: members.wang,
-        dueAt: "7 月 14 日",
-        id: "website-1",
-        priority: "高",
-        status: "进行中",
-        title: "完成首页视觉稿",
-      },
-      {
-        assignee: members.li,
-        dueAt: "7 月 15 日",
-        id: "website-2",
-        priority: "中",
-        status: "待处理",
-        title: "补充产品能力页面文案",
-      },
-      {
-        assignee: members.lin,
-        dueAt: "7 月 16 日",
-        id: "website-3",
-        priority: "中",
-        status: "待处理",
-        title: "检查移动端页面适配",
-      },
-    ],
-    totalTasks: 20,
-    updatedAt: "7 月 8 日",
-  },
-]
-
-const allProjects = [personalWorkspace, ...projects]
+const emptyProjectTasks: ProjectTask[] = []
+const maxProjectGroupCount = 100
 
 export function ProjectsPage() {
-  const [activeProjectId, setActiveProjectId] = React.useState(projects[0].id)
+  const navigate = useNavigate()
+  const { projectId } = useParams<{ projectId?: string }>()
+  const {
+    conversations,
+    createProject,
+    loadMoreProjects,
+    me,
+    personalProject,
+    projects,
+    projectsLoadingMore,
+    projectsNextCursor,
+    refreshConversations,
+    refreshProjects,
+  } = useClientData()
+  const [createDialogOpen, setCreateDialogOpen] = React.useState(false)
   const [keyword, setKeyword] = React.useState("")
+  const groupConversations = React.useMemo(
+    () => conversations.filter((conversation) => conversation.type === "group"),
+    [conversations]
+  )
   const normalizedKeyword = keyword.trim().toLowerCase()
-  const activeProject =
-    allProjects.find((project) => project.id === activeProjectId) ?? projects[0]
   const visiblePersonalWorkspace = normalizedKeyword
-    ? personalWorkspace.name.toLowerCase().includes(normalizedKeyword)
+    ? [personalProject.name, personalProject.description].some((value) =>
+        value.toLowerCase().includes(normalizedKeyword)
+      )
     : true
   const visibleProjects = normalizedKeyword
     ? projects.filter((project) =>
@@ -306,6 +94,24 @@ export function ProjectsPage() {
         )
       )
     : projects
+
+  async function handleCreateProject(name: string, groupIds: string[]) {
+    const project = await createProject(name, groupIds)
+    navigate(`/projects/${encodeURIComponent(project.id)}`)
+  }
+
+  async function handleLoadMore() {
+    try {
+      await loadMoreProjects()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "加载更多项目失败")
+    }
+  }
+
+  async function handleProjectDeleted() {
+    navigate("/projects", { replace: true })
+    await Promise.allSettled([refreshProjects()])
+  }
 
   return (
     <SidebarProvider
@@ -322,6 +128,7 @@ export function ProjectsPage() {
             <h1 className="text-base font-medium">项目</h1>
             <Button
               aria-label="新建项目"
+              onClick={() => setCreateDialogOpen(true)}
               size="icon-sm"
               title="新建项目"
               type="button"
@@ -346,11 +153,16 @@ export function ProjectsPage() {
         </SidebarHeader>
         <SidebarContent className="gap-0">
           {visiblePersonalWorkspace && (
-            <ProjectListSection title="个人">
+            <ProjectListSection>
               <ProjectListButton
-                active={activeProject.id === personalWorkspace.id}
-                onSelect={() => setActiveProjectId(personalWorkspace.id)}
-                project={personalWorkspace}
+                active={projectId === personalProject.id}
+                onSelect={() =>
+                  navigate(
+                    `/projects/${encodeURIComponent(personalProject.id)}`
+                  )
+                }
+                project={personalProject}
+                user={me}
               />
             </ProjectListSection>
           )}
@@ -358,9 +170,11 @@ export function ProjectsPage() {
             <ProjectListSection title="协作项目">
               {visibleProjects.map((project) => (
                 <ProjectListButton
-                  active={activeProject.id === project.id}
+                  active={projectId === project.id}
                   key={project.id}
-                  onSelect={() => setActiveProjectId(project.id)}
+                  onSelect={() =>
+                    navigate(`/projects/${encodeURIComponent(project.id)}`)
+                  }
                   project={project}
                 />
               ))}
@@ -371,10 +185,40 @@ export function ProjectsPage() {
               没有匹配的项目
             </div>
           )}
+          {projectsNextCursor && !normalizedKeyword && (
+            <div className="px-3 py-2">
+              <Button
+                className="w-full"
+                disabled={projectsLoadingMore}
+                onClick={() => void handleLoadMore()}
+                variant="ghost"
+              >
+                {projectsLoadingMore ? "正在加载" : "加载更多"}
+              </Button>
+            </div>
+          )}
         </SidebarContent>
       </Sidebar>
 
-      <ProjectPanel key={activeProject.id} project={activeProject} />
+      {projectId ? (
+        <SelectedProjectPanel
+          groups={groupConversations}
+          key={projectId}
+          onProjectDeleted={handleProjectDeleted}
+          projectId={projectId}
+          refreshConversations={refreshConversations}
+          refreshProjects={refreshProjects}
+          user={me}
+        />
+      ) : (
+        <ProjectEmptyState />
+      )}
+      <CreateProjectDialog
+        groups={groupConversations}
+        onCreate={handleCreateProject}
+        onOpenChange={setCreateDialogOpen}
+        open={createDialogOpen}
+      />
     </SidebarProvider>
   )
 }
@@ -384,11 +228,11 @@ function ProjectListSection({
   title,
 }: {
   children: React.ReactNode
-  title: string
+  title?: string
 }) {
   return (
     <SidebarGroup className="py-1">
-      <SidebarGroupLabel>{title}</SidebarGroupLabel>
+      {title && <SidebarGroupLabel>{title}</SidebarGroupLabel>}
       <SidebarGroupContent>
         <SidebarMenu>{children}</SidebarMenu>
       </SidebarGroupContent>
@@ -400,13 +244,14 @@ function ProjectListButton({
   active,
   onSelect,
   project,
+  user,
 }: {
   active: boolean
   onSelect: () => void
-  project: ProjectListItem
+  project: ClientProjectSummary
+  user?: ClientUser
 }) {
-  const progress = Math.round((project.doneTasks / project.totalTasks) * 100)
-  const ProjectIcon = project.isPersonal ? UserRound : BriefcaseBusiness
+  const updatedAt = formatActivityTime(project.updatedAt)
 
   return (
     <SidebarMenuItem>
@@ -418,28 +263,20 @@ function ProjectListButton({
         size="lg"
         type="button"
       >
-        <span
-          className={cn(
-            "flex size-9 shrink-0 items-center justify-center rounded-md",
-            project.accent
-          )}
-        >
-          <ProjectIcon aria-hidden="true" className="size-4" />
-        </span>
+        <ProjectAvatar className="size-9" project={project} user={user} />
         <span className="min-w-0 flex-1 overflow-hidden">
-          <span className="flex min-w-0 items-center gap-1.5">
-            <span className="block min-w-0 flex-1 truncate text-sm font-medium">
+          <span className="flex w-full min-w-0 items-center justify-between gap-2 overflow-hidden text-sm leading-snug font-medium">
+            <span className="block min-w-0 flex-1 truncate">
               {project.name}
             </span>
-            {project.isPersonal && (
-              <LockKeyhole
-                aria-label="固定的个人工作区"
-                className="size-3 shrink-0 text-muted-foreground"
-              />
+            {updatedAt && (
+              <span className="shrink-0 pr-2 text-xs font-normal text-muted-foreground">
+                {updatedAt}
+              </span>
             )}
           </span>
           <span className="mt-0.5 block truncate text-xs font-normal text-muted-foreground">
-            {project.doneTasks}/{project.totalTasks} 项任务 · {progress}% 完成
+            {project.description.trim() || "暂无说明"}
           </span>
         </span>
       </SidebarMenuButton>
@@ -447,303 +284,444 @@ function ProjectListButton({
   )
 }
 
-function ProjectPanel({ project }: { project: ProjectListItem }) {
-  const extraMemberCount = Math.max(
-    project.memberCount - project.members.length,
-    0
+function ProjectEmptyState() {
+  return (
+    <SidebarInset className="min-w-0 overflow-hidden bg-muted">
+      <div className="flex flex-1 items-center justify-center self-stretch text-sm text-muted-foreground">
+        选择一个项目查看详情
+      </div>
+    </SidebarInset>
   )
-  const ProjectIcon = project.isPersonal ? UserRound : BriefcaseBusiness
+}
+
+function SelectedProjectPanel({
+  groups,
+  onProjectDeleted,
+  projectId,
+  refreshConversations,
+  refreshProjects,
+  user,
+}: {
+  groups: ClientConversation[]
+  onProjectDeleted: () => Promise<void>
+  projectId: string
+  refreshConversations: () => Promise<void>
+  refreshProjects: () => Promise<void>
+  user: ClientUser
+}) {
+  const [error, setError] = React.useState("")
+  const [loading, setLoading] = React.useState(true)
+  const [members, setMembers] = React.useState<ClientProjectMember[]>([])
+  const [project, setProject] = React.useState<ClientProjectDetail | null>(null)
+  const requestIdRef = React.useRef(0)
+
+  const loadProject = React.useCallback(async () => {
+    const requestId = ++requestIdRef.current
+
+    try {
+      const [nextProject, nextMembers] = await loadSelectedProject(projectId)
+      if (requestId === requestIdRef.current) {
+        setProject(nextProject)
+        setMembers(nextMembers)
+        setError("")
+      }
+    } catch {
+      // Keep the current detail visible when a background refresh fails.
+    }
+  }, [projectId])
+
+  React.useEffect(() => {
+    const requestId = ++requestIdRef.current
+    void loadSelectedProject(projectId)
+      .then(([nextProject, nextMembers]) => {
+        if (requestId === requestIdRef.current) {
+          setProject(nextProject)
+          setMembers(nextMembers)
+        }
+      })
+      .catch((loadError: unknown) => {
+        if (requestId === requestIdRef.current) {
+          setError(
+            loadError instanceof Error ? loadError.message : "加载项目详情失败"
+          )
+        }
+      })
+      .finally(() => {
+        if (requestId === requestIdRef.current) {
+          setLoading(false)
+        }
+      })
+    return () => {
+      requestIdRef.current += 1
+    }
+  }, [projectId])
+
+  async function handleProjectUpdated() {
+    await Promise.allSettled([loadProject(), refreshProjects()])
+  }
+
+  async function handleRelationsChanged() {
+    await Promise.allSettled([
+      loadProject(),
+      refreshConversations(),
+      refreshProjects(),
+    ])
+  }
+
+  if (loading) {
+    return <ProjectPanelState loading message="正在加载项目" />
+  }
+
+  if (error || !project) {
+    return <ProjectPanelState message={error || "项目不存在或无法访问"} />
+  }
+
+  return (
+    <ProjectPanel
+      groups={groups}
+      members={members}
+      onProjectDeleted={onProjectDeleted}
+      onProjectUpdated={handleProjectUpdated}
+      onRelationsChanged={handleRelationsChanged}
+      project={project}
+      user={user}
+    />
+  )
+}
+
+async function loadSelectedProject(projectId: string) {
+  const [project, memberPage] = await Promise.all([
+    getClientProject(projectId),
+    listClientProjectMembers(projectId, { limit: 3 }),
+  ])
+  return [project, memberPage.members] as const
+}
+
+function ProjectPanelState({
+  loading = false,
+  message,
+}: {
+  loading?: boolean
+  message: string
+}) {
+  return (
+    <SidebarInset className="min-w-0 overflow-hidden bg-muted">
+      <div className="flex flex-1 items-center justify-center gap-2 self-stretch text-sm text-muted-foreground">
+        {loading && <Loader2 className="size-4 animate-spin" />}
+        {message}
+      </div>
+    </SidebarInset>
+  )
+}
+
+function ProjectPanel({
+  groups,
+  members,
+  onProjectDeleted,
+  onProjectUpdated,
+  onRelationsChanged,
+  project,
+  user,
+}: {
+  groups: ClientConversation[]
+  members: ClientProjectMember[]
+  onProjectDeleted: () => Promise<void>
+  onProjectUpdated: () => Promise<void>
+  onRelationsChanged: () => Promise<void>
+  project: ClientProjectDetail
+  user: ClientUser
+}) {
+  const extraMemberCount = Math.max(project.memberCount - members.length, 0)
 
   return (
     <SidebarInset className="min-w-0 overflow-hidden">
       <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b px-4">
         <div className="flex min-w-0 items-center gap-2.5">
-          <span
-            className={cn(
-              "flex size-8 shrink-0 items-center justify-center rounded-md",
-              project.accent
-            )}
-          >
-            <ProjectIcon aria-hidden="true" className="size-4" />
-          </span>
+          <ProjectAvatar className="size-8" project={project} user={user} />
           <div className="min-w-0">
-            <div className="flex min-w-0 items-center gap-2">
-              <h1 className="truncate text-sm font-semibold">{project.name}</h1>
-              {project.isPersonal && <Badge variant="secondary">个人</Badge>}
-            </div>
+            <h1 className="truncate text-sm font-semibold">{project.name}</h1>
             <p className="truncate text-xs text-muted-foreground">
-              {project.description}
+              {project.description.trim() || "暂无说明"}
             </p>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <AvatarGroup className="hidden md:flex">
-            {project.members.map((member) => (
-              <Avatar className="size-6" key={member.name}>
-                <AvatarFallback className={member.tone}>
-                  {member.initials}
-                </AvatarFallback>
-              </Avatar>
-            ))}
+            {members.map((member) => {
+              const initial =
+                Array.from(member.displayName.trim())[0]?.toUpperCase() ?? "?"
+
+              return (
+                <Avatar className="size-6" key={member.id}>
+                  {member.avatar && (
+                    <AvatarImage alt={member.displayName} src={member.avatar} />
+                  )}
+                  <AvatarFallback>{initial}</AvatarFallback>
+                </Avatar>
+              )
+            })}
             {extraMemberCount > 0 && (
               <AvatarGroupCount className="size-6 text-[10px]">
                 +{extraMemberCount}
               </AvatarGroupCount>
             )}
           </AvatarGroup>
-          <Button size="sm" type="button">
-            <Plus data-icon="inline-start" />
-            新建任务
-          </Button>
-          <Button
-            aria-label="项目设置"
-            size="icon-sm"
-            title="项目设置"
-            type="button"
-            variant="ghost"
-          >
-            <Ellipsis />
-          </Button>
+          <ProjectSettingsMenu
+            groups={groups}
+            onProjectDeleted={onProjectDeleted}
+            onProjectUpdated={onProjectUpdated}
+            onRelationsChanged={onRelationsChanged}
+            project={project}
+            user={user}
+          />
         </div>
       </header>
 
-      <ProjectNavigation project={project} />
-      <TaskToolbar />
-
-      <ScrollArea className="min-h-0 flex-1 bg-muted/30">
-        <div className="p-4 lg:p-6">
-          <TaskList tasks={project.tasks} />
-        </div>
-      </ScrollArea>
+      <Tabs
+        className="min-h-0 flex-1 gap-0 overflow-hidden"
+        defaultValue="tasks"
+      >
+        <ProjectNavigation />
+        <TabsContent
+          className="flex min-h-0 flex-1 overflow-hidden"
+          value="tasks"
+        >
+          <ProjectTasksTab tasks={emptyProjectTasks} />
+        </TabsContent>
+        <TabsContent
+          className="flex min-h-0 flex-1 overflow-hidden"
+          value="topics"
+        >
+          <ProjectTopicsTab />
+        </TabsContent>
+        <TabsContent
+          className="flex min-h-0 flex-1 overflow-hidden"
+          value="members"
+        >
+          <ProjectMembersTab
+            key={`${project.id}-${project.updatedAt}`}
+            projectId={project.id}
+          />
+        </TabsContent>
+      </Tabs>
     </SidebarInset>
   )
 }
 
-function ProjectNavigation({ project }: { project: ProjectListItem }) {
-  const items = [
-    { label: "概览" },
-    { label: "任务", count: project.totalTasks, active: true },
-    { label: "群组", count: project.groupCount },
-    { label: "成员", count: project.memberCount },
-    { label: "文档", count: project.documentCount },
-    { label: "文件", count: project.fileCount },
-  ]
-
-  return (
-    <nav
-      aria-label="项目内容"
-      className="flex h-11 shrink-0 items-end gap-5 overflow-x-auto border-b px-4"
-    >
-      {items.map((item) => (
-        <button
-          aria-current={item.active ? "page" : undefined}
-          className={cn(
-            "flex h-full shrink-0 items-center gap-1 border-b-2 border-transparent px-0.5 text-sm text-muted-foreground transition-colors",
-            item.active && "border-foreground font-medium text-foreground"
-          )}
-          key={item.label}
-          type="button"
-        >
-          {item.label}
-          {typeof item.count === "number" && (
-            <span className="text-xs text-muted-foreground">{item.count}</span>
-          )}
-        </button>
-      ))}
-    </nav>
+function CreateProjectDialog({
+  groups,
+  onCreate,
+  onOpenChange,
+  open,
+}: {
+  groups: ClientConversation[]
+  onCreate: (name: string, groupIds: string[]) => Promise<void>
+  onOpenChange: (open: boolean) => void
+  open: boolean
+}) {
+  const [creating, setCreating] = React.useState(false)
+  const [groupKeyword, setGroupKeyword] = React.useState("")
+  const [name, setName] = React.useState("")
+  const [selectedGroupIds, setSelectedGroupIds] = React.useState<Set<string>>(
+    () => new Set()
   )
-}
 
-function TaskToolbar() {
+  function resetForm() {
+    setCreating(false)
+    setGroupKeyword("")
+    setName("")
+    setSelectedGroupIds(new Set())
+  }
+
+  const filteredGroups = React.useMemo(() => {
+    const keyword = groupKeyword.trim().toLowerCase()
+
+    if (!keyword) {
+      return groups
+    }
+
+    return groups.filter((group) => group.name.toLowerCase().includes(keyword))
+  }, [groupKeyword, groups])
+  const trimmedName = name.trim()
+  const canCreate = trimmedName.length > 0 && !creating
+
+  function handleOpenChange(nextOpen: boolean) {
+    if (!creating) {
+      if (!nextOpen) {
+        resetForm()
+      }
+      onOpenChange(nextOpen)
+    }
+  }
+
+  function toggleGroup(groupId: string, checked: boolean | string) {
+    setSelectedGroupIds((currentIds) => {
+      if (
+        checked === true &&
+        !currentIds.has(groupId) &&
+        currentIds.size >= maxProjectGroupCount
+      ) {
+        return currentIds
+      }
+
+      const nextIds = new Set(currentIds)
+
+      if (checked === true) {
+        nextIds.add(groupId)
+      } else {
+        nextIds.delete(groupId)
+      }
+
+      return nextIds
+    })
+  }
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (!canCreate) {
+      return
+    }
+
+    setCreating(true)
+    try {
+      await onCreate(trimmedName, Array.from(selectedGroupIds))
+      resetForm()
+      onOpenChange(false)
+      toast.success("项目已创建")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "创建项目失败")
+    } finally {
+      setCreating(false)
+    }
+  }
+
   return (
-    <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <FilterButton label="状态" />
-        <FilterButton label="优先级" />
-        <FilterButton label="负责人" />
-        <div className="flex min-w-52 sm:min-w-64">
-          <div className="relative min-w-0 flex-1">
-            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+    <Dialog onOpenChange={handleOpenChange} open={open}>
+      <DialogContent className="gap-5 sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="text-base">新建项目</DialogTitle>
+          <DialogDescription className="sr-only">
+            输入项目名称并选择要关联的群聊
+          </DialogDescription>
+        </DialogHeader>
+        <form className="grid gap-4" onSubmit={handleSubmit}>
+          <div className="grid gap-2">
+            <Label htmlFor="create-project-name">项目名称</Label>
             <Input
-              aria-label="搜索任务内容"
-              className="rounded-r-none pl-8"
-              placeholder="搜索任务内容"
-              type="search"
+              autoFocus
+              disabled={creating}
+              id="create-project-name"
+              maxLength={120}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="输入项目名称"
+              value={name}
             />
           </div>
-          <Button className="rounded-l-none" size="sm" type="button">
-            搜索
-          </Button>
-        </div>
-      </div>
-      <TaskViewSwitcher />
-    </div>
+          <div className="grid gap-2">
+            <Label htmlFor="create-project-group-search">
+              关联群聊
+              {selectedGroupIds.size > 0 && (
+                <span className="font-normal text-muted-foreground">
+                  已选择 {selectedGroupIds.size}/{maxProjectGroupCount} 个
+                </span>
+              )}
+            </Label>
+            <div className="relative">
+              <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className="pl-8"
+                disabled={creating}
+                id="create-project-group-search"
+                onChange={(event) => setGroupKeyword(event.target.value)}
+                placeholder="搜索群聊"
+                type="search"
+                value={groupKeyword}
+              />
+            </div>
+          </div>
+          <ScrollArea className="h-64 rounded-md border">
+            <div className="grid gap-1 p-2">
+              {filteredGroups.length === 0 && (
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  {groupKeyword.trim() ? "没有匹配的群聊" : "暂无可关联群聊"}
+                </div>
+              )}
+              {filteredGroups.map((group) => {
+                const checkboxId = `create-project-group-${group.id}`
+                const selected = selectedGroupIds.has(group.id)
+                const selectionDisabled =
+                  !selected && selectedGroupIds.size >= maxProjectGroupCount
+
+                return (
+                  <Label
+                    className={cn(
+                      "cursor-pointer rounded-md px-2 py-2 font-normal hover:bg-muted",
+                      selectionDisabled &&
+                        "cursor-not-allowed opacity-50 hover:bg-transparent"
+                    )}
+                    htmlFor={checkboxId}
+                    key={group.id}
+                  >
+                    <Checkbox
+                      checked={selected}
+                      disabled={creating || selectionDisabled}
+                      id={checkboxId}
+                      onCheckedChange={(checked) =>
+                        toggleGroup(group.id, checked)
+                      }
+                    />
+                    <GroupAvatar
+                      avatar={group.avatar}
+                      members={group.members}
+                      name={group.name}
+                    />
+                    <span className="min-w-0 flex-1 truncate">
+                      {group.name}
+                    </span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {group.memberCount} 人
+                    </span>
+                  </Label>
+                )
+              })}
+            </div>
+          </ScrollArea>
+          <DialogFooter>
+            <Button
+              disabled={creating}
+              onClick={() => handleOpenChange(false)}
+              type="button"
+              variant="outline"
+            >
+              取消
+            </Button>
+            <Button disabled={!canCreate} type="submit">
+              {creating ? "正在创建" : "确定"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 
-function FilterButton({ label }: { label: string }) {
-  return (
-    <Button size="sm" type="button" variant="outline">
-      {label}
-      <ChevronDown data-icon="inline-end" />
-    </Button>
-  )
-}
-
-function TaskViewSwitcher() {
-  const views = [
-    { label: "任务列表", icon: ListTodo, active: true },
-    { label: "看板", icon: Columns3 },
-    { label: "日历", icon: CalendarDays },
-    { label: "甘特图", icon: ChartNoAxesGantt },
+function ProjectNavigation() {
+  const items = [
+    { value: "tasks", label: "任务" },
+    { value: "topics", label: "话题" },
+    { value: "members", label: "成员" },
   ]
 
   return (
-    <div
-      aria-label="任务视图"
-      className="flex shrink-0 items-center rounded-md border bg-background p-0.5"
-      role="group"
-    >
-      {views.map((view) => {
-        const Icon = view.icon
-
-        return (
-          <Button
-            aria-label={view.label}
-            aria-pressed={view.active}
-            className={cn(
-              "size-7 rounded-sm text-muted-foreground",
-              view.active && "bg-muted text-foreground shadow-xs"
-            )}
-            key={view.label}
-            size="icon-xs"
-            title={view.label}
-            type="button"
-            variant="ghost"
-          >
-            <Icon />
-          </Button>
-        )
-      })}
+    <div className="shrink-0 border-b px-4">
+      <TabsList aria-label="项目内容" variant="line">
+        {items.map((item) => (
+          <TabsTrigger key={item.value} value={item.value}>
+            {item.label}
+          </TabsTrigger>
+        ))}
+      </TabsList>
     </div>
-  )
-}
-
-function TaskList({ tasks }: { tasks: ProjectTask[] }) {
-  return (
-    <section className="overflow-hidden rounded-md border bg-background shadow-xs">
-      <Table className="min-w-176 table-fixed">
-        <TableHeader className="bg-muted/40">
-          <TableRow className="hover:bg-muted/40">
-            <TableHead className="h-8 w-[46%] px-4 text-xs text-muted-foreground">
-              任务
-            </TableHead>
-            <TableHead className="h-8 w-28 text-xs text-muted-foreground">
-              状态
-            </TableHead>
-            <TableHead className="h-8 w-28 text-xs text-muted-foreground">
-              优先级
-            </TableHead>
-            <TableHead className="h-8 w-32 text-xs text-muted-foreground">
-              负责人
-            </TableHead>
-            <TableHead className="h-8 w-24 pr-4 text-xs text-muted-foreground">
-              截止时间
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {tasks.map((task) => (
-            <TaskRow key={task.id} task={task} />
-          ))}
-        </TableBody>
-      </Table>
-    </section>
-  )
-}
-
-function TaskRow({ task }: { task: ProjectTask }) {
-  const completed = task.status === "已完成"
-
-  return (
-    <TableRow className="h-15 hover:bg-muted/35">
-      <TableCell className="px-4 py-3">
-        <div className="flex min-w-0 items-center gap-3">
-          {completed ? (
-            <CircleCheckBig
-              aria-hidden="true"
-              className="size-4 shrink-0 text-emerald-600"
-            />
-          ) : (
-            <Circle
-              aria-hidden="true"
-              className={cn(
-                "size-4 shrink-0 text-muted-foreground",
-                task.status === "进行中" && "fill-sky-500/20 text-sky-600"
-              )}
-            />
-          )}
-          <span
-            className={cn(
-              "truncate text-sm",
-              completed && "text-muted-foreground line-through"
-            )}
-          >
-            {task.title}
-          </span>
-        </div>
-      </TableCell>
-      <TableCell>
-        <TaskStatus status={task.status} />
-      </TableCell>
-      <TableCell>
-        <div className="flex items-center gap-1.5 text-xs">
-          <Flag
-            aria-hidden="true"
-            className={cn(
-              "size-3.5",
-              task.priority === "高"
-                ? "text-rose-600"
-                : task.priority === "中"
-                  ? "text-amber-600"
-                  : "text-muted-foreground"
-            )}
-          />
-          {task.priority}
-        </div>
-      </TableCell>
-      <TableCell>
-        <div className="flex items-center gap-2">
-          <Avatar className="size-6">
-            <AvatarFallback className={task.assignee.tone}>
-              {task.assignee.initials}
-            </AvatarFallback>
-          </Avatar>
-          <span className="truncate text-xs">{task.assignee.name}</span>
-        </div>
-      </TableCell>
-      <TableCell className="pr-4">
-        <time className="text-xs whitespace-nowrap text-muted-foreground">
-          {task.dueAt}
-        </time>
-      </TableCell>
-    </TableRow>
-  )
-}
-
-function TaskStatus({ status }: { status: ProjectTask["status"] }) {
-  return (
-    <span
-      className={cn(
-        "text-xs whitespace-nowrap",
-        status === "进行中"
-          ? "text-sky-700 dark:text-sky-300"
-          : status === "已完成"
-            ? "text-emerald-700 dark:text-emerald-300"
-            : "text-muted-foreground"
-      )}
-    >
-      {status}
-    </span>
   )
 }

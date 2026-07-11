@@ -3,6 +3,10 @@ import { describe, expect, it } from "vitest"
 import config from "./vite.config"
 
 describe("vite dev proxy", () => {
+  it("allows the maosite.cc development host", () => {
+    expect(config.server?.allowedHosts).toContain("maosite.cc")
+  })
+
   it("rewrites websocket origin while preserving the client API host", () => {
     const proxy = config.server?.proxy
     if (!proxy || typeof proxy === "string" || Array.isArray(proxy)) {

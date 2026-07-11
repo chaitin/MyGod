@@ -47,6 +47,10 @@ describe("ClientDataProvider", () => {
         )
       }
 
+      if (url === "/api/client/projects?limit=100") {
+        return Promise.resolve(jsonResponse(createProjectsResponse()))
+      }
+
       return Promise.reject(new Error(`unexpected request: ${url}`))
     })
 
@@ -63,7 +67,7 @@ describe("ClientDataProvider", () => {
     await act(async () => undefined)
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(2_000)
+      await vi.advanceTimersByTimeAsync(1_000)
     })
 
     expect(screen.getByTestId("conversation-count")).toHaveTextContent("1")
@@ -126,6 +130,41 @@ function createConversationsResponse(conversations: unknown[]) {
   return {
     data: {
       conversations,
+    },
+    success: true,
+  }
+}
+
+function createProjectsResponse() {
+  return {
+    data: {
+      next_cursor: null,
+      personal_project: {
+        avatar: "",
+        created_at: "2026-07-09T00:00:00Z",
+        current_user_role: "owner",
+        description: "",
+        group_count: 0,
+        id: "personal-project-1",
+        is_personal: true,
+        member_count: 1,
+        name: "个人工作区",
+        owner: {
+          avatar: "",
+          id: "user-1",
+          name: "Me",
+          nickname: "",
+        },
+        task_counts: {
+          canceled: 0,
+          done: 0,
+          in_progress: 0,
+          todo: 0,
+          total: 0,
+        },
+        updated_at: "2026-07-09T00:00:00Z",
+      },
+      projects: [],
     },
     success: true,
   }

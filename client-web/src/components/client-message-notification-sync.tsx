@@ -1,5 +1,5 @@
 import * as React from "react"
-import { useLocation, useNavigate } from "react-router"
+import { matchPath, useLocation, useNavigate } from "react-router"
 import { toast } from "sonner"
 
 import {
@@ -37,8 +37,10 @@ export function ClientMessageNotificationSync() {
     [contactApps]
   )
   const activeConversationId = React.useMemo(
-    () => new URLSearchParams(location.search).get("conversation_id") ?? "",
-    [location.search]
+    () =>
+      matchPath("/chat/:conversationId", location.pathname)?.params
+        .conversationId ?? "",
+    [location.pathname]
   )
 
   React.useEffect(() => {
@@ -87,9 +89,7 @@ export function ClientMessageNotificationSync() {
           title: "收到新消息",
           onClick: () => {
             window.focus()
-            navigate(
-              `/chat?conversation_id=${encodeURIComponent(message.conversationId)}`
-            )
+            navigate(`/chat/${encodeURIComponent(message.conversationId)}`)
           },
         })
         if (!notified) {

@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/button"
 
 const avatarOutputSize = 256
 const avatarMinSourceSize = 64
+const avatarMaxSourceSize = 4096
+const avatarMaxSourceBytes = 5 * 1024 * 1024
+const avatarMaxOutputBytes = 1 * 1024 * 1024
 const avatarOutputType = "image/webp"
 const avatarOutputQuality = 0.9
 const avatarZoomMin = 1
@@ -154,6 +157,12 @@ export function CustomAvatarPicker({
       return
     }
 
+    if (file.size > avatarMaxSourceBytes) {
+      resetImage()
+      setError("图片文件不能超过 5MiB")
+      return
+    }
+
     setError("")
     setImageSize(null)
     setZoom(1)
@@ -174,6 +183,15 @@ export function CustomAvatarPicker({
     ) {
       resetImage()
       setError("图片尺寸不能小于 64x64")
+      return
+    }
+
+    if (
+      nextImageSize.width > avatarMaxSourceSize ||
+      nextImageSize.height > avatarMaxSourceSize
+    ) {
+      resetImage()
+      setError("图片尺寸不能超过 4096x4096")
       return
     }
 
@@ -291,6 +309,11 @@ export function CustomAvatarPicker({
       sourceFile,
     })
 
+    if (avatar.file.size > avatarMaxOutputBytes) {
+      setError("裁切后的头像文件不能超过 1MiB")
+      return
+    }
+
     await onSave(avatar)
   }
 
@@ -358,7 +381,7 @@ export function CustomAvatarPicker({
                 <Upload className="size-5" />
               </span>
               <span className="text-foreground">选择图片</span>
-              <span>PNG、JPG、WebP</span>
+              <span>PNG、JPG、WebP，最大 5MiB</span>
             </button>
           )}
           {!sourceUrl && (

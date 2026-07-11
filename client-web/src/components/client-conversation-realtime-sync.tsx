@@ -1,5 +1,5 @@
 import * as React from "react"
-import { useLocation, useNavigate } from "react-router"
+import { matchPath, useLocation, useNavigate } from "react-router"
 
 import {
   normalizeConversationMemberMentionedEventPayload,
@@ -25,8 +25,10 @@ export function ClientConversationRealtimeSync() {
   const hasSeenRealtimeReadyRef = React.useRef(realtimeReady)
   const previousRealtimeReadyRef = React.useRef(realtimeReady)
   const activeConversationId = React.useMemo(
-    () => new URLSearchParams(location.search).get("conversation_id") ?? "",
-    [location.search]
+    () =>
+      matchPath("/chat/:conversationId", location.pathname)?.params
+        .conversationId ?? "",
+    [location.pathname]
   )
 
   React.useEffect(() => {

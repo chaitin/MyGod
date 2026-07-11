@@ -1818,7 +1818,7 @@ function MessageBubble({
               "max-w-full rounded-md p-3 text-sm leading-relaxed shadow-xs",
               fromMe
                 ? "bg-teal-100 text-foreground hover:bg-teal-200/70 data-[state=open]:bg-teal-200/70 dark:bg-teal-950 hover:dark:bg-teal-900/70 dark:data-[state=open]:bg-teal-900/70"
-                : "bg-neutral-200/80 text-foreground hover:bg-neutral-200 data-[state=open]:bg-neutral-200 dark:bg-neutral-800/80 hover:dark:bg-neutral-800 dark:data-[state=open]:bg-neutral-800"
+                : "bg-zinc-200/60 text-foreground hover:bg-zinc-200/80 data-[state=open]:bg-zinc-200 dark:bg-zinc-800/80 hover:dark:bg-zinc-800 dark:data-[state=open]:bg-zinc-800"
             )}
             data-message-action-trigger
             onContextMenu={handleMessageContextMenu}

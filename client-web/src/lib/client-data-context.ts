@@ -11,6 +11,10 @@ import {
   type ContactGroup,
   type ContactUser,
 } from "@/lib/client-data-api"
+import type {
+  ClientProjectDetail,
+  ClientProjectSummary,
+} from "@/lib/project-data-api"
 
 export type ClientConversationMessageState = {
   error: string | null
@@ -38,6 +42,13 @@ export type ClientDataContextValue = {
   meError: ClientDataRequestError | null
   meLoading: boolean
   meRefreshing: boolean
+  personalProject: ClientProjectSummary
+  projects: ClientProjectSummary[]
+  projectsError: ClientDataRequestError | null
+  projectsLoading: boolean
+  projectsLoadingMore: boolean
+  projectsNextCursor: string | null
+  projectsRefreshing: boolean
   addGroupConversationMembers: (
     conversationId: string,
     memberIds: string[],
@@ -48,6 +59,10 @@ export type ClientDataContextValue = {
     memberIds: string[],
     appIds?: string[]
   ) => Promise<ClientConversation>
+  createProject: (
+    name: string,
+    groupIds?: string[]
+  ) => Promise<ClientProjectDetail>
   dissolveGroupConversation: (conversationId: string) => Promise<void>
   ensureConversationMessages: (conversationId: string) => void
   getConversation: (conversationId: string) => ClientConversation | null
@@ -99,6 +114,8 @@ export type ClientDataContextValue = {
   refreshConversations: () => Promise<void>
   refreshContacts: () => Promise<void>
   refreshMe: () => Promise<void>
+  refreshProjects: () => Promise<void>
+  loadMoreProjects: () => Promise<void>
   sendConversationText: (
     conversationId: string,
     content: string,

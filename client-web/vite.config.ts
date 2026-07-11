@@ -10,6 +10,7 @@ const clientApiProxyTarget =
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
+    allowedHosts: ["maosite.cc"],
     port: 20070,
     proxy: {
       "/api/client/ws": {

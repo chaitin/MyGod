@@ -91,9 +91,17 @@ type ConversationResponse = {
   member_count?: number
   members?: ConversationMemberResponse[]
   name?: string
+  projects?: ConversationProjectResponse[]
   type?: string
   unread_count?: number
   visibility?: string
+}
+
+type ConversationProjectResponse = {
+  avatar?: string
+  description?: string
+  id?: string
+  name?: string
 }
 
 type ConversationMemberResponse = {
@@ -407,9 +415,17 @@ export type ClientConversation = {
   memberCount: number
   members?: ClientConversationMember[]
   name: string
+  projects?: ClientConversationProject[]
   type: "direct" | "group" | "app"
   unreadCount: number
   visibility: "private" | "public"
+}
+
+export type ClientConversationProject = {
+  avatar: string
+  description: string
+  id: string
+  name: string
 }
 
 export type ClientConversationMember = {
@@ -1856,7 +1872,28 @@ function normalizeConversation(
     )
   }
 
+  if (conversation.projects) {
+    normalizedConversation.projects = conversation.projects.map(
+      normalizeConversationProject
+    )
+  }
+
   return normalizedConversation
+}
+
+function normalizeConversationProject(
+  project: ConversationProjectResponse | undefined
+): ClientConversationProject {
+  if (!project?.id || !project.name) {
+    throw new ClientDataRequestError("会话关联项目响应格式不正确")
+  }
+
+  return {
+    avatar: project.avatar ?? "",
+    description: project.description ?? "",
+    id: project.id,
+    name: project.name,
+  }
 }
 
 function normalizeMarkConversationReadResult(
