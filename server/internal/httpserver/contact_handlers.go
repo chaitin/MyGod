@@ -55,7 +55,7 @@ type listContactUsersResponse struct {
 // listClientContacts godoc
 //
 // @Summary 列出通讯录
-// @Description 普通用户获取统一通讯录。返回对当前用户可见的应用、启用用户和群组。
+// @Description 普通用户获取统一通讯录。返回对当前用户可见的应用、启用用户，以及当前用户已加入或公开的 active 群组。
 // @Tags 客户端通讯录
 // @Produce json
 // @Success 200 {object} successEnvelope{data=listClientContactsResponse}
@@ -171,7 +171,12 @@ func (s *Server) loadContactGroups(currentUserID string, keyword string) ([]cont
 	memberExistsSQL := "EXISTS (SELECT 1 FROM conversation_members cm WHERE cm.conversation_id = conversations.id AND cm.member_type = ? AND cm.member_id = ? AND cm.left_at IS NULL)"
 	query := s.db.Model(&store.Conversation{}).
 		Where("kind = ? AND status = ?", store.ConversationKindGroup, store.ConversationStatusActive).
-		Where("visibility = ?", store.ConversationVisibilityPublic)
+		Where(
+			"(visibility = ? OR "+memberExistsSQL+")",
+			store.ConversationVisibilityPublic,
+			store.ConversationMemberTypeUser,
+			currentUserID,
+		)
 	if keyword != "" {
 		query = query.Where("LOWER(name) LIKE ?", "%"+keyword+"%")
 	}

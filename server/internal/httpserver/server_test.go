@@ -9682,8 +9682,18 @@ func TestClientContactsReturnsVisibleAppsUsersAndGroups(t *testing.T) {
 			t.Fatalf("group.type = %v, want group", group["type"])
 		}
 	}
-	if groupsByID[joinedPrivateGroup.ID] != nil {
-		t.Fatal("contacts groups included joined private group")
+	joinedPrivate := groupsByID[joinedPrivateGroup.ID]
+	if joinedPrivate == nil {
+		t.Fatal("contacts groups did not include joined private group")
+	}
+	if joinedPrivate["joined"] != true {
+		t.Fatalf("joined private group joined = %v, want true", joinedPrivate["joined"])
+	}
+	if joinedPrivate["visibility"] != "private" {
+		t.Fatalf("joined private group visibility = %v, want private", joinedPrivate["visibility"])
+	}
+	if joinedPrivate["member_count"] != float64(1) {
+		t.Fatalf("joined private group member_count = %v, want 1", joinedPrivate["member_count"])
 	}
 	if groupsByID[publicGroup.ID] == nil {
 		t.Fatal("contacts groups did not include public group")

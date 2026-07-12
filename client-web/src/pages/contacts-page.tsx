@@ -1,9 +1,11 @@
 import * as React from "react"
-import { useNavigate } from "react-router"
+import { useLocation, useNavigate, useParams } from "react-router"
 import { toast } from "sonner"
 
 import {
+  createDirectorySelection,
   directoryItemKey,
+  getDirectorySelectionPath,
   resolveActiveDirectoryItem,
   type DirectorySelection,
   type DirectoryTab,
@@ -38,12 +40,23 @@ export function ContactsPage() {
     openDirectConversation,
     refreshContacts,
   } = useClientData()
+  const location = useLocation()
   const navigate = useNavigate()
-  const [activeSelection, setActiveSelection] =
-    React.useState<DirectorySelection | null>(null)
+  const { directoryId, directoryType } = useParams<{
+    directoryId?: string
+    directoryType?: string
+  }>()
+  const activeSelection = React.useMemo(
+    () => createDirectorySelection(directoryType, directoryId),
+    [directoryId, directoryType]
+  )
   const [openingDirectoryItemKey, setOpeningDirectoryItemKey] =
     React.useState("")
-  const [activeTab, setActiveTab] = React.useState<DirectoryTab>("user")
+  const [activeTabsByLocation, setActiveTabsByLocation] = React.useState<
+    Record<string, DirectoryTab>
+  >({})
+  const activeTab =
+    activeTabsByLocation[location.key] ?? activeSelection?.type ?? "user"
   const [keywords, setKeywords] = React.useState<Record<DirectoryTab, string>>({
     app: "",
     group: "",
@@ -164,6 +177,17 @@ export function ContactsPage() {
     }))
   }
 
+  function updateActiveTab(nextTab: DirectoryTab) {
+    setActiveTabsByLocation((currentTabs) => ({
+      ...currentTabs,
+      [location.key]: nextTab,
+    }))
+  }
+
+  function selectDirectoryItem(selection: DirectorySelection) {
+    navigate(getDirectorySelectionPath(selection))
+  }
+
   return (
     <SidebarProvider
       className="min-h-0 min-w-0 flex-1"
@@ -182,10 +206,10 @@ export function ContactsPage() {
         contactsRefreshing={contactsRefreshing}
         currentUserId={me.id}
         groups={filteredGroups}
-        onActiveTabChange={setActiveTab}
+        onActiveTabChange={updateActiveTab}
         onKeywordChange={updateActiveKeyword}
         onRefresh={() => void refreshContacts()}
-        onSelect={setActiveSelection}
+        onSelect={selectDirectoryItem}
         onStartAppConversation={(app) => void startAppConversation(app)}
         onStartContactConversation={(contact) =>
           void startDirectConversation(contact)

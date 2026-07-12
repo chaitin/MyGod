@@ -16,6 +16,21 @@ export type ActiveDirectoryItem =
 
 export type DirectoryTab = DirectorySelection["type"]
 
+export function createDirectorySelection(
+  type: string | undefined,
+  id: string | undefined
+): DirectorySelection | null {
+  if (!id || (type !== "app" && type !== "group" && type !== "user")) {
+    return null
+  }
+
+  return { id, type }
+}
+
+export function getDirectorySelectionPath(selection: DirectorySelection) {
+  return `/contacts/${selection.type}/${encodeURIComponent(selection.id)}`
+}
+
 export function resolveActiveDirectoryItem(
   selection: DirectorySelection | null,
   apps: ContactApp[],

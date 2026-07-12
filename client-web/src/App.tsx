@@ -60,7 +60,7 @@ export function App() {
             }
           />
           <Route
-            path="/contacts"
+            path="/contacts/:directoryType?/:directoryId?"
             element={
               <>
                 <ClientDocumentTitle title="联系人" />

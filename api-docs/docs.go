@@ -1745,7 +1745,7 @@ const docTemplate = `{
         },
         "/api/client/contacts": {
             "get": {
-                "description": "普通用户获取统一通讯录。返回对当前用户可见的应用、启用用户和群组。",
+                "description": "普通用户获取统一通讯录。返回对当前用户可见的应用、启用用户，以及当前用户已加入或公开的 active 群组。",
                 "produces": [
                     "application/json"
                 ],
