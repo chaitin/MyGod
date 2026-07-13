@@ -112,4 +112,14 @@ func TestProjectsHelpExposesSixStrictUserOperations(t *testing.T) {
 			t.Fatalf("help = %s, want %s", result.Content, snippet)
 		}
 	}
+
+	result, err = source.CallTool(context.Background(), helpToolName, json.RawMessage(`{"capability":"projects","operation":"create_task"}`))
+	if err != nil {
+		t.Fatalf("create task help error = %v", err)
+	}
+	for _, snippet := range []string{"search_tasks", "相同或同义任务", "只适用于任务创建", "不得调用本操作", "update_task", "填写简洁、真实的 description"} {
+		if !strings.Contains(result.Content, snippet) {
+			t.Fatalf("create task help = %s, want %s", result.Content, snippet)
+		}
+	}
 }

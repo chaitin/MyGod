@@ -212,7 +212,7 @@ func projectsCapabilitySpec() capabilitySpec {
 			},
 			{
 				Name:            projectsOperationSearchTasks,
-				Description:     "查询授权用户有权访问的指定项目任务。project_id 可直接使用可信 project_context 中的候选；否则先查询项目。支持标题/描述关键词、状态、优先级、负责人、标签、开始日期和截止日期范围筛选；limit 默认 50，最大 100。返回任务详情、负责人、创建人、updated_at 和分页游标。",
+				Description:     "查询授权用户有权访问的指定项目任务，也用于创建任务前检查相同或同义的已有任务。project_id 可直接使用可信 project_context 中的候选；否则先查询项目。支持标题/描述关键词、状态、优先级、负责人、标签、开始日期和截止日期范围筛选；limit 默认 50，最大 100。返回任务详情、负责人、创建人、updated_at 和分页游标。",
 				InputSchema:     projectOperationInputSchema(projectsOperationSearchTasks, searchTasksArgumentsSchema()),
 				ToolName:        projectsToolName,
 				ToolDescription: toolDescription,
@@ -220,7 +220,7 @@ func projectsCapabilitySpec() capabilitySpec {
 			},
 			{
 				Name:            projectsOperationCreateTask,
-				Description:     "以授权用户身份在其有权访问的项目中创建任务。project_id 可直接使用按系统项目选择规则确定的可信 project_context 候选；否则先查询项目。title 必填；status 默认 todo，priority 默认 2；负责人必须是有项目访问权的 active 用户。返回创建后的完整任务。",
+				Description:     "以授权用户身份在其有权访问的项目中创建任务。本查重要求只适用于任务创建：调用前必须先在同一项目使用 search_tasks 检查相同或同义任务；确认重复时不得调用本操作，应使用已有任务的 task_id 和 updated_at 调用 update_task，只在没有重复任务时创建。创建时应尽量根据用户请求和必要聊天背景填写简洁、真实的 description，不复制整段聊天或编造信息。project_id 可直接使用按系统项目选择规则确定的可信 project_context 候选；否则先查询项目。title 必填；status 默认 todo，priority 默认 2；负责人必须是有项目访问权的 active 用户。返回创建后的完整任务。",
 				InputSchema:     projectOperationInputSchema(projectsOperationCreateTask, createTaskArgumentsSchema()),
 				ToolName:        projectsToolName,
 				ToolDescription: toolDescription,
