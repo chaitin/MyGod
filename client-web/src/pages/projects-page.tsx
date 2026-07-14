@@ -5,6 +5,7 @@ import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
 import { ProjectAvatar } from "@/components/projects/project-avatar"
+import { ProjectDocumentsTab } from "@/components/projects/project-documents-tab"
 import { ProjectMembersTab } from "@/components/projects/project-members-tab"
 import { ProjectSettingsMenu } from "@/components/projects/project-settings-menu"
 import { ProjectTasksTab } from "@/components/projects/project-tasks-tab"
@@ -498,6 +499,12 @@ function ProjectPanel({
         </TabsContent>
         <TabsContent
           className="flex min-h-0 flex-1 overflow-hidden"
+          value="documents"
+        >
+          <ProjectDocumentsTab />
+        </TabsContent>
+        <TabsContent
+          className="flex min-h-0 flex-1 overflow-hidden"
           value="members"
         >
           <ProjectMembersTab
@@ -712,6 +719,7 @@ function ProjectNavigation() {
   const items = [
     { value: "tasks", label: "任务" },
     { value: "topics", label: "话题" },
+    { value: "documents", label: "文档" },
     { value: "members", label: "成员" },
   ]
 
