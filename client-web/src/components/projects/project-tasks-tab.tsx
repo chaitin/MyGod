@@ -1,4 +1,6 @@
 import * as React from "react"
+import { useSearchParams } from "react-router"
+import { toast } from "sonner"
 import {
   CalendarDays,
   ChevronDown,
@@ -17,6 +19,7 @@ import {
 } from "lucide-react"
 
 import { CreateProjectTaskDialog } from "@/components/projects/create-project-task-dialog"
+import { ProjectTaskDetailsDialog } from "@/components/projects/project-task-details-dialog"
 import { ProjectTaskBoardView } from "@/components/projects/project-task-board-view"
 import { ProjectTaskCalendarView } from "@/components/projects/project-task-calendar-view"
 import { ProjectTaskGanttView } from "@/components/projects/project-task-gantt-view"
@@ -41,7 +44,10 @@ import { Spinner } from "@/components/ui/spinner"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import type { ClientProjectMember } from "@/lib/project-data-api"
 import { listAllClientProjectMembers } from "@/lib/project-members"
-import { listClientProjectTasks } from "@/lib/project-task-data-api"
+import {
+  getClientProjectTask,
+  listClientProjectTasks,
+} from "@/lib/project-task-data-api"
 import { cn } from "@/lib/utils"
 
 const taskViews = [
@@ -54,6 +60,7 @@ const taskViews = [
 type TaskView = (typeof taskViews)[number]["value"]
 
 const projectTaskViewStorageKey = "project-task-view"
+const projectTaskIdSearchParam = "taskId"
 
 type TaskFilters = {
   assigneeUserIds: string[]
@@ -117,9 +124,12 @@ export function ProjectTasksTab({
   onTasksChanged: () => Promise<void>
   projectId: string
 }) {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [activeView, setActiveView] = React.useState<TaskView>(
     readStoredProjectTaskView
   )
+  const [fallbackActiveTask, setFallbackActiveTask] =
+    React.useState<ProjectTask | null>(null)
   const [appliedFilters, setAppliedFilters] = React.useState<TaskFilters>(
     createEmptyTaskFilters
   )
@@ -133,6 +143,13 @@ export function ProjectTasksTab({
   const [membersError, setMembersError] = React.useState(false)
   const [membersLoading, setMembersLoading] = React.useState(true)
   const [tasks, setTasks] = React.useState<ProjectTask[]>([])
+  const activeTaskId = searchParams.get(projectTaskIdSearchParam)?.trim() ?? ""
+  const activeTask =
+    tasks.find((task) => task.id === activeTaskId) ??
+    (fallbackActiveTask?.id === activeTaskId &&
+    fallbackActiveTask.projectId === projectId
+      ? fallbackActiveTask
+      : null)
 
   React.useEffect(() => {
     let active = true
@@ -185,6 +202,60 @@ export function ProjectTasksTab({
     }
   }, [projectId])
 
+  React.useEffect(() => {
+    if (!activeTaskId) {
+      return
+    }
+
+    const listedTask = tasks.find((task) => task.id === activeTaskId)
+    if (
+      listedTask ||
+      loading ||
+      (fallbackActiveTask?.id === activeTaskId &&
+        fallbackActiveTask.projectId === projectId)
+    ) {
+      return
+    }
+
+    let active = true
+    void getClientProjectTask(projectId, activeTaskId)
+      .then((task) => {
+        if (active) {
+          setFallbackActiveTask(task)
+        }
+      })
+      .catch((loadError: unknown) => {
+        if (!active) {
+          return
+        }
+        setFallbackActiveTask(null)
+        setSearchParams(
+          (current) => {
+            const next = new URLSearchParams(current)
+            next.delete(projectTaskIdSearchParam)
+            return next
+          },
+          { replace: true }
+        )
+        toast.error(
+          loadError instanceof Error
+            ? loadError.message
+            : "加载任务详情失败"
+        )
+      })
+
+    return () => {
+      active = false
+    }
+  }, [
+    activeTaskId,
+    fallbackActiveTask,
+    loading,
+    projectId,
+    setSearchParams,
+    tasks,
+  ])
+
   async function refreshTasks() {
     try {
       setTasks(await listAllProjectTasks(projectId, appliedFilters))
@@ -213,6 +284,27 @@ export function ProjectTasksTab({
   function handleViewChange(view: TaskView) {
     setActiveView(view)
     storeProjectTaskView(view)
+  }
+
+  function handleOpenTask(task: ProjectTask) {
+    setFallbackActiveTask(task)
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current)
+      next.set(projectTaskIdSearchParam, task.id)
+      return next
+    })
+  }
+
+  function handleCloseTask() {
+    setFallbackActiveTask(null)
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current)
+        next.delete(projectTaskIdSearchParam)
+        return next
+      },
+      { replace: true }
+    )
   }
 
   function applyFilters(nextFilters: TaskFilters) {
@@ -273,6 +365,7 @@ export function ProjectTasksTab({
               emptyMessage={
                 hasTaskFilters(appliedFilters) ? "没有匹配的任务" : "暂无任务"
               }
+              onOpenTask={handleOpenTask}
               onTaskStatusChange={handleTaskStatusChange}
               onTaskUpdated={handleTaskUpdated}
               tasks={tasks}
@@ -284,6 +377,7 @@ export function ProjectTasksTab({
                 emptyMessage={
                   hasTaskFilters(appliedFilters) ? "没有匹配的任务" : "暂无任务"
                 }
+                onOpenTask={handleOpenTask}
                 onTaskStatusChange={handleTaskStatusChange}
                 onTaskUpdated={handleTaskUpdated}
                 tasks={tasks}
@@ -292,6 +386,19 @@ export function ProjectTasksTab({
           )}
         </div>
       </div>
+      {activeTask && activeTask.id === activeTaskId && (
+        <ProjectTaskDetailsDialog
+          key={`${activeTask.id}-${activeTask.updatedAt}`}
+          onOpenChange={(open) => {
+            if (!open) {
+              handleCloseTask()
+            }
+          }}
+          onUpdated={handleTaskUpdated}
+          open
+          task={activeTask}
+        />
+      )}
       <CreateProjectTaskDialog
         onCreated={handleTaskCreated}
         onOpenChange={setCreateDialogOpen}
@@ -717,12 +824,14 @@ function TaskViewSwitcher({
 function TaskViewContent({
   activeView,
   emptyMessage,
+  onOpenTask,
   onTaskStatusChange,
   onTaskUpdated,
   tasks,
 }: {
   activeView: TaskView
   emptyMessage: string
+  onOpenTask: (task: ProjectTask) => void
   onTaskStatusChange: (taskId: string, status: ProjectTaskStatus) => void
   onTaskUpdated: () => Promise<void>
   tasks: ProjectTask[]
@@ -732,6 +841,7 @@ function TaskViewContent({
       return (
         <ProjectTaskBoardView
           emptyMessage={emptyMessage}
+          onOpenTask={onOpenTask}
           onTaskStatusChange={onTaskStatusChange}
           onTaskUpdated={onTaskUpdated}
           tasks={tasks}
@@ -741,7 +851,7 @@ function TaskViewContent({
       return (
         <ProjectTaskCalendarView
           emptyMessage={emptyMessage}
-          onTaskUpdated={onTaskUpdated}
+          onOpenTask={onOpenTask}
           tasks={tasks}
         />
       )
@@ -749,7 +859,7 @@ function TaskViewContent({
       return (
         <ProjectTaskGanttView
           emptyMessage={emptyMessage}
-          onTaskUpdated={onTaskUpdated}
+          onOpenTask={onOpenTask}
           tasks={tasks}
         />
       )
@@ -757,6 +867,7 @@ function TaskViewContent({
       return (
         <ProjectTaskListView
           emptyMessage={emptyMessage}
+          onOpenTask={onOpenTask}
           onTaskUpdated={onTaskUpdated}
           tasks={tasks}
         />

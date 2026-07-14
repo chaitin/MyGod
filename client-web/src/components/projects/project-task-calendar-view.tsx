@@ -1,7 +1,6 @@
 import * as React from "react"
 import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react"
 
-import { ProjectTaskDetailsDialog } from "@/components/projects/project-task-details-dialog"
 import type { ProjectTask } from "@/components/projects/project-types"
 import {
   ProjectTaskAssigneeAvatar,
@@ -38,14 +37,13 @@ const calendarTaskStatusOrder = {
 
 export function ProjectTaskCalendarView({
   emptyMessage = "暂无任务",
-  onTaskUpdated,
+  onOpenTask,
   tasks,
 }: {
   emptyMessage?: string
-  onTaskUpdated: () => Promise<void>
+  onOpenTask: (task: ProjectTask) => void
   tasks: ProjectTask[]
 }) {
-  const [activeTask, setActiveTask] = React.useState<ProjectTask | null>(null)
   const [monthPickerOpen, setMonthPickerOpen] = React.useState(false)
   const [monthPickerYear, setMonthPickerYear] = React.useState(() =>
     new Date().getFullYear()
@@ -73,7 +71,7 @@ export function ProjectTaskCalendarView({
         <div className="grid gap-4">
           {unscheduledTasks.length > 0 && (
             <UnscheduledCalendarTasks
-              onOpenTask={setActiveTask}
+              onOpenTask={onOpenTask}
               tasks={unscheduledTasks}
             />
           )}
@@ -230,7 +228,7 @@ export function ProjectTaskCalendarView({
                           {dateTasks.map((task) => (
                             <CalendarTask
                               key={task.id}
-                              onOpen={() => setActiveTask(task)}
+                              onOpen={() => onOpenTask(task)}
                               task={task}
                             />
                           ))}
@@ -243,19 +241,6 @@ export function ProjectTaskCalendarView({
             </div>
           </section>
         </div>
-      )}
-      {activeTask && (
-        <ProjectTaskDetailsDialog
-          key={`${activeTask.id}-${activeTask.updatedAt}`}
-          onOpenChange={(open) => {
-            if (!open) {
-              setActiveTask(null)
-            }
-          }}
-          onUpdated={onTaskUpdated}
-          open
-          task={activeTask}
-        />
       )}
     </>
   )

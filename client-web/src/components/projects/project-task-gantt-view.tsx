@@ -1,7 +1,5 @@
-import * as React from "react"
 import { ChevronRight } from "lucide-react"
 
-import { ProjectTaskDetailsDialog } from "@/components/projects/project-task-details-dialog"
 import type { ProjectTask } from "@/components/projects/project-types"
 import {
   ProjectTaskAssigneeAvatar,
@@ -42,15 +40,13 @@ type Timeline = {
 
 export function ProjectTaskGanttView({
   emptyMessage = "暂无任务",
-  onTaskUpdated,
+  onOpenTask,
   tasks,
 }: {
   emptyMessage?: string
-  onTaskUpdated: () => Promise<void>
+  onOpenTask: (task: ProjectTask) => void
   tasks: ProjectTask[]
 }) {
-  const [activeTask, setActiveTask] = React.useState<ProjectTask | null>(null)
-
   const scheduledTasks = tasks
     .map((task) => ({ range: getProjectTaskDateRange(task), task }))
     .filter(
@@ -106,7 +102,7 @@ export function ProjectTaskGanttView({
                     <button
                       className="group/task flex min-w-0 cursor-pointer items-center gap-2 rounded-md border bg-background px-3 py-2.5 text-left text-sm transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset"
                       key={task.id}
-                      onClick={() => setActiveTask(task)}
+                      onClick={() => onOpenTask(task)}
                       type="button"
                     >
                       <ProjectTaskStatusIcon
@@ -134,7 +130,7 @@ export function ProjectTaskGanttView({
             <section className="min-h-0 flex-1 overflow-auto rounded-md border bg-background shadow-xs">
               <div className="flex w-max min-w-full">
                 <GanttTaskColumn
-                  onOpenTask={setActiveTask}
+                  onOpenTask={onOpenTask}
                   tasks={scheduledTasks}
                   timeline={timeline}
                 />
@@ -151,7 +147,7 @@ export function ProjectTaskGanttView({
                       {scheduledTasks.map(({ range, task }) => (
                         <GanttTimelineTaskRow
                           key={task.id}
-                          onOpen={() => setActiveTask(task)}
+                          onOpen={() => onOpenTask(task)}
                           range={range}
                           task={task}
                           timeline={timeline}
@@ -164,19 +160,6 @@ export function ProjectTaskGanttView({
             </section>
           )}
         </>
-      )}
-      {activeTask && (
-        <ProjectTaskDetailsDialog
-          key={`${activeTask.id}-${activeTask.updatedAt}`}
-          onOpenChange={(open) => {
-            if (!open) {
-              setActiveTask(null)
-            }
-          }}
-          onUpdated={onTaskUpdated}
-          open
-          task={activeTask}
-        />
       )}
     </div>
   )

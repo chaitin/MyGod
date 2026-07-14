@@ -9,7 +9,6 @@ import {
   Equal,
 } from "lucide-react"
 
-import { ProjectTaskDetailsDialog } from "@/components/projects/project-task-details-dialog"
 import { UpdateProjectTaskAssigneeDialog } from "@/components/projects/update-project-task-assignee-dialog"
 import { UpdateProjectTaskDateDialog } from "@/components/projects/update-project-task-date-dialog"
 import { UpdateProjectTaskPriorityDialog } from "@/components/projects/update-project-task-priority-dialog"
@@ -44,15 +43,15 @@ const statusLabels = {
 
 export function ProjectTaskListView({
   emptyMessage = "暂无任务",
+  onOpenTask,
   onTaskUpdated,
   tasks,
 }: {
   emptyMessage?: string
+  onOpenTask: (task: ProjectTask) => void
   onTaskUpdated: () => Promise<void>
   tasks: ProjectTask[]
 }) {
-  const [activeTask, setActiveTask] = React.useState<ProjectTask | null>(null)
-
   return (
     <>
       {tasks.length === 0 ? (
@@ -64,24 +63,12 @@ export function ProjectTaskListView({
           {tasks.map((task) => (
             <TaskItem
               key={task.id}
-              onOpenDetails={() => setActiveTask(task)}
+              onOpenDetails={() => onOpenTask(task)}
               onUpdated={onTaskUpdated}
               task={task}
             />
           ))}
         </ItemGroup>
-      )}
-      {activeTask && (
-        <ProjectTaskDetailsDialog
-          onOpenChange={(open) => {
-            if (!open) {
-              setActiveTask(null)
-            }
-          }}
-          onUpdated={onTaskUpdated}
-          open
-          task={activeTask}
-        />
       )}
     </>
   )

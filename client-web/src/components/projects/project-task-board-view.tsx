@@ -14,7 +14,6 @@ import {
 import { createPortal } from "react-dom"
 import { toast } from "sonner"
 
-import { ProjectTaskDetailsDialog } from "@/components/projects/project-task-details-dialog"
 import type {
   ProjectTask,
   ProjectTaskStatus,
@@ -44,16 +43,17 @@ const boardColumns: ProjectTaskStatus[] = [
 
 export function ProjectTaskBoardView({
   emptyMessage = "暂无任务",
+  onOpenTask,
   onTaskStatusChange,
   onTaskUpdated,
   tasks,
 }: {
   emptyMessage?: string
+  onOpenTask: (task: ProjectTask) => void
   onTaskStatusChange: (taskId: string, status: ProjectTaskStatus) => void
   onTaskUpdated: () => Promise<void>
   tasks: ProjectTask[]
 }) {
-  const [activeTask, setActiveTask] = React.useState<ProjectTask | null>(null)
   const [draggedTaskId, setDraggedTaskId] = React.useState<string | null>(null)
   const [updatingTaskIds, setUpdatingTaskIds] = React.useState<Set<string>>(
     () => new Set()
@@ -125,7 +125,7 @@ export function ProjectTaskBoardView({
                 dragging={draggedTaskId !== null}
                 emptyMessage={emptyMessage}
                 key={status}
-                onOpenTask={setActiveTask}
+                onOpenTask={onOpenTask}
                 onTaskUpdated={onTaskUpdated}
                 status={status}
                 tasks={tasks.filter((task) => task.status === status)}
@@ -142,19 +142,6 @@ export function ProjectTaskBoardView({
             document.body
           )}
       </DndContext>
-      {activeTask && (
-        <ProjectTaskDetailsDialog
-          key={`${activeTask.id}-${activeTask.updatedAt}`}
-          onOpenChange={(open) => {
-            if (!open) {
-              setActiveTask(null)
-            }
-          }}
-          onUpdated={onTaskUpdated}
-          open
-          task={activeTask}
-        />
-      )}
     </>
   )
 }
