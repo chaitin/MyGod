@@ -39,7 +39,7 @@ const (
 	maxLinkPreviewReadBytes     = 1024
 	maxMessageMentionTargets    = 50
 	maxCardDescription          = 2000
-	maxCardTitleLength          = 240
+	maxCardTitleLength          = 256
 	maxTextMessageContentLength = 5000
 	linkPreviewFetchTimeout     = 2 * time.Second
 	linkPreviewMaxRedirects     = 3
@@ -1321,7 +1321,7 @@ func (handler cardMessageBodyHandler) Validate(raw json.RawMessage) error {
 		return errors.New("卡片标题不能为空")
 	}
 	if len([]rune(title)) > maxCardTitleLength {
-		return errors.New("卡片标题不能超过 240 个字符")
+		return errors.New("卡片标题不能超过 " + strconv.Itoa(maxCardTitleLength) + " 个字符")
 	}
 	description := strings.TrimSpace(body.Description)
 	if len([]rune(description)) > maxCardDescription {

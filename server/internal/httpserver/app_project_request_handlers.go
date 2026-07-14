@@ -332,6 +332,7 @@ func (s *Server) handleAppCreateProjectTask(appID string, request realtime.Envel
 	if err != nil {
 		return taskResponse{}, newAppRequestFailure("invalid_request", err.Error())
 	}
+	var notification *taskNotificationResult
 	err = s.db.WithContext(context.Background()).Transaction(func(tx *gorm.DB) error {
 		if _, _, err := findAccessibleProjectForUpdate(tx, projectID, runAs.ID); err != nil {
 			return err
@@ -349,11 +350,20 @@ func (s *Server) handleAppCreateProjectTask(appID string, request realtime.Envel
 		if err := tx.Create(&task).Error; err != nil {
 			return err
 		}
-		return updateProjectRelationTimestamp(tx, projectID, now)
+		if err := updateProjectRelationTimestamp(tx, projectID, now); err != nil {
+			return err
+		}
+		notification, err = s.createTaskNotificationTx(
+			context.Background(),
+			tx,
+			task,
+		)
+		return err
 	})
 	if err != nil {
 		return taskResponse{}, mapAppTaskRequestError(err)
 	}
+	s.publishTaskNotification(context.Background(), notification)
 	if err := s.db.WithContext(context.Background()).Preload("CreatedByUser").Preload("AssigneeUser").First(&task, "id = ?", task.ID).Error; err != nil {
 		return taskResponse{}, mapAppTaskRequestError(err)
 	}
@@ -396,6 +406,7 @@ func (s *Server) handleAppUpdateProjectTask(appID string, request realtime.Envel
 		expectedUpdatedAt = &parsed
 	}
 	var task store.Task
+	var notification *taskNotificationResult
 	err = s.db.WithContext(context.Background()).Transaction(func(tx *gorm.DB) error {
 		if _, _, err := findAccessibleProjectForUpdate(tx, projectID, runAs.ID); err != nil {
 			return err
@@ -431,11 +442,20 @@ func (s *Server) handleAppUpdateProjectTask(appID string, request realtime.Envel
 			return gorm.ErrRecordNotFound
 		}
 		task.UpdatedAt = now
-		return updateProjectRelationTimestamp(tx, projectID, now)
+		if err := updateProjectRelationTimestamp(tx, projectID, now); err != nil {
+			return err
+		}
+		notification, err = s.createTaskNotificationTx(
+			context.Background(),
+			tx,
+			task,
+		)
+		return err
 	})
 	if err != nil {
 		return taskResponse{}, mapAppTaskRequestError(err)
 	}
+	s.publishTaskNotification(context.Background(), notification)
 	if err := s.db.WithContext(context.Background()).Preload("CreatedByUser").Preload("AssigneeUser").First(&task, "id = ? AND project_id = ?", taskID, projectID).Error; err != nil {
 		return taskResponse{}, mapAppTaskRequestError(err)
 	}

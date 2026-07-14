@@ -279,6 +279,7 @@ func (s *Server) createTask(c echo.Context) error {
 	}
 
 	var assignee *store.User
+	var notification *taskNotificationResult
 	err = s.db.WithContext(c.Request().Context()).Transaction(func(tx *gorm.DB) error {
 		if _, _, err := findAccessibleProjectForUpdate(tx, projectID, user.ID); err != nil {
 			return err
@@ -308,7 +309,12 @@ func (s *Server) createTask(c echo.Context) error {
 		if result.RowsAffected == 0 {
 			return gorm.ErrRecordNotFound
 		}
-		return nil
+		notification, err = s.createTaskNotificationTx(
+			c.Request().Context(),
+			tx,
+			task,
+		)
+		return err
 	})
 	if errors.Is(err, errInvalidTaskAssignee) {
 		return taskInvalidRequest(c, "负责人不存在、不可用或无项目访问权限")
@@ -322,6 +328,7 @@ func (s *Server) createTask(c echo.Context) error {
 
 	task.CreatedByUser = user
 	task.AssigneeUser = assignee
+	s.publishTaskNotification(c.Request().Context(), notification)
 	return success(c, http.StatusCreated, newTaskResponse(task))
 }
 
@@ -395,6 +402,7 @@ func (s *Server) updateTask(c echo.Context) error {
 	}
 
 	var task store.Task
+	var notification *taskNotificationResult
 	err = s.db.WithContext(c.Request().Context()).Transaction(func(tx *gorm.DB) error {
 		if _, _, err := findAccessibleProjectForUpdate(tx, projectID, user.ID); err != nil {
 			return err
@@ -440,7 +448,12 @@ func (s *Server) updateTask(c echo.Context) error {
 			return gorm.ErrRecordNotFound
 		}
 		task.UpdatedAt = now
-		return nil
+		notification, err = s.createTaskNotificationTx(
+			c.Request().Context(),
+			tx,
+			task,
+		)
+		return err
 	})
 	if errors.Is(err, errInvalidTaskAssignee) {
 		return taskInvalidRequest(c, "负责人不存在、不可用或无项目访问权限")
@@ -454,6 +467,7 @@ func (s *Server) updateTask(c echo.Context) error {
 	if err != nil {
 		return taskInternalError(c)
 	}
+	s.publishTaskNotification(c.Request().Context(), notification)
 	return success(c, http.StatusOK, newTaskResponse(task))
 }
 
