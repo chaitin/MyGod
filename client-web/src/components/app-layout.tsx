@@ -340,7 +340,7 @@ function MainNavItem({
       className={
         active
           ? "relative rounded-full"
-          : "relative rounded-full text-muted-foreground"
+          : "relative rounded-full text-teal-500 hover:bg-teal-100 hover:text-teal-500 dark:hover:bg-teal-900"
       }
     >
       <NavLink to={item.to} aria-label={accessibleLabel} title={item.label}>

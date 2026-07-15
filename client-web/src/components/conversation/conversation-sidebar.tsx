@@ -29,6 +29,7 @@ import type {
 } from "@/lib/client-data-api"
 import { createConversationMentionLabelResolver } from "@/lib/conversation-mention-labels"
 import type { ConversationDrafts } from "@/lib/conversation-drafts"
+import { cn } from "@/lib/utils"
 import {
   formatMentionTemplateText,
   type MentionLabelResolver,
@@ -152,7 +153,7 @@ export function ConversationSidebar({
               <ConversationListItemMenu key={conversation.id}>
                 <SidebarMenuItem data-conversation-list-item-trigger>
                   <SidebarMenuButton
-                    className="h-16 gap-3 py-2 data-active:bg-foreground/10 data-active:hover:bg-foreground/10"
+                    className="h-16 gap-3 py-2 data-active:bg-teal-200 data-active:hover:bg-teal-200 dark:data-active:bg-teal-800 dark:data-active:hover:bg-teal-800"
                     isActive={selected}
                     onClick={() => onSelectConversation(conversation.id)}
                     size="lg"
@@ -162,12 +163,22 @@ export function ConversationSidebar({
                     <div className="min-w-0 flex-1 overflow-hidden">
                       <div className="flex w-full min-w-0 items-center justify-between gap-2 overflow-hidden text-sm leading-snug font-medium underline-offset-4">
                         <span className="flex min-w-0 flex-1 items-center overflow-hidden">
-                          <span className="block min-w-0 flex-1 truncate">
+                          <span
+                            className={cn(
+                              "block min-w-0 flex-1 truncate",
+                              selected && "text-teal-600 dark:text-teal-400"
+                            )}
+                          >
                             {conversation.name}
                           </span>
                         </span>
                         {lastMessageTime && (
-                          <span className="shrink-0 pr-2 text-xs font-normal text-muted-foreground">
+                          <span
+                            className={cn(
+                              "shrink-0 pr-2 text-xs font-normal text-muted-foreground",
+                              selected && "text-teal-600 dark:text-teal-500"
+                            )}
+                          >
                             {lastMessageTime}
                           </span>
                         )}
