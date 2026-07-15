@@ -1,0 +1,11 @@
+allowBuilds:
+  unrs-resolver: true
+minimumReleaseAgeExclude:
+  - '@expo/env@2.4.2'
+  - '@expo/image-utils@0.11.3'
+  - '@expo/require-utils@57.0.3'
+  - expo-application@57.0.1
+  - expo-constants@57.0.5
+  - expo-notifications@57.0.5
+patchedDependencies:
+  '@tamagui/radio-group@2.4.5': patches/@tamagui__radio-group@2.4.5.patch

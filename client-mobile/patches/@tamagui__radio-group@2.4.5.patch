@@ -1,0 +1,96 @@
+diff --git a/dist/cjs/RadioGroup.cjs b/dist/cjs/RadioGroup.cjs
+index c173dfedb80aed62fb6bb2eec9ce5dbe423582f0..dd6a134631d087ff55a98b63179009de2afb6763 100644
+--- a/dist/cjs/RadioGroup.cjs
++++ b/dist/cjs/RadioGroup.cjs
+@@ -107,8 +107,7 @@ const RadioGroupIndicatorFrame = (0, import_core.styled)(import_stacks.YStack, {
+         width: "33%",
+         height: "33%",
+         borderRadius: 1e3,
+-        backgroundColor: "$color",
+-        pressTheme: true
++        backgroundColor: "$color"
+       }
+     }
+   },
+diff --git a/dist/cjs/RadioGroup.native.js b/dist/cjs/RadioGroup.native.js
+index d728c6bc2099125a61bb0df73d9db5a164b1bcd4..06285fd95e72bb7e996da77ac5ee6d555e71cf42 100644
+--- a/dist/cjs/RadioGroup.native.js
++++ b/dist/cjs/RadioGroup.native.js
+@@ -111,8 +111,7 @@ var RadioGroupIndicatorFrame = (0, import_core.styled)(import_stacks.YStack, {
+         width: "33%",
+         height: "33%",
+         borderRadius: 1e3,
+-        backgroundColor: "$color",
+-        pressTheme: true
++        backgroundColor: "$color"
+       }
+     }
+   },
+diff --git a/dist/esm/RadioGroup.mjs b/dist/esm/RadioGroup.mjs
+index 88648732e936114026acf2e7b4fb8bf133ae40d2..be9c2d53429500b79b68038b4f20e239f75a9019 100644
+--- a/dist/esm/RadioGroup.mjs
++++ b/dist/esm/RadioGroup.mjs
+@@ -78,8 +78,7 @@ const RadioGroupIndicatorFrame = styled(YStack, {
+         width: "33%",
+         height: "33%",
+         borderRadius: 1e3,
+-        backgroundColor: "$color",
+-        pressTheme: true
++        backgroundColor: "$color"
+       }
+     }
+   },
+diff --git a/dist/esm/RadioGroup.native.js b/dist/esm/RadioGroup.native.js
+index 722637eaed71262aa2408a223586db68fd3bb686..1b4ce28f8eaa23665911ad307f6ba38a93a3970c 100644
+--- a/dist/esm/RadioGroup.native.js
++++ b/dist/esm/RadioGroup.native.js
+@@ -80,8 +80,7 @@ var RadioGroupIndicatorFrame = styled(YStack, {
+         width: "33%",
+         height: "33%",
+         borderRadius: 1e3,
+-        backgroundColor: "$color",
+-        pressTheme: true
++        backgroundColor: "$color"
+       }
+     }
+   },
+diff --git a/dist/jsx/RadioGroup.mjs b/dist/jsx/RadioGroup.mjs
+index 88648732e936114026acf2e7b4fb8bf133ae40d2..be9c2d53429500b79b68038b4f20e239f75a9019 100644
+--- a/dist/jsx/RadioGroup.mjs
++++ b/dist/jsx/RadioGroup.mjs
+@@ -78,8 +78,7 @@ const RadioGroupIndicatorFrame = styled(YStack, {
+         width: "33%",
+         height: "33%",
+         borderRadius: 1e3,
+-        backgroundColor: "$color",
+-        pressTheme: true
++        backgroundColor: "$color"
+       }
+     }
+   },
+diff --git a/dist/jsx/RadioGroup.native.js b/dist/jsx/RadioGroup.native.js
+index d728c6bc2099125a61bb0df73d9db5a164b1bcd4..06285fd95e72bb7e996da77ac5ee6d555e71cf42 100644
+--- a/dist/jsx/RadioGroup.native.js
++++ b/dist/jsx/RadioGroup.native.js
+@@ -111,8 +111,7 @@ var RadioGroupIndicatorFrame = (0, import_core.styled)(import_stacks.YStack, {
+         width: "33%",
+         height: "33%",
+         borderRadius: 1e3,
+-        backgroundColor: "$color",
+-        pressTheme: true
++        backgroundColor: "$color"
+       }
+     }
+   },
+diff --git a/src/RadioGroup.tsx b/src/RadioGroup.tsx
+index 3320617df430f37eaab43dd0c619421363c28ade..b40d5d88b9d0f326a186af5086e37eaf93122b29 100644
+--- a/src/RadioGroup.tsx
++++ b/src/RadioGroup.tsx
+@@ -95,7 +95,6 @@ export const RadioGroupIndicatorFrame = styled(YStack, {
+         height: '33%',
+         borderRadius: 1000,
+         backgroundColor: '$color',
+-        pressTheme: true,
+       },
+     },
+   } as const,
