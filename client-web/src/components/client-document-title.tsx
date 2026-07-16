@@ -4,22 +4,23 @@ import { useAppInfo } from "@/lib/app-info-context"
 import { ClientDataContext } from "@/lib/client-data-context"
 
 type ClientDocumentTitleProps = {
-  alertIconHref?: string
   disableMessageAlert?: boolean
   title: string
 }
 
 const faviconBlinkIntervalMs = 500
-const defaultAlertIconHref = "/notification-bell.png?v=20260708-2"
+const transparentFavicon = {
+  href: "/transparent-favicon.svg",
+  type: "image/svg+xml",
+}
 
 export function ClientDocumentTitle({
-  alertIconHref = defaultAlertIconHref,
   disableMessageAlert = false,
   title,
 }: ClientDocumentTitleProps) {
   const { appName } = useAppInfo()
   const clientData = useContext(ClientDataContext)
-  const defaultFaviconHrefRef = useRef<string | null>(null)
+  const defaultFaviconRef = useRef<Favicon | null>(null)
   const conversations = clientData?.conversations
   const unreadCount = useMemo(() => {
     if (disableMessageAlert || !conversations) {
@@ -36,31 +37,33 @@ export function ClientDocumentTitle({
 
   useEffect(() => {
     const faviconLink = getFaviconLink()
-    if (!defaultFaviconHrefRef.current) {
-      defaultFaviconHrefRef.current =
-        faviconLink.getAttribute("href") ?? "/logo.png"
+    if (!defaultFaviconRef.current) {
+      defaultFaviconRef.current = {
+        href: faviconLink.getAttribute("href") ?? "/favicon.webp",
+        type: faviconLink.getAttribute("type") ?? "image/webp",
+      }
     }
-    const defaultFaviconHref = defaultFaviconHrefRef.current
+    const defaultFavicon = defaultFaviconRef.current
 
     document.title = pageTitle
 
     if (!hasMessageAlert) {
-      setFaviconHref(defaultFaviconHref)
+      setFavicon(defaultFavicon)
       return
     }
 
-    let showingAlertIcon = true
-    setFaviconHref(alertIconHref)
+    let showingDefaultFavicon = true
+    setFavicon(defaultFavicon)
     const intervalId = window.setInterval(() => {
-      showingAlertIcon = !showingAlertIcon
-      setFaviconHref(showingAlertIcon ? alertIconHref : defaultFaviconHref)
+      showingDefaultFavicon = !showingDefaultFavicon
+      setFavicon(showingDefaultFavicon ? defaultFavicon : transparentFavicon)
     }, faviconBlinkIntervalMs)
 
     return () => {
       window.clearInterval(intervalId)
-      setFaviconHref(defaultFaviconHref)
+      setFavicon(defaultFavicon)
     }
-  }, [alertIconHref, hasMessageAlert, pageTitle])
+  }, [hasMessageAlert, pageTitle])
 
   return null
 }
@@ -73,13 +76,20 @@ function getFaviconLink() {
 
   faviconLink = document.createElement("link")
   faviconLink.rel = "icon"
-  faviconLink.type = "image/png"
+  faviconLink.href = "/favicon.webp"
+  faviconLink.type = "image/webp"
   document.head.appendChild(faviconLink)
 
   return faviconLink
 }
 
-function setFaviconHref(href: string) {
+type Favicon = {
+  href: string
+  type: string
+}
+
+function setFavicon(favicon: Favicon) {
   const faviconLink = getFaviconLink()
-  faviconLink.setAttribute("href", href)
+  faviconLink.setAttribute("href", favicon.href)
+  faviconLink.setAttribute("type", favicon.type)
 }
