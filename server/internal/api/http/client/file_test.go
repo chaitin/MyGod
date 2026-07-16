@@ -85,6 +85,10 @@ type fakeFileService struct {
 	resolved      []fileapp.ResolvedTemporaryURL
 }
 
+func (s *fakeFileService) ValidateTemporaryFiles(context.Context, []string) error {
+	return nil
+}
+
 func (s *fakeFileService) UploadTemporary(_ context.Context, cmd fileapp.UploadTemporaryCommand) (fileapp.TemporaryFile, error) {
 	s.uploadCommand = cmd
 	s.uploadContent, _ = io.ReadAll(cmd.Content)

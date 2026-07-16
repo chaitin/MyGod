@@ -14,9 +14,11 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	messageapp "app/internal/application/message"
 	"app/internal/appregistry"
 	"app/internal/auth"
 	"app/internal/config"
@@ -74,6 +76,7 @@ func migrateTestSchema(db *gorm.DB) error {
 		&store.Project{},
 		&store.ProjectGroup{},
 		&store.Task{},
+		&store.TaskReminder{},
 		&store.TemporaryFile{},
 		&store.App{},
 		&store.AppConversation{},
@@ -1152,24 +1155,18 @@ func TestUserMessageRollsBackWhenAppEventOutboxInsertFails(t *testing.T) {
 		}
 	})
 
-	subject := &Server{db: db}
+	locker := &sync.Mutex{}
 	callbackCalled := false
-	_, _, _, _, err := subject.createUserMessageWithMetadata(
-		context.Background(),
-		alice.ID,
-		conversation.ID,
-		"message-1",
-		json.RawMessage(`{"type":"text","content":"hello"}`),
-		staticMessageBodyFinalizer("hello"),
-		createMessageMetadata{
-			EmitAppEvent: true,
-			AfterCommitBeforeAppDelivery: func(store.Message, []string, []string) {
-				callbackCalled = true
-			},
-		},
-	)
+	subject := messageapp.NewService(messageapp.Dependencies{
+		DB: db, Bodies: fixedApplicationMessageBodyProcessor{}, AppEventLocker: locker,
+		AfterUserMessageCommit: func(messageapp.Message) { callbackCalled = true },
+	})
+	_, err := subject.Create(context.Background(), messageapp.CreateCommand{
+		AccountID: alice.ID, ConversationID: conversation.ID,
+		ClientMessageID: "message-1", Body: json.RawMessage(`{"type":"text","content":"hello"}`),
+	})
 	if err == nil {
-		t.Fatal("createUserMessageWithMetadata() error = nil, want forced outbox failure")
+		t.Fatal("message service create error = nil, want forced outbox failure")
 	}
 	if callbackCalled {
 		t.Fatal("AfterCommitBeforeAppDelivery called after transaction failure")
@@ -1213,41 +1210,30 @@ func TestUserRealtimeCallbackRunsBeforeAppDeliveryBoundary(t *testing.T) {
 	insertTestAppConversationLink(t, db, app.ID, alice.ID, conversation.ID, now)
 
 	deliveryOrder := []string{}
-	subject := &Server{db: db}
-	subject.afterUserMessageCommit = func(store.Message) {
-		deliveryOrder = append(deliveryOrder, "app-delivery-boundary")
-	}
-	metadata := createMessageMetadata{
-		EmitAppEvent: true,
-		AfterCommitBeforeAppDelivery: func(message store.Message, memberUserIDs []string, mentionedUserIDs []string) {
+	locker := &sync.Mutex{}
+	subject := messageapp.NewService(messageapp.Dependencies{
+		DB: db, Bodies: fixedApplicationMessageBodyProcessor{}, AppEventLocker: locker,
+		Notifications: applicationMessageNotificationRecorder{created: func(deliveries []messageapp.Delivery) {
 			deliveryOrder = append(deliveryOrder, "user-realtime")
-			if message.Seq != 1 {
-				t.Errorf("callback message seq = %d, want 1", message.Seq)
+			if len(deliveries) != 1 || deliveries[0].Message.Seq != 1 || deliveries[0].UserID != alice.ID {
+				t.Errorf("deliveries = %#v, want Alice message seq 1", deliveries)
 			}
-			if !slices.Equal(memberUserIDs, []string{alice.ID}) {
-				t.Errorf("callback member user IDs = %v, want [%s]", memberUserIDs, alice.ID)
-			}
-			if len(mentionedUserIDs) != 0 {
-				t.Errorf("callback mentioned user IDs = %v, want empty", mentionedUserIDs)
-			}
+		}},
+		AfterUserMessageCommit: func(messageapp.Message) {
+			deliveryOrder = append(deliveryOrder, "app-delivery-boundary")
 		},
-	}
+	})
 	createMessage := func() (bool, error) {
-		_, created, _, _, err := subject.createUserMessageWithMetadata(
-			context.Background(),
-			alice.ID,
-			conversation.ID,
-			"message-1",
-			json.RawMessage(`{"type":"text","content":"hello"}`),
-			staticMessageBodyFinalizer("hello"),
-			metadata,
-		)
-		return created, err
+		result, err := subject.Create(context.Background(), messageapp.CreateCommand{
+			AccountID: alice.ID, ConversationID: conversation.ID,
+			ClientMessageID: "message-1", Body: json.RawMessage(`{"type":"text","content":"hello"}`),
+		})
+		return result.Created, err
 	}
 
 	created, err := createMessage()
 	if err != nil {
-		t.Fatalf("createUserMessageWithMetadata() error = %v", err)
+		t.Fatalf("message service create error = %v", err)
 	}
 	if !created {
 		t.Fatal("created = false, want true")
@@ -1258,7 +1244,7 @@ func TestUserRealtimeCallbackRunsBeforeAppDeliveryBoundary(t *testing.T) {
 
 	created, err = createMessage()
 	if err != nil {
-		t.Fatalf("duplicate createUserMessageWithMetadata() error = %v", err)
+		t.Fatalf("duplicate message service create error = %v", err)
 	}
 	if created {
 		t.Fatal("duplicate created = true, want false")
@@ -1301,35 +1287,33 @@ func TestConcurrentAppMessagesPersistOutboxInSequenceOrder(t *testing.T) {
 		}
 	}()
 
-	subject := &Server{db: db}
-	subject.afterUserMessageCommit = func(message store.Message) {
-		if message.Seq == 1 {
-			if subject.appEventMu.TryLock() {
-				subject.appEventMu.Unlock()
-				appEventLockErrors <- errors.New("appEventMu was not held after message commit")
-			} else {
-				appEventLockErrors <- nil
+	locker := &sync.Mutex{}
+	subject := messageapp.NewService(messageapp.Dependencies{
+		DB: db, Bodies: fixedApplicationMessageBodyProcessor{}, AppEventLocker: locker,
+		AfterUserMessageCommit: func(message messageapp.Message) {
+			if message.Seq == 1 {
+				if locker.TryLock() {
+					locker.Unlock()
+					appEventLockErrors <- errors.New("appEventMu was not held after message commit")
+				} else {
+					appEventLockErrors <- nil
+				}
+				close(firstCommitted)
+				<-releaseFirst
 			}
-			close(firstCommitted)
-			<-releaseFirst
-		}
-	}
-	subject.beforeAppEventLock = func(message store.Message) {
-		if message.Seq == 2 {
-			close(secondReachedEventLock)
-		}
-	}
+		},
+		BeforeAppEventLock: func(message messageapp.Message) {
+			if message.Seq == 2 {
+				close(secondReachedEventLock)
+			}
+		},
+	})
 
 	createMessage := func(clientMessageID string) error {
-		_, _, _, _, err := subject.createUserMessageWithMetadata(
-			context.Background(),
-			alice.ID,
-			conversation.ID,
-			clientMessageID,
-			json.RawMessage(`{"type":"text","content":"hello"}`),
-			staticMessageBodyFinalizer("hello"),
-			createMessageMetadata{EmitAppEvent: true},
-		)
+		_, err := subject.Create(context.Background(), messageapp.CreateCommand{
+			AccountID: alice.ID, ConversationID: conversation.ID,
+			ClientMessageID: clientMessageID, Body: json.RawMessage(`{"type":"text","content":"hello"}`),
+		})
 		return err
 	}
 
@@ -1629,7 +1613,7 @@ func TestAppWebSocketReceivesGroupMessageOnlyWhenMentionedDirectly(t *testing.T)
 	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
 	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
 	app := insertTestApp(t, db, store.App{
-		Name:             "AI 女菩萨",
+		Name:             "茉莉",
 		Enabled:          true,
 		Visibility:       store.AppVisibilityPublic,
 		ConnectionSecret: "assistant-secret",
@@ -2488,7 +2472,7 @@ func TestAppWebSocketMessageSendAsUserStoresDelegatedByAndPushesDirectMessage(t 
 	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
 	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
 	app := insertTestApp(t, db, store.App{
-		Name:             "女菩萨",
+		Name:             "茉莉",
 		Enabled:          true,
 		Visibility:       store.AppVisibilityPublic,
 		ConnectionSecret: "assistant-secret",
@@ -2617,7 +2601,7 @@ func TestAppWebSocketMessageSendAsUserRejectsSpoofedActor(t *testing.T) {
 	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
 	carol := insertTestUser(t, db, "carol@example.com", "Carol", store.UserStatusActive, now)
 	app := insertTestApp(t, db, store.App{
-		Name:             "女菩萨",
+		Name:             "茉莉",
 		Enabled:          true,
 		Visibility:       store.AppVisibilityPublic,
 		ConnectionSecret: "assistant-secret",
@@ -2688,7 +2672,7 @@ func TestAppWebSocketMessageSendAsUserRejectsAuthorizationConversationMismatch(t
 	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
 	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
 	app := insertTestApp(t, db, store.App{
-		Name:             "女菩萨",
+		Name:             "茉莉",
 		Enabled:          true,
 		Visibility:       store.AppVisibilityPublic,
 		ConnectionSecret: "assistant-secret",
@@ -2761,7 +2745,7 @@ func TestAppWebSocketGroupConversationCreateUsesTriggeringUser(t *testing.T) {
 	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
 	carol := insertTestUser(t, db, "carol@example.com", "Carol", store.UserStatusActive, now)
 	app := insertTestApp(t, db, store.App{
-		Name:             "女菩萨",
+		Name:             "茉莉",
 		Enabled:          true,
 		Visibility:       store.AppVisibilityPublic,
 		ConnectionSecret: "assistant-secret",
@@ -2872,7 +2856,7 @@ func TestAppWebSocketGroupConversationMembersAddUsesTriggeringUser(t *testing.T)
 	})
 	setTestConversationMemberLastReadSeq(t, db, group.ID, alice.ID, 2)
 	app := insertTestApp(t, db, store.App{
-		Name:             "女菩萨",
+		Name:             "茉莉",
 		Enabled:          true,
 		Visibility:       store.AppVisibilityPublic,
 		ConnectionSecret: "assistant-secret",
@@ -2993,7 +2977,7 @@ func TestAppWebSocketGroupConversationsListReturnsTriggeringUserGroups(t *testin
 		now:             now.Add(-80 * time.Minute),
 	})
 	app := insertTestApp(t, db, store.App{
-		Name:             "女菩萨",
+		Name:             "茉莉",
 		Enabled:          true,
 		Visibility:       store.AppVisibilityPublic,
 		ConnectionSecret: "assistant-secret",
@@ -3105,7 +3089,7 @@ func TestAppWebSocketRecentConversationsListUsesTriggeringUser(t *testing.T) {
 		now:                now.Add(-80 * time.Minute),
 	})
 	app := insertTestApp(t, db, store.App{
-		Name:             "女菩萨",
+		Name:             "茉莉",
 		Enabled:          true,
 		Visibility:       store.AppVisibilityPublic,
 		ConnectionSecret: "assistant-secret",
@@ -3264,7 +3248,7 @@ func TestAppWebSocketConversationHistoryReadSupportsConversationUserAndAppSelect
 	insertTestMessage(t, db, group.ID, alice.ID, 1, "第一条群聊", now.Add(-20*time.Minute))
 	insertTestMessage(t, db, group.ID, bob.ID, 2, "第二条群聊", now.Add(-10*time.Minute))
 	app := insertTestApp(t, db, store.App{
-		Name:             "女菩萨",
+		Name:             "茉莉",
 		Enabled:          true,
 		Visibility:       store.AppVisibilityPublic,
 		ConnectionSecret: "assistant-secret",
@@ -3394,7 +3378,7 @@ func TestAppWebSocketMessageSendAsUserCanSendToGroupConversation(t *testing.T) {
 		now:                now,
 	})
 	app := insertTestApp(t, db, store.App{
-		Name:             "女菩萨",
+		Name:             "茉莉",
 		Enabled:          true,
 		Visibility:       store.AppVisibilityPublic,
 		ConnectionSecret: "assistant-secret",
@@ -4614,25 +4598,23 @@ func TestCreateUserMessageTimestampsNewMessageAfterTransactionReads(t *testing.T
 		t.Fatalf("register query callback: %v", err)
 	}
 
-	message, created, _, err := (&Server{db: db}).createUserMessage(
-		context.Background(),
-		alice.ID,
-		conversation.ID,
-		"client-message-1",
-		json.RawMessage(`{"type":"text","content":"hello"}`),
-		staticMessageBodyFinalizer("hello"),
-	)
+	result, err := messageapp.NewService(messageapp.Dependencies{
+		DB: db, Bodies: fixedApplicationMessageBodyProcessor{}, AppEventLocker: &sync.Mutex{},
+	}).Create(context.Background(), messageapp.CreateCommand{
+		AccountID: alice.ID, ConversationID: conversation.ID,
+		ClientMessageID: "client-message-1", Body: json.RawMessage(`{"type":"text","content":"hello"}`),
+	})
 	if err != nil {
-		t.Fatalf("createUserMessage() error = %v", err)
+		t.Fatalf("create message: %v", err)
 	}
-	if !created {
+	if !result.Created {
 		t.Fatal("created = false, want true")
 	}
 	if !delayed {
 		t.Fatal("query delay callback did not run")
 	}
-	if message.CreatedAt.Before(delayedUntil) {
-		t.Fatalf("message.CreatedAt = %s, want >= delayedUntil %s", message.CreatedAt, delayedUntil)
+	if result.Message.CreatedAt.Before(delayedUntil) {
+		t.Fatalf("message.CreatedAt = %s, want >= delayedUntil %s", result.Message.CreatedAt, delayedUntil)
 	}
 }
 
@@ -6221,8 +6203,8 @@ func TestClientInfoIsPublicAndReturnsDefaultSettings(t *testing.T) {
 	}
 
 	data := requireSuccess(t, body)
-	if data["app_name"] != "MyGod" {
-		t.Fatalf("app_name = %v, want MyGod", data["app_name"])
+	if data["app_name"] != "即应" {
+		t.Fatalf("app_name = %v, want 即应", data["app_name"])
 	}
 	if data["organization_name"] != "长亭科技" {
 		t.Fatalf("organization_name = %v, want 长亭科技", data["organization_name"])
@@ -7708,8 +7690,8 @@ func TestAdminCanReadAndUpdateInfoSettings(t *testing.T) {
 		t.Fatalf("read status = %d, want 200", readResp.StatusCode)
 	}
 	readData := requireSuccess(t, readBody)
-	if readData["app_name"] != "MyGod" {
-		t.Fatalf("read app_name = %v, want MyGod", readData["app_name"])
+	if readData["app_name"] != "即应" {
+		t.Fatalf("read app_name = %v, want 即应", readData["app_name"])
 	}
 
 	updateResp, updateBody := putJSON(t, server, "/api/admin/settings/info", map[string]any{
@@ -7774,7 +7756,7 @@ func TestAdminCanManageApps(t *testing.T) {
 	}
 
 	updateAIAssistantResp, updateAIAssistantBody := putJSON(t, server, "/api/admin/apps/"+appregistry.AIAssistantAppID, map[string]any{
-		"name":        "AI 女菩萨 Pro",
+		"name":        "茉莉 Pro",
 		"description": "AI Agent",
 		"visibility":  "public",
 	}, adminCookie)
@@ -7782,7 +7764,7 @@ func TestAdminCanManageApps(t *testing.T) {
 		t.Fatalf("update AI assistant status = %d, want 200, body = %#v", updateAIAssistantResp.StatusCode, updateAIAssistantBody)
 	}
 	updatedAIAssistant := requireSuccess(t, updateAIAssistantBody)["app"].(map[string]any)
-	if updatedAIAssistant["name"] != "AI 女菩萨 Pro" {
+	if updatedAIAssistant["name"] != "茉莉 Pro" {
 		t.Fatalf("updated AI assistant name = %v", updatedAIAssistant["name"])
 	}
 	if updatedAIAssistant["connection_secret"] != "test-ai-assistant-secret" {
@@ -7794,8 +7776,8 @@ func TestAdminCanManageApps(t *testing.T) {
 	}
 	appsAfterUpdate := requireSuccess(t, listAfterUpdateBody)["apps"].([]any)
 	aiAssistantAfterUpdate := appsAfterUpdate[0].(map[string]any)
-	if aiAssistantAfterUpdate["name"] != "AI 女菩萨 Pro" {
-		t.Fatalf("listed AI assistant name = %v, want AI 女菩萨 Pro", aiAssistantAfterUpdate["name"])
+	if aiAssistantAfterUpdate["name"] != "茉莉 Pro" {
+		t.Fatalf("listed AI assistant name = %v, want 茉莉 Pro", aiAssistantAfterUpdate["name"])
 	}
 	if aiAssistantAfterUpdate["connection_secret"] != "test-ai-assistant-secret" {
 		t.Fatalf("listed AI assistant secret = %v, want configured secret", aiAssistantAfterUpdate["connection_secret"])
@@ -8544,7 +8526,7 @@ func TestCreateGroupConversationCreatesConversationAndMembers(t *testing.T) {
 	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
 	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
 	app := insertTestApp(t, db, store.App{
-		Name:             "AI 女菩萨",
+		Name:             "茉莉",
 		Avatar:           "/assets/apps/assistant.webp",
 		Enabled:          true,
 		Visibility:       store.AppVisibilityPublic,
@@ -8583,7 +8565,7 @@ func TestCreateGroupConversationCreatesConversationAndMembers(t *testing.T) {
 	if conversation["member_count"] != float64(4) {
 		t.Fatalf("conversation.member_count = %v, want 4", conversation["member_count"])
 	}
-	if conversation["last_message_summary"] != "Creator 邀请 Alice,Bob,AI 女菩萨 加入群聊" {
+	if conversation["last_message_summary"] != "Creator 邀请 Alice,Bob,茉莉 加入群聊" {
 		t.Fatalf("conversation.last_message_summary = %v, want app invite", conversation["last_message_summary"])
 	}
 
@@ -9531,7 +9513,7 @@ func TestAddGroupConversationMembersCanAddApps(t *testing.T) {
 	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
 	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
 	app := insertTestApp(t, db, store.App{
-		Name:             "AI 女菩萨",
+		Name:             "茉莉",
 		Avatar:           "/assets/apps/assistant.webp",
 		Description:      "AI 助手",
 		Enabled:          true,
@@ -9561,7 +9543,7 @@ func TestAddGroupConversationMembersCanAddApps(t *testing.T) {
 	data := requireSuccess(t, body)
 	updatedConversation := data["conversation"].(map[string]any)
 	createdMessage := data["message"].(map[string]any)
-	summary := "Alice 邀请 AI 女菩萨 加入群聊"
+	summary := "Alice 邀请 茉莉 加入群聊"
 	if updatedConversation["member_count"] != float64(3) {
 		t.Fatalf("conversation.member_count = %v, want 3", updatedConversation["member_count"])
 	}
@@ -9634,7 +9616,7 @@ func TestRemoveGroupConversationMemberCanRemoveApp(t *testing.T) {
 	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
 	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
 	app := insertTestApp(t, db, store.App{
-		Name:             "AI 女菩萨",
+		Name:             "茉莉",
 		Enabled:          true,
 		Visibility:       store.AppVisibilityPublic,
 		ConnectionSecret: "assistant-secret",
@@ -9666,7 +9648,7 @@ func TestRemoveGroupConversationMemberCanRemoveApp(t *testing.T) {
 	}
 	data := requireSuccess(t, body)
 	updatedConversation := data["conversation"].(map[string]any)
-	summary := "Alice 已将 AI 女菩萨 移出群聊"
+	summary := "Alice 已将 茉莉 移出群聊"
 	if updatedConversation["member_count"] != float64(2) {
 		t.Fatalf("conversation.member_count = %v, want 2", updatedConversation["member_count"])
 	}

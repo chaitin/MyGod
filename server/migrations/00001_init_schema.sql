@@ -63,7 +63,7 @@ INSERT INTO app_settings (
   updated_at
 ) VALUES (
   1,
-  'MyGod',
+  '即应',
   '长亭科技',
   now(),
   now()

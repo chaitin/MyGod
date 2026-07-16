@@ -1,22 +1,20 @@
 package httpserver
 
 import (
+	"context"
 	"crypto/subtle"
-	"errors"
 	"net/http"
 	"strings"
 
-	"app/internal/appregistry"
-	"app/internal/store"
+	appapp "app/internal/application/app"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
-	"gorm.io/gorm"
 )
 
 const (
-	appIDHeader = "X-MyGod-App-ID"
+	appIDHeader = "X-MagicChat-App-ID"
 )
 
 var appWebSocketUpgrader = websocket.Upgrader{
@@ -30,7 +28,7 @@ var appWebSocketUpgrader = websocket.Upgrader{
 // @Summary 应用 WebSocket 连接
 // @Description 应用使用 App ID 和连接密钥连接，连接存在且心跳正常时视为在线。
 // @Tags 应用连接
-// @Param X-MyGod-App-ID header string true "应用 ID"
+// @Param X-MagicChat-App-ID header string true "应用 ID"
 // @Param Authorization header string true "Bearer 连接密钥"
 // @Success 101
 // @Failure 400 {object} errorEnvelope
@@ -82,26 +80,15 @@ func (s *Server) appWebSocket(c echo.Context) error {
 	return nil
 }
 
-func (s *Server) findAppForConnection(appID string) (store.App, bool, error) {
-	if appregistry.IsAIAssistantAppID(appID) {
-		app, err := appregistry.EnsureAIAssistantApp(s.db, s.cfg.Apps)
-		if err != nil {
-			return store.App{}, false, err
-		}
-
-		return app, true, nil
-	}
-
-	var app store.App
-	err := s.db.First(&app, "id = ?", appID).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return store.App{}, false, nil
+func (s *Server) findAppForConnection(appID string) (appapp.App, bool, error) {
+	value, err := s.apps.GetForConnection(context.Background(), appID)
+	if appapp.ErrorCodeOf(err) == appapp.CodeNotFound {
+		return appapp.App{}, false, nil
 	}
 	if err != nil {
-		return store.App{}, false, err
+		return appapp.App{}, false, err
 	}
-
-	return app, true, nil
+	return value, true, nil
 }
 
 func validAppBearer(header string, secret string) bool {

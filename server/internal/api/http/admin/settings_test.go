@@ -14,7 +14,7 @@ import (
 )
 
 func TestSettingsAPIRoutesUseApplicationService(t *testing.T) {
-	service := &fakeSettingsService{value: settingsapp.Settings{AppName: "MyGod", OrganizationName: "长亭科技"}}
+	service := &fakeSettingsService{value: settingsapp.Settings{AppName: "即应", OrganizationName: "长亭科技"}}
 	api := NewSettingsAPI(service)
 	router := echo.New()
 	api.RegisterRoutes(router.Group("/api/admin"))

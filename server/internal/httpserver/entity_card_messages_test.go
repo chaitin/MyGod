@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	entitycardapp "app/internal/application/entitycard"
 	projectapp "app/internal/application/project"
 	"app/internal/realtime"
 	"app/internal/store"
@@ -60,7 +61,13 @@ func TestResolveEntityCardMessageBodyUsesFixedTemplates(t *testing.T) {
 		UpdatedAt: now,
 	})
 
-	subject := &Server{db: db, projects: projectapp.NewService(projectapp.Dependencies{DB: db})}
+	projects := projectapp.NewService(projectapp.Dependencies{DB: db})
+	subject := &Server{
+		db: db, projects: projects,
+		entityCards: entitycardapp.NewService(entitycardapp.Dependencies{
+			DB: db, Projects: projects,
+		}),
+	}
 	for _, testCase := range []struct {
 		entityID        string
 		entityType      string
@@ -100,10 +107,10 @@ func TestResolveEntityCardMessageBodyUsesFixedTemplates(t *testing.T) {
 }
 
 func TestEntityCardDetailsOmitsEmptyFields(t *testing.T) {
-	got := entityCardDetails(
-		entityCardDetail{Label: "姓名", Value: "张三"},
-		entityCardDetail{Label: "昵称", Value: ""},
-		entityCardDetail{Label: "邮箱", Value: "zhangsan@example.com"},
+	got := entitycardapp.Details(
+		entitycardapp.Detail{Label: "姓名", Value: "张三"},
+		entitycardapp.Detail{Label: "昵称", Value: ""},
+		entitycardapp.Detail{Label: "邮箱", Value: "zhangsan@example.com"},
 	)
 	if got != "姓名: 张三\n邮箱: zhangsan@example.com" {
 		t.Fatalf("description = %q", got)
@@ -111,7 +118,7 @@ func TestEntityCardDetailsOmitsEmptyFields(t *testing.T) {
 }
 
 func TestCardMessageAllowsTitleOnlyEntityCard(t *testing.T) {
-	raw, err := json.Marshal(newEntityCard("项目 - 空项目", "", "/projects/project-id"))
+	raw, err := json.Marshal(cardMessageBody{Title: "项目 - 空项目", Type: messageTypeCard, URL: "/projects/project-id"})
 	if err != nil {
 		t.Fatalf("marshal card: %v", err)
 	}
@@ -143,7 +150,14 @@ func TestResolveEntityCardMessageBodyHidesInaccessibleTask(t *testing.T) {
 		t.Fatalf("marshal request: %v", err)
 	}
 
-	_, err = (&Server{db: db, projects: projectapp.NewService(projectapp.Dependencies{DB: db})}).resolveEntityCardMessageBody(context.Background(), outsider.ID, raw)
+	projects := projectapp.NewService(projectapp.Dependencies{DB: db})
+	subject := &Server{
+		db: db, projects: projects,
+		entityCards: entitycardapp.NewService(entitycardapp.Dependencies{
+			DB: db, Projects: projects,
+		}),
+	}
+	_, err = subject.resolveEntityCardMessageBody(context.Background(), outsider.ID, raw)
 	if !errors.Is(err, errEntityCardNotFound) {
 		t.Fatalf("resolve error = %v, want not found", err)
 	}
@@ -205,7 +219,7 @@ func TestAppReplyEntityCardUsesAuthorizedUserAndStoresAppCard(t *testing.T) {
 	project := insertProjectFixture(t, db, projectFixtureInput{Name: "设计项目", Owner: alice, UpdatedAt: now})
 	task := insertTaskTestFixture(t, db, taskFixtureInput{Creator: alice, ProjectID: project.ID, Status: store.TaskStatusDone, Title: "确认设计稿", UpdatedAt: now})
 	app := insertTestApp(t, db, store.App{
-		Name:             "女菩萨",
+		Name:             "茉莉",
 		Enabled:          true,
 		Visibility:       store.AppVisibilityPublic,
 		ConnectionSecret: "entity-card-app-secret",

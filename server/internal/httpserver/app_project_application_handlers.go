@@ -151,6 +151,7 @@ func (s *Server) handleAppCreateProjectTask(appID string, request realtime.Envel
 		StartDate:      appTaskStringField(req.StartDate),
 		DueDate:        appTaskStringField(req.DueDate),
 		Labels:         appTaskStringSliceField(req.Labels),
+		Reminder:       appTaskReminderField(req.Reminder),
 	})
 	if err != nil {
 		return taskResponse{}, mapAppTaskApplicationError(err)
@@ -179,6 +180,7 @@ func (s *Server) handleAppUpdateProjectTask(appID string, request realtime.Envel
 		StartDate:      appTaskStringField(req.StartDate),
 		DueDate:        appTaskStringField(req.DueDate),
 		Labels:         appTaskStringSliceField(req.Labels),
+		Reminder:       appTaskReminderField(req.Reminder),
 	}
 	if !appTaskUpdatePresent(cmd) {
 		return taskResponse{}, newAppRequestFailure("invalid_request", "至少需要提供一个要修改的任务字段")
@@ -214,9 +216,16 @@ func appTaskStringSliceField(value taskOptionalStringSlice) taskapp.Field[[]stri
 	return taskapp.Field[[]string]{Present: value.Present, Null: value.Null, Value: value.Value}
 }
 
+func appTaskReminderField(value taskOptionalReminder) taskapp.Field[taskapp.ReminderInput] {
+	return taskapp.Field[taskapp.ReminderInput]{Present: value.Present, Null: value.Null, Value: taskapp.ReminderInput{
+		Mode: value.Value.Mode, Frequency: value.Value.Frequency, Timezone: value.Value.Timezone,
+		At: value.Value.At, Time: value.Value.Time, Weekdays: value.Value.Weekdays, DayOfMonth: value.Value.DayOfMonth,
+	}}
+}
+
 func appTaskUpdatePresent(cmd taskapp.UpdateCommand) bool {
 	return cmd.Title.Present || cmd.Description.Present || cmd.Status.Present || cmd.Priority.Present ||
-		cmd.AssigneeUserID.Present || cmd.StartDate.Present || cmd.DueDate.Present || cmd.Labels.Present
+		cmd.AssigneeUserID.Present || cmd.StartDate.Present || cmd.DueDate.Present || cmd.Labels.Present || cmd.Reminder.Present
 }
 
 func legacyProjectResponse(value projectapp.Project) projectResponse {
@@ -240,6 +249,14 @@ func legacyTaskResponse(value taskapp.Task) taskResponse {
 	}
 	if value.Assignee != nil {
 		response.Assignee = &projectUserSummary{ID: value.Assignee.ID, Name: value.Assignee.Name, Nickname: value.Assignee.Nickname, Avatar: value.Assignee.Avatar}
+	}
+	if value.Reminder != nil {
+		response.Reminder = &taskReminderResponse{
+			Mode: value.Reminder.Mode, Frequency: value.Reminder.Frequency, Timezone: value.Reminder.Timezone,
+			At: value.Reminder.At, Time: value.Reminder.Time, Weekdays: value.Reminder.Weekdays,
+			DayOfMonth: value.Reminder.DayOfMonth, NextTriggerAt: value.Reminder.NextTriggerAt,
+			LastProcessedAt: value.Reminder.LastProcessedAt, State: value.Reminder.State,
+		}
 	}
 	return response
 }

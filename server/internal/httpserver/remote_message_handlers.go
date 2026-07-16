@@ -176,7 +176,7 @@ func downloadRemoteMessageFile(ctx context.Context, rawURL string, maxBytes int6
 	if err != nil {
 		return downloadedRemoteMessageFile{}, newAppRequestFailure("invalid_request", "URL 格式错误")
 	}
-	req.Header.Set("User-Agent", "MyGod Remote Message Fetcher")
+	req.Header.Set("User-Agent", "MagicChat Remote Message Fetcher")
 
 	resp, err := remoteMessageFetchHTTPClient.Do(req)
 	if err != nil {

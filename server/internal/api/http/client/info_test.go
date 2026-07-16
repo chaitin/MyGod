@@ -15,7 +15,7 @@ import (
 
 func TestInfoAPIReturnsPublicSettingsAndAuthenticationState(t *testing.T) {
 	settings := &fakePublicSettings{info: settingsapp.PublicInfo{
-		Settings:  settingsapp.Settings{AppName: "MyGod", OrganizationName: "长亭科技"},
+		Settings:  settingsapp.Settings{AppName: "即应", OrganizationName: "长亭科技"},
 		Providers: []settingsapp.PublicProvider{{Key: "company-sso", Name: "企业 SSO"}},
 	}}
 	sessions := &fakeInfoSessions{}
@@ -51,7 +51,7 @@ func assertInfoResponse(t *testing.T, recorder *httptest.ResponseRecorder, authe
 		t.Fatalf("decode response: %v", err)
 	}
 	data := payload["data"].(map[string]any)
-	if data["app_name"] != "MyGod" || data["authenticated"] != authenticated {
+	if data["app_name"] != "即应" || data["authenticated"] != authenticated {
 		t.Fatalf("response = %#v", payload)
 	}
 	providers := data["third_party_providers"].([]any)

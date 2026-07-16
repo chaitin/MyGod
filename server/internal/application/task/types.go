@@ -22,6 +22,13 @@ const (
 	DateLayout       = "2006-01-02"
 	DefaultPageLimit = 50
 	MaxPageLimit     = 100
+
+	ReminderModeOnce      = "once"
+	ReminderModeRecurring = "recurring"
+	ReminderDaily         = "daily"
+	ReminderWeekly        = "weekly"
+	ReminderMonthly       = "monthly"
+	ReminderTimezone      = "Asia/Shanghai"
 )
 
 type Field[T any] struct {
@@ -53,6 +60,30 @@ type Task struct {
 	CanceledAt  *time.Time
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+	Reminder    *Reminder
+}
+
+type ReminderInput struct {
+	Mode       string
+	Frequency  string
+	Timezone   string
+	At         string
+	Time       string
+	Weekdays   []int16
+	DayOfMonth int16
+}
+
+type Reminder struct {
+	Mode            string
+	Frequency       string
+	Timezone        string
+	At              *time.Time
+	Time            string
+	Weekdays        []int16
+	DayOfMonth      *int16
+	NextTriggerAt   *time.Time
+	LastProcessedAt *time.Time
+	State           string
 }
 
 type ListCommand struct {
@@ -87,6 +118,7 @@ type CreateCommand struct {
 	StartDate      Field[string]
 	DueDate        Field[string]
 	Labels         Field[[]string]
+	Reminder       Field[ReminderInput]
 }
 
 type GetCommand struct {
@@ -107,6 +139,7 @@ type UpdateCommand struct {
 	StartDate         Field[string]
 	DueDate           Field[string]
 	Labels            Field[[]string]
+	Reminder          Field[ReminderInput]
 	ExpectedUpdatedAt *time.Time
 }
 
@@ -121,4 +154,6 @@ type ClientService interface {
 type NotificationPort interface {
 	PrepareTaskNotification(context.Context, *gorm.DB, store.Task) (any, error)
 	PublishTaskNotification(context.Context, any)
+	PrepareTaskReminderNotification(context.Context, *gorm.DB, store.Task, time.Time) (any, error)
+	PublishTaskReminderNotification(context.Context, any)
 }

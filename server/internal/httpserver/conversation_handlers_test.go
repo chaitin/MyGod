@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	conversationapp "app/internal/application/conversation"
 	"app/internal/store"
 
 	"github.com/google/uuid"
@@ -432,14 +433,10 @@ func TestCreateGroupConversationCancellationRollsBackAllWrites(t *testing.T) {
 		}
 	})
 
-	_, _, _, _, err := (&Server{db: db}).createUserGroupConversationWithProjects(
-		ctx,
-		owner,
-		"Canceled Group",
-		[]string{member.ID},
-		nil,
-		[]string{project.ID},
-	)
+	_, err := conversationapp.NewService(conversationapp.Dependencies{DB: db}).CreateGroup(ctx, conversationapp.CreateGroupCommand{
+		Actor: conversationActorFromUser(owner), Name: "Canceled Group",
+		MemberIDs: []string{member.ID}, ProjectIDs: []string{project.ID},
+	})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("create group error = %v, want context.Canceled", err)
 	}
@@ -605,7 +602,7 @@ func TestDissolveGroupConversationRetriesOneRelationSetChange(t *testing.T) {
 	insertProjectGroupFixture(t, db, initialProject.ID, conversation.ID, owner.ID, now)
 	changer := registerDissolveRelationSetChanger(t, db, "test:change_dissolve_relations_once", extraProject.ID, conversation.ID, owner.ID, 1)
 
-	if _, err := (&Server{db: db}).dissolveUserGroupConversation(context.Background(), owner, conversation.ID); err != nil {
+	if _, err := conversationapp.NewService(conversationapp.Dependencies{DB: db}).Dissolve(context.Background(), conversationapp.DissolveCommand{Actor: conversationActorFromUser(owner), ConversationID: conversation.ID}); err != nil {
 		t.Fatalf("dissolve group conversation after one retry: %v", err)
 	}
 	if got := changer.discoveries.Load(); got != 2 {
@@ -677,7 +674,7 @@ func TestDissolveGroupConversationCanceledContextStopsBeforeQueries(t *testing.T
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := (&Server{db: db}).dissolveUserGroupConversation(ctx, owner, conversation.ID)
+	_, err := conversationapp.NewService(conversationapp.Dependencies{DB: db}).Dissolve(ctx, conversationapp.DissolveCommand{Actor: conversationActorFromUser(owner), ConversationID: conversation.ID})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("dissolve error = %v, want context.Canceled", err)
 	}
@@ -792,7 +789,7 @@ func TestDissolveGroupConversationProjectRowsLockBeforeConversation(t *testing.T
 	insertProjectGroupFixture(t, db, low.ID, conversation.ID, owner.ID, now)
 	recorder := registerGroupLifecycleLockRecorder(t, db, "test:record_group_dissolve_lock_order")
 
-	if _, err := (&Server{db: db}).dissolveUserGroupConversation(context.Background(), owner, conversation.ID); err != nil {
+	if _, err := conversationapp.NewService(conversationapp.Dependencies{DB: db}).Dissolve(context.Background(), conversationapp.DissolveCommand{Actor: conversationActorFromUser(owner), ConversationID: conversation.ID}); err != nil {
 		t.Fatalf("dissolve group conversation: %v", err)
 	}
 	records := recorder.snapshot()

@@ -7,7 +7,10 @@ import (
 	"strings"
 	"time"
 
+	contactapp "app/internal/application/contact"
+	conversationapp "app/internal/application/conversation"
 	fileapp "app/internal/application/file"
+	messageapp "app/internal/application/message"
 	"app/internal/appregistry"
 	"app/internal/realtime"
 	"app/internal/store"
@@ -457,14 +460,14 @@ func (s *Server) handleAppSendMessage(appID string, request realtime.Envelope) (
 		return appSendMessageResponse{}, err
 	}
 
-	message, created, memberUserIDs, mentionedUserIDs, err := s.createAppMessage(appID, conversation.ID, request.ID, prepared.Body, prepared.Finalize)
+	createdMessage, err := s.messages.CreateAsApp(context.Background(), messageapp.CreateAsAppCommand{
+		AppID: appID, Body: prepared.Body, ClientMessageID: request.ID, ConversationID: conversation.ID,
+		Finalize: messageapp.FinalizeBody(prepared.Finalize),
+	})
 	if err != nil {
-		return appSendMessageResponse{}, mapAppMessageError(err)
+		return appSendMessageResponse{}, mapMessageApplicationErrorForApp(err)
 	}
-	if created {
-		s.realtime.SendToUsers(memberUserIDs, realtimeMessageCreatedEvent(newMessageResponse(message)))
-		s.sendRealtimeConversationMemberMentionedToUsers(mentionedUserIDs, message)
-	}
+	message := createdMessage.Message
 
 	return appSendMessageResponse{
 		Conversation: appMessageConversationPayload{
@@ -472,7 +475,7 @@ func (s *Server) handleAppSendMessage(appID string, request realtime.Envelope) (
 			Name: conversation.Name,
 			Type: conversation.Kind,
 		},
-		Created: created,
+		Created: createdMessage.Created,
 		Message: appMessagePayload{
 			Body:      message.Body,
 			CreatedAt: message.CreatedAt,
@@ -519,26 +522,15 @@ func (s *Server) handleAppSendMessageAsUser(appID string, request realtime.Envel
 
 	delegatedByType := store.MessageSenderTypeApp
 	delegatedByID := app.ID
-	message, created, memberUserIDs, mentionedUserIDs, err := s.createUserMessageWithMetadata(
-		context.Background(),
-		actor.ID,
-		conversation.ID,
-		request.ID,
-		prepared.Body,
-		prepared.Finalize,
-		createMessageMetadata{
-			DelegatedByType: &delegatedByType,
-			DelegatedByID:   &delegatedByID,
-			DelegatedByName: app.Name,
-		},
-	)
+	createdMessage, err := s.messages.CreateDelegated(context.Background(), messageapp.CreateDelegatedCommand{
+		AccountID: actor.ID, Body: prepared.Body, ClientMessageID: request.ID, ConversationID: conversation.ID,
+		DelegatedBy: messageapp.Identity{ID: delegatedByID, Name: app.Name, Type: delegatedByType},
+		Finalize:    messageapp.FinalizeBody(prepared.Finalize),
+	})
 	if err != nil {
-		return appSendMessageResponse{}, mapAppMessageError(err)
+		return appSendMessageResponse{}, mapMessageApplicationErrorForApp(err)
 	}
-	if created {
-		s.realtime.SendToUsers(memberUserIDs, realtimeMessageCreatedEvent(newMessageResponse(message)))
-		s.sendRealtimeConversationMemberMentionedToUsers(mentionedUserIDs, message)
-	}
+	message := createdMessage.Message
 
 	return appSendMessageResponse{
 		Conversation: appMessageConversationPayload{
@@ -546,7 +538,7 @@ func (s *Server) handleAppSendMessageAsUser(appID string, request realtime.Envel
 			Name: conversation.Name,
 			Type: conversation.Kind,
 		},
-		Created: created,
+		Created: createdMessage.Created,
 		Message: appMessagePayload{
 			Body:      message.Body,
 			CreatedAt: message.CreatedAt,
@@ -589,13 +581,23 @@ func (s *Server) handleAppListConversations(appID string, request realtime.Envel
 	}
 
 	limit := normalizeAppScopedLimit(req.Limit, defaultAppConversationListLimit)
-	conversations, err := s.loadAppUserConversations(actor.ID, strings.ToLower(strings.TrimSpace(req.Keyword)), limit)
+	result, err := s.conversations.ListForActor(context.Background(), conversationapp.AppListCommand{
+		ActorID: actor.ID,
+		Keyword: strings.ToLower(strings.TrimSpace(req.Keyword)),
+		Limit:   limit,
+	})
 	if err != nil {
 		return appListConversationsResponse{}, err
 	}
-	payloads, err := s.newAppConversationSummaryPayloads(conversations, actor.ID)
-	if err != nil {
-		return appListConversationsResponse{}, err
+	payloads := make([]appConversationSummaryPayload, 0, len(result.Conversations))
+	for _, conversation := range result.Conversations {
+		payloads = append(payloads, appConversationSummaryPayload{
+			ConversationID: conversation.ConversationID,
+			LastActiveAt:   conversation.LastActiveAt,
+			MemberCount:    conversation.MemberCount,
+			Name:           conversation.Name,
+			Type:           conversation.Type,
+		})
 	}
 
 	return appListConversationsResponse{
@@ -631,28 +633,17 @@ func (s *Server) handleAppListGroupConversations(appID string, request realtime.
 	if limit > maxClientConversationListItems {
 		limit = maxClientConversationListItems
 	}
-	conversations, err := s.loadAppUserGroupConversations(actor.ID, strings.ToLower(strings.TrimSpace(req.Keyword)), limit)
+	result, err := s.conversations.ListGroupsForActor(context.Background(), conversationapp.AppListCommand{
+		ActorID: actor.ID,
+		Keyword: strings.ToLower(strings.TrimSpace(req.Keyword)),
+		Limit:   limit,
+	})
 	if err != nil {
 		return appListGroupConversationsResponse{}, err
 	}
-	conversationIDs := make([]string, 0, len(conversations))
-	for _, conversation := range conversations {
-		conversationIDs = append(conversationIDs, conversation.ID)
-	}
-	membersByConversationID, usersByID, appsByID, err := s.loadConversationListMembers(conversationIDs)
-	if err != nil {
-		return appListGroupConversationsResponse{}, err
-	}
-
-	groups := make([]conversationListItemResponse, 0, len(conversations))
-	for _, conversation := range conversations {
-		groups = append(groups, newConversationListItemResponse(
-			conversation,
-			actor.ID,
-			membersByConversationID[conversation.ID],
-			usersByID,
-			appsByID,
-		))
+	groups := make([]conversationListItemResponse, 0, len(result.Groups))
+	for _, conversation := range result.Groups {
+		groups = append(groups, legacyConversationItem(conversation))
 	}
 
 	return appListGroupConversationsResponse{
@@ -691,19 +682,22 @@ func (s *Server) handleAppCreateGroupConversation(appID string, request realtime
 		return appCreateGroupConversationResponse{}, err
 	}
 
-	conversation, message, candidates, memberUserIDs, err := s.createUserGroupConversation(context.Background(), actor, name, memberIDs, nil)
+	result, err := s.conversations.CreateGroup(context.Background(), conversationapp.CreateGroupCommand{
+		Actor:     conversationActorFromUser(actor),
+		Name:      name,
+		MemberIDs: memberIDs,
+	})
 	if err != nil {
 		return appCreateGroupConversationResponse{}, mapAppGroupConversationError(err)
 	}
 	var messageResponse *appMessagePayload
-	if message != nil {
-		response := newAppSystemMessagePayload(*message)
+	if result.Message != nil {
+		response := newAppSystemMessagePayload(*result.Message)
 		messageResponse = &response
-		s.realtime.SendToUsers(memberUserIDs, realtimeMessageCreatedEvent(newMessageResponse(*message)))
 	}
 
 	return appCreateGroupConversationResponse{
-		Conversation: newGroupConversationResponse(conversation, candidates, actor.ID),
+		Conversation: legacyGroupConversation(result.Conversation),
 		Message:      messageResponse,
 	}, nil
 }
@@ -738,31 +732,24 @@ func (s *Server) handleAppAddGroupConversationMembers(appID string, request real
 		return appAddGroupConversationMembersResponse{}, err
 	}
 
-	conversation, message, memberUserIDs, err := s.addUserGroupConversationMembers(actor, conversationID, memberIDs)
+	result, err := s.conversations.AddMembers(context.Background(), conversationapp.AddMembersCommand{
+		Actor:          conversationActorFromUser(actor),
+		ConversationID: conversationID,
+		MemberIDs:      memberIDs,
+	})
 	if err != nil {
 		return appAddGroupConversationMembersResponse{}, mapAppGroupConversationError(err)
 	}
-	membersByConversationID, usersByID, appsByID, err := s.loadConversationListMembers([]string{conversation.ID})
-	if err != nil {
-		return appAddGroupConversationMembersResponse{}, err
-	}
 
 	var messageResponse *appMessagePayload
-	if message != nil {
-		response := newAppSystemMessagePayload(*message)
+	if result.Message != nil {
+		response := newAppSystemMessagePayload(*result.Message)
 		messageResponse = &response
-		s.realtime.SendToUsers(memberUserIDs, realtimeMessageCreatedEvent(newMessageResponse(*message)))
 	}
 
 	return appAddGroupConversationMembersResponse{
-		Conversation: newConversationListItemResponse(
-			conversation,
-			actor.ID,
-			membersByConversationID[conversation.ID],
-			usersByID,
-			appsByID,
-		),
-		Message: messageResponse,
+		Conversation: legacyConversationItem(result.Conversation),
+		Message:      messageResponse,
 	}, nil
 }
 
@@ -778,12 +765,12 @@ func (s *Server) handleAppListContactUsers(appID string, request realtime.Envelo
 		return appListContactUsersResponse{}, err
 	}
 
-	contacts, err := s.loadContactUsers(strings.ToLower(strings.TrimSpace(req.Keyword)))
+	result, err := s.contacts.ListUsers(context.Background(), contactapp.ListUsersCommand{Keyword: req.Keyword})
 	if err != nil {
 		return appListContactUsersResponse{}, err
 	}
 
-	return appListContactUsersResponse{Contacts: contacts, RunAs: runAs.identity()}, nil
+	return appListContactUsersResponse{Contacts: legacyContactUsers(result.Users), RunAs: runAs.identity()}, nil
 }
 
 func (s *Server) handleAppListContactApps(appID string, request realtime.Envelope) (appListContactAppsResponse, error) {
@@ -798,12 +785,15 @@ func (s *Server) handleAppListContactApps(appID string, request realtime.Envelop
 		return appListContactAppsResponse{}, err
 	}
 
-	apps, err := s.loadContactAppsForIdentity(runAs.Type, runAs.ID, strings.ToLower(strings.TrimSpace(req.Keyword)))
+	result, err := s.contacts.ListAppsForIdentity(context.Background(), contactapp.ListForIdentityCommand{
+		Identity: contactapp.Identity{Type: runAs.Type, ID: runAs.ID},
+		Keyword:  req.Keyword,
+	})
 	if err != nil {
 		return appListContactAppsResponse{}, err
 	}
 
-	return appListContactAppsResponse{Apps: apps, RunAs: runAs.identity()}, nil
+	return appListContactAppsResponse{Apps: legacyContactApps(result.Apps), RunAs: runAs.identity()}, nil
 }
 
 func (s *Server) handleAppListContactGroups(appID string, request realtime.Envelope) (appListContactGroupsResponse, error) {
@@ -818,12 +808,15 @@ func (s *Server) handleAppListContactGroups(appID string, request realtime.Envel
 		return appListContactGroupsResponse{}, err
 	}
 
-	groups, err := s.loadContactGroupsForIdentity(runAs.Type, runAs.ID, strings.ToLower(strings.TrimSpace(req.Keyword)))
+	result, err := s.contacts.ListGroupsForIdentity(context.Background(), contactapp.ListForIdentityCommand{
+		Identity: contactapp.Identity{Type: runAs.Type, ID: runAs.ID},
+		Keyword:  req.Keyword,
+	})
 	if err != nil {
 		return appListContactGroupsResponse{}, err
 	}
 
-	return appListContactGroupsResponse{Groups: groups, RunAs: runAs.identity()}, nil
+	return appListContactGroupsResponse{Groups: legacyContactGroups(result.Groups), RunAs: runAs.identity()}, nil
 }
 
 func (r appRunAs) identity() appRunAsIdentity {
@@ -884,9 +877,11 @@ func (s *Server) handleAppListConversationMessages(appID string, request realtim
 		return appListConversationMessagesResponse{}, err
 	}
 
-	member, err := s.requireReadableAppConversationMember(appID, req.ConversationID)
+	access, err := s.messages.AuthorizeAppConversation(context.Background(), messageapp.AppConversationAccessCommand{
+		AppID: appID, ConversationID: req.ConversationID,
+	})
 	if err != nil {
-		return appListConversationMessagesResponse{}, err
+		return appListConversationMessagesResponse{}, mapMessageApplicationErrorForApp(err)
 	}
 	var projectContext *appConversationProjectContext
 	if req.RunAs != nil {
@@ -903,29 +898,17 @@ func (s *Server) handleAppListConversationMessages(appID string, request realtim
 		}
 		projectContext = &loaded
 	}
-	visibleFromSeq := member.HistoryVisibleFromSeq
-	if visibleFromSeq < 1 {
-		visibleFromSeq = 1
-	}
-
-	var messages []store.Message
-	if err := s.db.
-		Where("conversation_id = ? AND deleted_at IS NULL AND seq >= ? AND seq <= ?", req.ConversationID, visibleFromSeq, req.BeforeOrEqualSeq).
-		Order("seq DESC").
-		Limit(req.Limit).
-		Find(&messages).Error; err != nil {
-		return appListConversationMessagesResponse{}, err
-	}
-	reverseMessages(messages)
-
-	payloads, err := s.newAppConversationHistoryMessagePayloads(messages)
+	listed, err := s.messages.ListForApp(context.Background(), messageapp.ListForAppCommand{
+		BeforeOrEqualSeq: req.BeforeOrEqualSeq, ConversationID: req.ConversationID,
+		HistoryVisibleFromSeq: access.HistoryVisibleFromSeq, Limit: req.Limit,
+	})
 	if err != nil {
-		return appListConversationMessagesResponse{}, err
+		return appListConversationMessagesResponse{}, mapMessageApplicationErrorForApp(err)
 	}
 
 	return appListConversationMessagesResponse{
 		Limit:          req.Limit,
-		Messages:       payloads,
+		Messages:       legacyAppHistoryMessages(listed.Messages),
 		ProjectContext: projectContext,
 	}, nil
 }
@@ -990,36 +973,41 @@ func (s *Server) handleAppReadConversationHistory(appID string, request realtime
 	if err != nil {
 		return appReadConversationHistoryResponse{}, err
 	}
-	conversation, err := s.findAppHistoryConversationForActor(actor.ID, req)
+	read, err := s.messages.ReadForUser(context.Background(), messageapp.ReadForUserCommand{
+		AccountID: actor.ID, AppID: req.AppID, BeforeSeq: req.BeforeSeq,
+		ConversationID: req.ConversationID, Limit: req.Limit, UserID: req.UserID,
+	})
 	if err != nil {
-		return appReadConversationHistoryResponse{}, mapAppHistoryReadError(err)
-	}
-
-	query := listConversationMessagesQuery{Limit: req.Limit}
-	if req.BeforeSeq > 0 {
-		query.BeforeSeq = &req.BeforeSeq
-	}
-	messages, _, err := s.listUserConversationMessages(actor.ID, conversation.ID, query)
-	if err != nil {
-		return appReadConversationHistoryResponse{}, mapAppHistoryReadError(err)
-	}
-	messagePayloads, err := s.newAppConversationHistoryMessagePayloads(messages)
-	if err != nil {
-		return appReadConversationHistoryResponse{}, err
-	}
-	conversationPayloads, err := s.newAppConversationSummaryPayloads([]store.Conversation{conversation}, actor.ID)
-	if err != nil {
-		return appReadConversationHistoryResponse{}, err
-	}
-	if len(conversationPayloads) != 1 {
-		return appReadConversationHistoryResponse{}, newAppRequestFailure("not_found", "会话不存在")
+		return appReadConversationHistoryResponse{}, mapMessageApplicationErrorForApp(err)
 	}
 
 	return appReadConversationHistoryResponse{
-		Conversation: conversationPayloads[0],
+		Conversation: legacyAppConversationSummary(read.Conversation),
 		Limit:        req.Limit,
-		Messages:     messagePayloads,
+		Messages:     legacyAppHistoryMessages(read.Messages),
 	}, nil
+}
+
+func legacyAppHistoryMessages(messages []messageapp.AppHistoryMessage) []appConversationHistoryMessagePayload {
+	result := make([]appConversationHistoryMessagePayload, 0, len(messages))
+	for _, message := range messages {
+		result = append(result, appConversationHistoryMessagePayload{
+			Body: message.Body, CreatedAt: message.CreatedAt, ID: message.ID,
+			Sender: appMessageSenderPayload{
+				Email: message.Sender.Email, ID: message.Sender.ID, Name: message.Sender.Name,
+				Nickname: message.Sender.Nickname, Type: message.Sender.Type,
+			},
+			Seq: message.Seq, Summary: message.Summary,
+		})
+	}
+	return result
+}
+
+func legacyAppConversationSummary(value messageapp.AppConversationSummary) appConversationSummaryPayload {
+	return appConversationSummaryPayload{
+		ConversationID: value.ConversationID, LastActiveAt: value.LastActiveAt,
+		MemberCount: value.MemberCount, Name: value.Name, Type: value.Type,
+	}
 }
 
 func (s *Server) handleAppReadTemporaryFileURLs(_ string, request realtime.Envelope) (readTemporaryFileURLsResponse, error) {
@@ -1204,32 +1192,20 @@ func (s *Server) requireAppRunAsTrigger(appID string, actorType string, actorID 
 	if _, err := uuid.Parse(triggerMessageID); err != nil {
 		return newAppRequestFailure("invalid_request", "runas 授权触发消息 ID 格式错误")
 	}
-	var trigger store.Message
-	err := s.db.First(
-		&trigger,
-		"id = ? AND sender_type = ? AND sender_id = ? AND deleted_at IS NULL",
-		triggerMessageID,
-		actorType,
-		actorID,
-	).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return newAppRequestFailure("forbidden", "触发消息无效")
-	}
-	if err != nil {
-		return err
-	}
 	authorizationConversationID = strings.TrimSpace(authorizationConversationID)
 	if authorizationConversationID != "" {
 		if _, err := uuid.Parse(authorizationConversationID); err != nil {
 			return newAppRequestFailure("invalid_request", "授权会话 ID 格式错误")
 		}
-		if trigger.ConversationID != authorizationConversationID {
-			return newAppRequestFailure("forbidden", "触发消息无效")
-		}
 	}
-
-	_, err = s.requireReadableAppConversationMember(appID, trigger.ConversationID)
-	return err
+	err := s.messages.AuthorizeRunAsTrigger(context.Background(), messageapp.RunAsTriggerCommand{
+		ActorID: actorID, ActorType: actorType, AppID: appID,
+		AuthorizationConversationID: authorizationConversationID, TriggerMessageID: triggerMessageID,
+	})
+	if err != nil {
+		return mapMessageApplicationErrorForApp(err)
+	}
+	return nil
 }
 
 func (s *Server) findAppSendAsUserUsers(actorUserID string, targetUserID string) (store.User, store.User, error) {
@@ -1265,8 +1241,12 @@ func (s *Server) findAppSendAsUserConversation(req appSendAsUserRequest) (store.
 		if err != nil {
 			return store.User{}, store.Conversation{}, err
 		}
-		conversation, _, err := s.getOrCreateDirectConversation(actor, target)
-		return actor, conversation, err
+		opened, _, err := s.conversations.OpenDirectForUsers(
+			context.Background(),
+			conversationActorFromUser(actor),
+			conversationActorFromUser(target),
+		)
+		return actor, store.Conversation{ID: opened.ID, Name: opened.Name, Kind: opened.Type}, err
 	case appMessageTargetGroup:
 		actor, err := s.findActiveAppActor(req.ActorUserID)
 		if err != nil {
@@ -1312,113 +1292,6 @@ func (s *Server) findAppSendAsUserGroupConversation(actorUserID string, conversa
 	}
 
 	return conversation, nil
-}
-
-func (s *Server) loadAppUserGroupConversations(actorUserID string, keyword string, limit int) ([]store.Conversation, error) {
-	query := s.db.Model(&store.Conversation{}).
-		Joins("JOIN conversation_members cm ON cm.conversation_id = conversations.id").
-		Where("cm.member_type = ? AND cm.member_id = ? AND cm.left_at IS NULL", store.ConversationMemberTypeUser, actorUserID).
-		Where("conversations.kind = ? AND conversations.status = ?", store.ConversationKindGroup, store.ConversationStatusActive)
-	if keyword != "" {
-		query = query.Where("LOWER(conversations.name) LIKE ?", "%"+keyword+"%")
-	}
-
-	var conversations []store.Conversation
-	if err := query.
-		Order("COALESCE(conversations.last_message_at, conversations.created_at) DESC").
-		Order("conversations.id ASC").
-		Limit(limit).
-		Find(&conversations).Error; err != nil {
-		return nil, err
-	}
-
-	return conversations, nil
-}
-
-func (s *Server) loadAppUserConversations(actorUserID string, keyword string, limit int) ([]store.Conversation, error) {
-	query := s.db.Model(&store.Conversation{}).
-		Joins("JOIN conversation_members cm ON cm.conversation_id = conversations.id").
-		Where("cm.member_type = ? AND cm.member_id = ? AND cm.left_at IS NULL", store.ConversationMemberTypeUser, actorUserID).
-		Where("conversations.status = ?", store.ConversationStatusActive)
-	if keyword != "" {
-		likeKeyword := "%" + keyword + "%"
-		query = query.Where(
-			`LOWER(conversations.name) LIKE ? OR conversations.name LIKE ? OR EXISTS (
-				SELECT 1
-				FROM direct_conversations dc
-				JOIN users direct_other
-					ON direct_other.status = ?
-					AND (
-						(dc.user_low_id = ? AND direct_other.id = dc.user_high_id)
-						OR (dc.user_high_id = ? AND direct_other.id = dc.user_low_id)
-					)
-				WHERE dc.conversation_id = conversations.id
-					AND conversations.kind = ?
-					AND (
-						LOWER(direct_other.name) LIKE ?
-						OR direct_other.name LIKE ?
-						OR LOWER(direct_other.nickname) LIKE ?
-						OR direct_other.nickname LIKE ?
-					)
-			)`,
-			likeKeyword,
-			likeKeyword,
-			store.UserStatusActive,
-			actorUserID,
-			actorUserID,
-			store.ConversationKindDirect,
-			likeKeyword,
-			likeKeyword,
-			likeKeyword,
-			likeKeyword,
-		)
-	}
-
-	var conversations []store.Conversation
-	if err := query.
-		Order("COALESCE(conversations.last_message_at, conversations.created_at) DESC").
-		Order("conversations.id ASC").
-		Limit(limit).
-		Find(&conversations).Error; err != nil {
-		return nil, err
-	}
-
-	return conversations, nil
-}
-
-func (s *Server) findAppHistoryConversationForActor(actorUserID string, req appReadConversationHistoryRequest) (store.Conversation, error) {
-	switch {
-	case req.ConversationID != "":
-		var conversation store.Conversation
-		if err := s.db.First(&conversation, "id = ?", req.ConversationID).Error; err != nil {
-			return store.Conversation{}, err
-		}
-		if _, err := s.requireReadableConversationMember(actorUserID, conversation.ID); err != nil {
-			return store.Conversation{}, err
-		}
-		return conversation, nil
-	case req.UserID != "":
-		userLowID, userHighID := orderDirectConversationUserIDs(actorUserID, req.UserID)
-		conversation, err := findDirectConversationByUserPair(s.db, userLowID, userHighID)
-		if err != nil {
-			return store.Conversation{}, err
-		}
-		if _, err := s.requireReadableConversationMember(actorUserID, conversation.ID); err != nil {
-			return store.Conversation{}, err
-		}
-		return conversation, nil
-	case req.AppID != "":
-		conversation, err := findAppConversationByUserAndApp(s.db, req.AppID, actorUserID)
-		if err != nil {
-			return store.Conversation{}, err
-		}
-		if _, err := s.requireReadableConversationMember(actorUserID, conversation.ID); err != nil {
-			return store.Conversation{}, err
-		}
-		return conversation, nil
-	default:
-		return store.Conversation{}, newAppRequestFailure("invalid_request", "conversation_id、user_id、app_id 必须三选一")
-	}
 }
 
 func (s *Server) newAppConversationSummaryPayloads(conversations []store.Conversation, currentUserID string) ([]appConversationSummaryPayload, error) {
@@ -1519,87 +1392,7 @@ func (s *Server) requireReadableAppConversationMember(appID string, conversation
 	return member, nil
 }
 
-func (s *Server) newAppConversationHistoryMessagePayloads(messages []store.Message) ([]appConversationHistoryMessagePayload, error) {
-	userIDs := make([]string, 0)
-	appIDs := make([]string, 0)
-	for _, message := range messages {
-		if message.SenderID == nil {
-			continue
-		}
-		switch message.SenderType {
-		case store.MessageSenderTypeUser:
-			userIDs = append(userIDs, *message.SenderID)
-		case store.MessageSenderTypeApp:
-			appIDs = append(appIDs, *message.SenderID)
-		}
-	}
-
-	usersByID := map[string]store.User{}
-	if len(userIDs) > 0 {
-		var users []store.User
-		if err := s.db.Find(&users, "id IN ?", userIDs).Error; err != nil {
-			return nil, err
-		}
-		for _, user := range users {
-			usersByID[user.ID] = user
-		}
-	}
-	appsByID := map[string]store.App{}
-	if len(appIDs) > 0 {
-		var apps []store.App
-		if err := s.db.Find(&apps, "id IN ?", appIDs).Error; err != nil {
-			return nil, err
-		}
-		for _, app := range apps {
-			appsByID[app.ID] = app
-		}
-	}
-
-	payloads := make([]appConversationHistoryMessagePayload, 0, len(messages))
-	for _, message := range messages {
-		summary := message.Summary
-		body := message.Body
-		if message.RevokedAt != nil {
-			summary = revokedMessageSummary()
-			body = nil
-		}
-		payloads = append(payloads, appConversationHistoryMessagePayload{
-			Body:      body,
-			CreatedAt: message.CreatedAt,
-			ID:        message.ID,
-			Sender:    newAppHistoryMessageSenderPayload(message, usersByID, appsByID),
-			Seq:       message.Seq,
-			Summary:   summary,
-		})
-	}
-
-	return payloads, nil
-}
-
-func newAppHistoryMessageSenderPayload(message store.Message, usersByID map[string]store.User, appsByID map[string]store.App) appMessageSenderPayload {
-	sender := appMessageSenderPayload{Type: message.SenderType}
-	if message.SenderID == nil {
-		return sender
-	}
-
-	sender.ID = *message.SenderID
-	switch message.SenderType {
-	case store.MessageSenderTypeUser:
-		if user, ok := usersByID[*message.SenderID]; ok {
-			sender.Email = user.Email
-			sender.Name = user.Name
-			sender.Nickname = user.Nickname
-		}
-	case store.MessageSenderTypeApp:
-		if app, ok := appsByID[*message.SenderID]; ok {
-			sender.Name = app.Name
-		}
-	}
-
-	return sender
-}
-
-func newAppSystemMessagePayload(message store.Message) appMessagePayload {
+func newAppSystemMessagePayload(message conversationapp.Message) appMessagePayload {
 	return appMessagePayload{
 		Body:      message.Body,
 		CreatedAt: message.CreatedAt,
@@ -1635,12 +1428,8 @@ func normalizeAppSendMessageTarget(req appSendMessageRequest) (appSendMessageTar
 	return target, nil
 }
 
-func normalizeAppSendMessageBody(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
-	handler, err := findMessageBodyHandler(raw)
-	if err != nil {
-		return nil, newAppRequestFailure("invalid_request", err.Error())
-	}
-	body, err := handler.Normalize(ctx, raw)
+func (s *Server) normalizeAppSendMessageBody(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
+	body, err := s.messageContentService().Normalize(ctx, raw)
 	if err != nil {
 		return nil, newAppRequestFailure("invalid_request", err.Error())
 	}
@@ -1671,29 +1460,30 @@ func (s *Server) prepareAppSendMessageBodyForUser(ctx context.Context, userID st
 	}
 	switch strings.TrimSpace(envelope.Type) {
 	case messageTypeEntityCard:
-		body, err := s.resolveEntityCardMessageBody(ctx, userID, raw)
-		if errors.Is(err, errEntityCardNotFound) {
-			return preparedAppSendMessageBody{}, newAppRequestFailure("not_found", err.Error())
-		}
-		var requestErr *entityCardRequestError
-		if errors.As(err, &requestErr) {
-			return preparedAppSendMessageBody{}, newAppRequestFailure("invalid_request", err.Error())
-		}
+		contents := s.messageContentService()
+		body, err := contents.Prepare(ctx, userID, raw)
 		if err != nil {
-			return preparedAppSendMessageBody{}, newAppRequestFailure("internal_error", "生成对象卡片失败")
+			switch messageapp.ErrorCodeOf(err) {
+			case messageapp.CodeNotFound:
+				return preparedAppSendMessageBody{}, newAppRequestFailure("not_found", messageapp.ErrorMessage(err))
+			case messageapp.CodeInvalidRequest:
+				return preparedAppSendMessageBody{}, newAppRequestFailure("invalid_request", messageapp.ErrorMessage(err))
+			default:
+				return preparedAppSendMessageBody{}, newAppRequestFailure("internal_error", "生成对象卡片失败")
+			}
 		}
 		return preparedAppSendMessageBody{
 			Body:     body,
-			Finalize: finalizeNormalizedMessageBody,
+			Finalize: contents.Finalize,
 		}, nil
 	case messageTypeText, messageTypeMarkdown, messageTypeLink, messageTypeCard, messageTypeChart:
-		body, err := normalizeAppSendMessageBody(ctx, raw)
+		body, err := s.normalizeAppSendMessageBody(ctx, raw)
 		if err != nil {
 			return preparedAppSendMessageBody{}, err
 		}
 		return preparedAppSendMessageBody{
 			Body:     body,
-			Finalize: finalizeNormalizedMessageBody,
+			Finalize: s.messageContentService().Finalize,
 		}, nil
 	case messageTypeImage:
 		body, err := s.createRemoteImageMessageBody(ctx, firstNonEmptyAppString(envelope.Content, envelope.URL))
@@ -1754,8 +1544,12 @@ func (s *Server) findAppSendMessageConversation(appID string, target appSendMess
 			return store.Conversation{}, newAppRequestFailure("forbidden", "应用不可用")
 		}
 
-		conversation, _, err := s.getOrCreateAppConversation(user, app)
-		return conversation, err
+		opened, _, err := s.conversations.OpenAppForUser(
+			context.Background(),
+			conversationActorFromUser(user),
+			conversationapp.AppIdentity{ID: app.ID, Name: app.Name, Avatar: app.Avatar},
+		)
+		return store.Conversation{ID: opened.ID, Name: opened.Name, Kind: opened.Type}, err
 	case appMessageTargetGroup, appMessageTargetApp:
 		return s.findAppWritableConversation(appID, target.ConversationID, target.Type)
 	default:
@@ -1797,107 +1591,6 @@ func (s *Server) findAppWritableConversation(appID string, conversationID string
 	return conversation, nil
 }
 
-func (s *Server) createAppMessage(appID string, conversationID string, clientMessageID string, body json.RawMessage, finalizeBody finalizeMessageBodyFunc) (store.Message, bool, []string, []string, error) {
-	var created bool
-	var message store.Message
-	memberUserIDs := []string{}
-	mentionedUserIDs := []string{}
-
-	err := s.db.Transaction(func(tx *gorm.DB) error {
-		var conversation store.Conversation
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&conversation, "id = ?", conversationID).Error; err != nil {
-			return err
-		}
-		if conversation.Status != store.ConversationStatusActive ||
-			conversation.PostingPolicy != store.ConversationPostingPolicyOpen {
-			return errConversationNotSendable
-		}
-
-		var member store.ConversationMember
-		if err := tx.First(
-			&member,
-			"conversation_id = ? AND member_type = ? AND member_id = ? AND left_at IS NULL",
-			conversationID,
-			store.ConversationMemberTypeApp,
-			appID,
-		).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return errConversationAccessDenied
-			}
-			return err
-		}
-
-		existing, ok, err := findExistingMessageByClientMessageID(
-			tx,
-			conversationID,
-			store.MessageSenderTypeApp,
-			appID,
-			clientMessageID,
-		)
-		if err != nil {
-			return err
-		}
-		if ok {
-			message = existing
-			created = false
-			return nil
-		}
-
-		finalBody, summary, err := finalizeBody(context.Background(), body)
-		if err != nil {
-			return err
-		}
-
-		now := time.Now().UTC()
-		message = store.Message{
-			ID:              uuid.NewString(),
-			ConversationID:  conversationID,
-			Seq:             conversation.LastMessageSeq + 1,
-			SenderType:      store.MessageSenderTypeApp,
-			SenderID:        &appID,
-			ClientMessageID: &clientMessageID,
-			Body:            finalBody,
-			Summary:         summary,
-			CreatedAt:       now,
-			UpdatedAt:       now,
-		}
-		if err := tx.Create(&message).Error; err != nil {
-			return err
-		}
-
-		if err := tx.Model(&store.Conversation{}).
-			Where("id = ?", conversationID).
-			Updates(map[string]any{
-				"last_message_at":      message.CreatedAt,
-				"last_message_id":      message.ID,
-				"last_message_seq":     message.Seq,
-				"last_message_summary": message.Summary,
-				"updated_at":           now,
-			}).Error; err != nil {
-			return err
-		}
-
-		ids, err := loadActiveConversationUserIDs(tx, conversationID)
-		if err != nil {
-			return err
-		}
-		mentionedIDs, err := updateConversationMentionedSeq(tx, conversation.Kind, conversationID, message.Seq, finalBody)
-		if err != nil {
-			return err
-		}
-
-		mentionedUserIDs = mentionedIDs
-		memberUserIDs = ids
-		created = true
-		return nil
-	})
-	if err != nil {
-		return store.Message{}, false, nil, nil, err
-	}
-
-	return message, created, memberUserIDs, mentionedUserIDs, nil
-}
-
 func appRequestErrorResponse(replyTo string, err error) realtime.Envelope {
 	var requestErr appRequestFailure
 	if errors.As(err, &requestErr) {
@@ -1921,6 +1614,23 @@ func mapAppMessageError(err error) error {
 	return err
 }
 
+func mapMessageApplicationErrorForApp(err error) error {
+	var messageErr *messageapp.Error
+	if !errors.As(err, &messageErr) {
+		return mapAppMessageError(err)
+	}
+	switch messageErr.Code {
+	case messageapp.CodeNotFound:
+		return newAppRequestFailure("not_found", messageErr.Message)
+	case messageapp.CodeForbidden:
+		return newAppRequestFailure("forbidden", messageErr.Message)
+	case messageapp.CodeInvalidRequest:
+		return newAppRequestFailure("invalid_request", messageErr.Message)
+	default:
+		return newAppRequestFailure("internal_error", "服务端错误")
+	}
+}
+
 func mapAppHistoryReadError(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return newAppRequestFailure("not_found", "会话不存在")
@@ -1936,20 +1646,78 @@ func mapAppGroupConversationError(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return newAppRequestFailure("not_found", "会话不存在")
 	}
-	if errors.Is(err, errConversationAccessDenied) {
+	if errors.Is(err, errConversationAccessDenied) || errors.Is(err, conversationapp.ErrAccessDenied) {
 		return newAppRequestFailure("forbidden", "无权访问会话")
 	}
-	if errors.Is(err, errConversationNotGroup) {
+	if errors.Is(err, conversationapp.ErrNotGroup) {
 		return newAppRequestFailure("invalid_request", "只能向群聊添加成员")
 	}
-	if errors.Is(err, errGroupConversationMemberCap) {
+	if errors.Is(err, conversationapp.ErrMemberCap) {
 		return newAppRequestFailure("invalid_request", "群聊成员不能超过 500 人")
 	}
-	if errors.Is(err, errGroupConversationMemberMiss) {
+	if errors.Is(err, conversationapp.ErrMemberMissing) {
 		return newAppRequestFailure("invalid_request", "成员不存在或已禁用")
 	}
 
 	return err
+}
+
+func conversationActorFromUser(user store.User) conversationapp.Actor {
+	phone := ""
+	if user.Phone != nil {
+		phone = *user.Phone
+	}
+	return conversationapp.Actor{
+		ID: user.ID, Email: user.Email, Name: user.Name, Nickname: user.Nickname,
+		Phone: phone, Avatar: user.Avatar,
+	}
+}
+
+func legacyConversationItem(value conversationapp.Item) conversationListItemResponse {
+	members := make([]conversationMemberResponse, 0, len(value.Members))
+	for _, member := range value.Members {
+		members = append(members, conversationMemberResponse{
+			Avatar: member.Avatar, Email: member.Email, ID: member.ID, Name: member.Name,
+			Nickname: member.Nickname, Phone: member.Phone, Role: member.Role, Type: member.Type,
+		})
+	}
+	result := conversationListItemResponse{
+		Avatar: value.Avatar, CreatedAt: value.CreatedAt, ID: value.ID,
+		LastMessageAt: value.LastMessageAt, LastMessageID: value.LastMessageID,
+		LastMessageSeq: value.LastMessageSeq, LastMessageSummary: value.LastMessageSummary,
+		LastMentionedSeq: value.LastMentionedSeq, LastReadSeq: value.LastReadSeq,
+		MemberCount: value.MemberCount, Members: members, Name: value.Name, Type: value.Type,
+		UnreadCount: value.UnreadCount, Visibility: value.Visibility,
+	}
+	if value.Projects != nil {
+		projects := make([]conversationProjectResponse, 0, len(*value.Projects))
+		for _, project := range *value.Projects {
+			projects = append(projects, conversationProjectResponse{
+				Avatar: project.Avatar, Description: project.Description, ID: project.ID, Name: project.Name,
+			})
+		}
+		result.Projects = &projects
+	}
+	return result
+}
+
+func legacyGroupConversation(value conversationapp.Group) groupConversationResponse {
+	members := make([]conversationMemberResponse, 0, len(value.Members))
+	for _, member := range value.Members {
+		members = append(members, conversationMemberResponse{
+			Avatar: member.Avatar, Email: member.Email, ID: member.ID, Name: member.Name,
+			Nickname: member.Nickname, Phone: member.Phone, Role: member.Role, Type: member.Type,
+		})
+	}
+	return groupConversationResponse{
+		Avatar: value.Avatar, CreatedAt: value.CreatedAt, CreatedByUserID: value.CreatedByUserID,
+		ID: value.ID, LastMessageAt: value.LastMessageAt, LastMessageID: value.LastMessageID,
+		LastMessageSeq: value.LastMessageSeq, LastMessageSummary: value.LastMessageSummary,
+		LastMentionedSeq: value.LastMentionedSeq, LastReadSeq: value.LastReadSeq,
+		MemberCount: value.MemberCount, Members: members, Name: value.Name,
+		PostingPolicy: value.PostingPolicy, Status: value.Status, Type: value.Type,
+		UnreadCount: value.UnreadCount, Visibility: value.Visibility,
+	}
 }
 
 func newAppRequestFailure(code string, message string) appRequestFailure {

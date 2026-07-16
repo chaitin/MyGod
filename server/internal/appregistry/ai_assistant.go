@@ -15,7 +15,7 @@ import (
 
 const (
 	AIAssistantAppID          = "00000000-0000-0000-0000-000000000001"
-	AIAssistantDefaultName    = "AI 女菩萨"
+	AIAssistantDefaultName    = "茉莉"
 	AIAssistantDefaultAvatar  = "/assets/apps/assistant.webp"
 	AIAssistantDefaultSummary = "专属 AI 助理"
 )

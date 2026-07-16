@@ -29,6 +29,20 @@ type taskOptionalStringSlice struct {
 	Null    bool
 	Value   []string
 }
+type taskReminderRequest struct {
+	Mode       string  `json:"mode" enums:"once,recurring"`
+	Frequency  string  `json:"frequency,omitempty" enums:"daily,weekly,monthly"`
+	Timezone   string  `json:"timezone" example:"Asia/Shanghai"`
+	At         string  `json:"at,omitempty" format:"date-time"`
+	Time       string  `json:"time,omitempty" example:"09:30"`
+	Weekdays   []int16 `json:"weekdays,omitempty"`
+	DayOfMonth int16   `json:"day_of_month,omitempty" example:"15"`
+}
+type taskOptionalReminder struct {
+	Present bool
+	Null    bool
+	Value   taskReminderRequest
+}
 
 type createTaskRequest struct {
 	Title          taskOptionalString      `json:"title" swaggertype:"string" binding:"required" example:"完成发布检查"`
@@ -39,6 +53,7 @@ type createTaskRequest struct {
 	StartDate      taskOptionalString      `json:"start_date" swaggertype:"string" format:"date" extensions:"x-nullable" example:"2026-07-11"`
 	DueDate        taskOptionalString      `json:"due_date" swaggertype:"string" format:"date" extensions:"x-nullable" example:"2026-07-18"`
 	Labels         taskOptionalStringSlice `json:"labels" swaggertype:"array,string" example:"发布"`
+	Reminder       taskOptionalReminder    `json:"reminder" swaggertype:"object" extensions:"x-nullable"`
 }
 
 type updateTaskRequest struct {
@@ -50,24 +65,39 @@ type updateTaskRequest struct {
 	StartDate      taskOptionalString      `json:"start_date" swaggertype:"string" format:"date" extensions:"x-nullable" example:"2026-07-11"`
 	DueDate        taskOptionalString      `json:"due_date" swaggertype:"string" format:"date" extensions:"x-nullable" example:"2026-07-18"`
 	Labels         taskOptionalStringSlice `json:"labels" swaggertype:"array,string" example:"发布"`
+	Reminder       taskOptionalReminder    `json:"reminder" swaggertype:"object" extensions:"x-nullable"`
+}
+
+type taskReminderResponse struct {
+	Mode            string     `json:"mode"`
+	Frequency       string     `json:"frequency,omitempty"`
+	Timezone        string     `json:"timezone"`
+	At              *time.Time `json:"at,omitempty"`
+	Time            string     `json:"time,omitempty"`
+	Weekdays        []int16    `json:"weekdays,omitempty"`
+	DayOfMonth      *int16     `json:"day_of_month,omitempty"`
+	NextTriggerAt   *time.Time `json:"next_trigger_at" extensions:"x-nullable"`
+	LastProcessedAt *time.Time `json:"last_processed_at" extensions:"x-nullable"`
+	State           string     `json:"state"`
 }
 
 type taskResponse struct {
-	ID          string               `json:"id"`
-	ProjectID   string               `json:"project_id"`
-	Title       string               `json:"title"`
-	Description string               `json:"description"`
-	Status      string               `json:"status"`
-	Priority    int16                `json:"priority"`
-	Assignee    *projectUserResponse `json:"assignee" extensions:"x-nullable"`
-	Creator     projectUserResponse  `json:"creator"`
-	StartDate   *string              `json:"start_date" extensions:"x-nullable"`
-	DueDate     *string              `json:"due_date" extensions:"x-nullable"`
-	Labels      []string             `json:"labels"`
-	CompletedAt *time.Time           `json:"completed_at" extensions:"x-nullable"`
-	CanceledAt  *time.Time           `json:"canceled_at" extensions:"x-nullable"`
-	CreatedAt   time.Time            `json:"created_at"`
-	UpdatedAt   time.Time            `json:"updated_at"`
+	ID          string                `json:"id"`
+	ProjectID   string                `json:"project_id"`
+	Title       string                `json:"title"`
+	Description string                `json:"description"`
+	Status      string                `json:"status"`
+	Priority    int16                 `json:"priority"`
+	Assignee    *projectUserResponse  `json:"assignee" extensions:"x-nullable"`
+	Creator     projectUserResponse   `json:"creator"`
+	StartDate   *string               `json:"start_date" extensions:"x-nullable"`
+	DueDate     *string               `json:"due_date" extensions:"x-nullable"`
+	Labels      []string              `json:"labels"`
+	CompletedAt *time.Time            `json:"completed_at" extensions:"x-nullable"`
+	CanceledAt  *time.Time            `json:"canceled_at" extensions:"x-nullable"`
+	CreatedAt   time.Time             `json:"created_at"`
+	UpdatedAt   time.Time             `json:"updated_at"`
+	Reminder    *taskReminderResponse `json:"reminder" extensions:"x-nullable"`
 }
 
 type taskListResponse struct {
@@ -177,7 +207,7 @@ func (a *TaskAPI) create(c echo.Context) error {
 	if err := decodeStrictJSON(c, &req); err != nil {
 		return writeFailure(c, 400, string(task.CodeInvalidRequest), "请求格式错误")
 	}
-	value, err := a.tasks.Create(c.Request().Context(), task.CreateCommand{AccountID: current.ID, ProjectID: c.Param("project_id"), Title: stringField(req.Title), Description: stringField(req.Description), Status: stringField(req.Status), Priority: int16Field(req.Priority), AssigneeUserID: stringField(req.AssigneeUserID), StartDate: stringField(req.StartDate), DueDate: stringField(req.DueDate), Labels: stringSliceField(req.Labels)})
+	value, err := a.tasks.Create(c.Request().Context(), task.CreateCommand{AccountID: current.ID, ProjectID: c.Param("project_id"), Title: stringField(req.Title), Description: stringField(req.Description), Status: stringField(req.Status), Priority: int16Field(req.Priority), AssigneeUserID: stringField(req.AssigneeUserID), StartDate: stringField(req.StartDate), DueDate: stringField(req.DueDate), Labels: stringSliceField(req.Labels), Reminder: reminderField(req.Reminder)})
 	if err != nil {
 		return writeTaskError(c, err)
 	}
@@ -237,7 +267,7 @@ func (a *TaskAPI) update(c echo.Context) error {
 	if err := decodeStrictJSON(c, &req); err != nil {
 		return writeFailure(c, 400, string(task.CodeInvalidRequest), "请求格式错误")
 	}
-	value, err := a.tasks.Update(c.Request().Context(), task.UpdateCommand{AccountID: current.ID, ProjectID: c.Param("project_id"), TaskID: c.Param("task_id"), Title: stringField(req.Title), Description: stringField(req.Description), Status: stringField(req.Status), Priority: int16Field(req.Priority), AssigneeUserID: stringField(req.AssigneeUserID), StartDate: stringField(req.StartDate), DueDate: stringField(req.DueDate), Labels: stringSliceField(req.Labels)})
+	value, err := a.tasks.Update(c.Request().Context(), task.UpdateCommand{AccountID: current.ID, ProjectID: c.Param("project_id"), TaskID: c.Param("task_id"), Title: stringField(req.Title), Description: stringField(req.Description), Status: stringField(req.Status), Priority: int16Field(req.Priority), AssigneeUserID: stringField(req.AssigneeUserID), StartDate: stringField(req.StartDate), DueDate: stringField(req.DueDate), Labels: stringSliceField(req.Labels), Reminder: reminderField(req.Reminder)})
 	if err != nil {
 		return writeTaskError(c, err)
 	}
@@ -295,6 +325,16 @@ func (value *taskOptionalStringSlice) UnmarshalJSON(raw []byte) error {
 	}
 	return json.Unmarshal(raw, &value.Value)
 }
+func (value *taskOptionalReminder) UnmarshalJSON(raw []byte) error {
+	value.Present = true
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		value.Null = true
+		return nil
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	return decoder.Decode(&value.Value)
+}
 
 func queryStringField(values map[string][]string, key string) task.Field[string] {
 	raw, present := values[key]
@@ -313,11 +353,25 @@ func int16Field(value taskOptionalInt16) task.Field[int16] {
 func stringSliceField(value taskOptionalStringSlice) task.Field[[]string] {
 	return task.Field[[]string]{Present: value.Present, Null: value.Null, Value: value.Value}
 }
+func reminderField(value taskOptionalReminder) task.Field[task.ReminderInput] {
+	return task.Field[task.ReminderInput]{Present: value.Present, Null: value.Null, Value: task.ReminderInput{
+		Mode: value.Value.Mode, Frequency: value.Value.Frequency, Timezone: value.Value.Timezone,
+		At: value.Value.At, Time: value.Value.Time, Weekdays: value.Value.Weekdays, DayOfMonth: value.Value.DayOfMonth,
+	}}
+}
 
 func newTaskResponse(value task.Task) taskResponse {
 	result := taskResponse{ID: value.ID, ProjectID: value.ProjectID, Title: value.Title, Description: value.Description, Status: value.Status, Priority: value.Priority, Creator: projectUserResponse{ID: value.Creator.ID, Name: value.Creator.Name, Nickname: value.Creator.Nickname, Avatar: value.Creator.Avatar}, StartDate: value.StartDate, DueDate: value.DueDate, Labels: value.Labels, CompletedAt: value.CompletedAt, CanceledAt: value.CanceledAt, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}
 	if value.Assignee != nil {
 		result.Assignee = &projectUserResponse{ID: value.Assignee.ID, Name: value.Assignee.Name, Nickname: value.Assignee.Nickname, Avatar: value.Assignee.Avatar}
+	}
+	if value.Reminder != nil {
+		result.Reminder = &taskReminderResponse{
+			Mode: value.Reminder.Mode, Frequency: value.Reminder.Frequency, Timezone: value.Reminder.Timezone,
+			At: value.Reminder.At, Time: value.Reminder.Time, Weekdays: value.Reminder.Weekdays,
+			DayOfMonth: value.Reminder.DayOfMonth, NextTriggerAt: value.Reminder.NextTriggerAt,
+			LastProcessedAt: value.Reminder.LastProcessedAt, State: value.Reminder.State,
+		}
 	}
 	return result
 }

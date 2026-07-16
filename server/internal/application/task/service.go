@@ -73,6 +73,7 @@ type normalizedPatch struct {
 	DuePresent      bool
 	DueDate         *time.Time
 	Labels          *pq.StringArray
+	Reminder        Field[ReminderInput]
 }
 
 func NewService(deps Dependencies) *Service {
@@ -95,7 +96,7 @@ func (s *Service) List(ctx context.Context, cmd ListCommand) (ListResult, error)
 	if err := s.requireProjectAccess(ctx, projectID, strings.TrimSpace(cmd.AccountID)); err != nil {
 		return ListResult{}, mapNotFound(err)
 	}
-	query := s.db.WithContext(ctx).Preload("AssigneeUser").Preload("CreatedByUser").Where("project_id = ?", projectID)
+	query := s.db.WithContext(ctx).Preload("AssigneeUser").Preload("CreatedByUser").Preload("Reminder").Where("project_id = ?", projectID)
 	query = applyListFilters(query, s.db.Dialector.Name(), filters)
 	if filters.Cursor != nil {
 		query = query.Where("(updated_at < ?) OR (updated_at = ? AND id < ?)", filters.Cursor.UpdatedAt, filters.Cursor.UpdatedAt, filters.Cursor.ID)
@@ -131,6 +132,7 @@ func (s *Service) Create(ctx context.Context, cmd CreateCommand) (Task, error) {
 		return Task{}, err
 	}
 	var assignee *store.User
+	var reminder *store.TaskReminder
 	var notification any
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := requireProjectAccessForUpdate(tx, projectID, accountID); err != nil {
@@ -144,12 +146,25 @@ func (s *Service) Create(ctx context.Context, cmd CreateCommand) (Task, error) {
 			assignee = &validated
 		}
 		now := s.now().UTC()
+		if cmd.Reminder.Present && !cmd.Reminder.Null {
+			reminder, err = normalizeReminder(cmd.Reminder.Value, now, value.Status)
+			if err != nil {
+				return err
+			}
+		}
 		value.ID = uuid.NewString()
 		value.CreatedAt = now
 		value.UpdatedAt = now
 		setTerminalTimestamps(&value, now)
 		if err := tx.Create(&value).Error; err != nil {
 			return err
+		}
+		if reminder != nil {
+			reminder.TaskID = value.ID
+			if err := tx.Create(reminder).Error; err != nil {
+				return err
+			}
+			value.Reminder = reminder
 		}
 		if err := updateProjectTimestamp(tx, projectID, now); err != nil {
 			return err
@@ -187,7 +202,7 @@ func (s *Service) Get(ctx context.Context, cmd GetCommand) (Task, error) {
 		return Task{}, mapNotFound(err)
 	}
 	var value store.Task
-	err = s.db.WithContext(ctx).Preload("AssigneeUser").Preload("CreatedByUser").Where("id = ? AND project_id = ?", taskID, projectID).First(&value).Error
+	err = s.db.WithContext(ctx).Preload("AssigneeUser").Preload("CreatedByUser").Preload("Reminder").Where("id = ? AND project_id = ?", taskID, projectID).First(&value).Error
 	if err != nil {
 		return Task{}, mapNotFound(err)
 	}
@@ -227,9 +242,16 @@ func (s *Service) Update(ctx context.Context, cmd UpdateCommand) (Task, error) {
 			}
 			value.AssigneeUser = &validated
 		}
+		previousStatus := value.Status
 		now := s.now().UTC()
 		updates := patchUpdates(&value, patch, now)
-		if len(updates) == 0 {
+		taskChanged := len(updates) > 0
+		reminderChanged, reminder, err := applyReminderMutation(tx, value, previousStatus, patch.Reminder, now)
+		if err != nil {
+			return err
+		}
+		value.Reminder = reminder
+		if !taskChanged && !reminderChanged {
 			return nil
 		}
 		updates["updated_at"] = now
@@ -244,7 +266,7 @@ func (s *Service) Update(ctx context.Context, cmd UpdateCommand) (Task, error) {
 			return err
 		}
 		value.UpdatedAt = now
-		if s.notifications != nil {
+		if taskChanged && s.notifications != nil {
 			prepared, err := s.notifications.PrepareTaskNotification(ctx, tx, value)
 			if err != nil {
 				return err
@@ -272,6 +294,9 @@ func (s *Service) Delete(ctx context.Context, cmd GetCommand) (string, error) {
 			return err
 		}
 		if _, err := findForUpdate(tx, projectID, taskID); err != nil {
+			return err
+		}
+		if err := tx.Where("task_id = ?", taskID).Delete(&store.TaskReminder{}).Error; err != nil {
 			return err
 		}
 		result := tx.Where("id = ? AND project_id = ? AND deleted_at IS NULL", taskID, projectID).Delete(&store.Task{})
@@ -532,7 +557,7 @@ func normalizeCreate(cmd CreateCommand, projectID, accountID string) (store.Task
 }
 
 func normalizePatch(cmd UpdateCommand) (normalizedPatch, error) {
-	var patch normalizedPatch
+	patch := normalizedPatch{Reminder: cmd.Reminder}
 	var err error
 	if cmd.Title.Present {
 		if cmd.Title.Null {
@@ -712,7 +737,7 @@ func ResolveNotificationRecipient(tx *gorm.DB, projectID, accountID string) (sto
 
 func findForUpdate(tx *gorm.DB, projectID, taskID string) (store.Task, error) {
 	var value store.Task
-	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Preload("AssigneeUser").Preload("CreatedByUser").Where("id = ? AND project_id = ?", taskID, projectID).First(&value).Error
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Preload("AssigneeUser").Preload("CreatedByUser").Preload("Reminder").Where("id = ? AND project_id = ?", taskID, projectID).First(&value).Error
 	return value, err
 }
 func updateProjectTimestamp(tx *gorm.DB, projectID string, now time.Time) error {
@@ -836,6 +861,9 @@ func newTask(value store.Task) Task {
 	if value.AssigneeUser != nil {
 		user := newUser(*value.AssigneeUser)
 		result.Assignee = &user
+	}
+	if value.Reminder != nil {
+		result.Reminder = newReminder(*value.Reminder, value.Status)
 	}
 	return result
 }

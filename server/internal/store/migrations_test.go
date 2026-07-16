@@ -23,6 +23,11 @@ func TestMigrationDirectoryContainsExpectedMigrations(t *testing.T) {
 		"00008_add_app_event_outbox.sql",
 		"00009_add_projects_and_tasks.sql",
 		"00010_restore_third_party_login.sql",
+		"00011_rename_ai_assistant.sql",
+		"00012_rename_product_display_name.sql",
+		"00013_add_task_reminders.sql",
+		"00014_normalize_task_reminder_time.sql",
+		"00015_partition_messages_by_year_and_conversation.sql",
 	}
 	if len(matches) != len(want) {
 		t.Fatalf("migration file count = %d, want %d: %v", len(matches), len(want), matches)
@@ -144,6 +149,56 @@ func TestProjectsAndTasksMigrationDefinesSchema(t *testing.T) {
 	}
 }
 
+func TestTaskRemindersMigrationDefinesSchema(t *testing.T) {
+	rawSQL, err := os.ReadFile("../../migrations/00013_add_task_reminders.sql")
+	if err != nil {
+		t.Fatalf("read task reminders migration: %v", err)
+	}
+	sql := normalizeSQL(string(rawSQL))
+	for _, required := range []string{
+		"-- +goose up",
+		"create table task_reminders",
+		"task_id uuid not null unique references tasks(id) on delete cascade",
+		"mode text not null",
+		"timezone text not null",
+		"once_at timestamptz",
+		"time_of_day time(0)",
+		"weekdays smallint[] not null default '{}'",
+		"day_of_month smallint",
+		"next_trigger_at timestamptz",
+		"constraint task_reminders_schedule_check check",
+		"create index task_reminders_due_index",
+		"-- +goose down",
+		"drop table task_reminders",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("task reminders migration missing %q", required)
+		}
+	}
+}
+
+func TestTaskReminderTimeMigrationNormalizesStorageAndTimezone(t *testing.T) {
+	rawSQL, err := os.ReadFile("../../migrations/00014_normalize_task_reminder_time.sql")
+	if err != nil {
+		t.Fatalf("read task reminder time migration: %v", err)
+	}
+	sql := normalizeSQL(string(rawSQL))
+	for _, required := range []string{
+		"-- +goose up",
+		"alter column time_of_day type varchar(5)",
+		"using to_char(time_of_day, 'hh24:mi')",
+		"constraint task_reminders_time_of_day_check check",
+		"update task_reminders set timezone = 'asia/shanghai'",
+		"-- +goose down",
+		"alter column time_of_day type time(0)",
+		"using time_of_day::time(0)",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("task reminder time migration missing %q", required)
+		}
+	}
+}
+
 func TestAppEventOutboxMigrationDefinesCursorStorage(t *testing.T) {
 	rawSQL, err := os.ReadFile("../../migrations/00008_add_app_event_outbox.sql")
 	if err != nil {
@@ -196,7 +251,7 @@ func TestInitialSchemaMigrationDefinesBaseSchema(t *testing.T) {
 		"constraint user_sessions_token_hash_unique unique (token_hash)",
 		"create table app_settings",
 		"constraint app_settings_singleton_check check (id = 1)",
-		"'mygod'",
+		"'即应'",
 		"'长亭科技'",
 		"create table third_party_login_providers",
 		"key text not null",
@@ -402,6 +457,47 @@ func TestMessageRevokeMigrationAddsRevokeColumns(t *testing.T) {
 	} {
 		if !strings.Contains(sql, required) {
 			t.Fatalf("message revoke migration missing %q", required)
+		}
+	}
+}
+
+func TestMessagePartitionMigrationDefinesRegistryAndYearHashPartitions(t *testing.T) {
+	rawSQL, err := os.ReadFile("../../migrations/00015_partition_messages_by_year_and_conversation.sql")
+	if err != nil {
+		t.Fatalf("read message partition migration: %v", err)
+	}
+	sql := normalizeSQL(string(rawSQL))
+
+	for _, required := range []string{
+		"-- +goose up",
+		"create table message_registry",
+		"constraint message_registry_conversation_seq_unique unique (conversation_id, seq)",
+		"create unique index message_registry_client_message_unique",
+		"where client_message_id is not null",
+		"create index message_registry_conversation_year_seq_visible_index",
+		"partition by range (created_at)",
+		"partition by hash (conversation_id)",
+		"modulus 32",
+		"create function ensure_message_year_partitions",
+		"before insert on messages",
+		"execute function register_message_partition_row()",
+		"after update on messages",
+		"execute function sync_message_partition_registry()",
+		"-- +goose down",
+		"drop table message_registry",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("message partition migration missing %q", required)
+		}
+	}
+	for _, removed := range []string{
+		"message_partition_catalog",
+		"create schema if not exists archive",
+		"detach partition",
+		"set schema archive",
+	} {
+		if strings.Contains(sql, removed) {
+			t.Fatalf("message partition migration still contains removed archive behavior %q", removed)
 		}
 	}
 }

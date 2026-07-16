@@ -7,9 +7,6 @@ import (
 	"time"
 
 	projectapp "app/internal/application/project"
-	"app/internal/store"
-
-	"gorm.io/gorm"
 )
 
 const personalProjectName = projectapp.PersonalWorkspaceName
@@ -70,8 +67,4 @@ func (value *projectOptionalStringSlice) UnmarshalJSON(raw []byte) error {
 		return errors.New("字符串数组字段不能为 null")
 	}
 	return json.Unmarshal(raw, &value.Value)
-}
-
-func createPersonalProject(db *gorm.DB, user store.User, now time.Time) error {
-	return projectapp.ProvisionPersonalWorkspace(db, user.ID, now)
 }

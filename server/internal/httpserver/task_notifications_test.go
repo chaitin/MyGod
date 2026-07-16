@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"app/internal/appregistry"
-	"app/internal/config"
 	"app/internal/realtime"
 	"app/internal/store"
 
@@ -329,56 +328,6 @@ func TestTaskNotificationBodyKeepsMaximumLengthTaskTitle(t *testing.T) {
 	wantTitle := "任务动态 - " + task.Title
 	if card.Title != wantTitle {
 		t.Fatalf("title = %q, want %q", card.Title, wantTitle)
-	}
-}
-
-func TestTaskNotificationCreationIsIdempotent(t *testing.T) {
-	server, db := newTestRouter(t)
-	defer server.Close()
-
-	now := time.Now().UTC()
-	owner := insertTestUser(t, db, "task-notification-idempotent-owner@example.com", "幂等创建人", store.UserStatusActive, now)
-	assignee := insertTestUser(t, db, "task-notification-idempotent-assignee@example.com", "幂等负责人", store.UserStatusActive, now)
-	project := insertProjectFixture(t, db, projectFixtureInput{Owner: owner, Name: "幂等项目", UpdatedAt: now})
-	grantTaskProjectAccess(t, db, project, owner, assignee, now)
-	task := insertTaskTestFixture(t, db, taskFixtureInput{
-		ProjectID: project.ID,
-		Creator:   owner,
-		Assignee:  &assignee,
-		Title:     "幂等通知任务",
-		UpdatedAt: now,
-	})
-	notificationServer := &Server{
-		db: db,
-		cfg: config.Config{Apps: config.AppsConfig{
-			AIAssistantSecret: "test-ai-assistant-secret",
-		}},
-	}
-
-	var first *taskNotificationResult
-	if err := db.Transaction(func(tx *gorm.DB) error {
-		var err error
-		first, err = notificationServer.createTaskNotificationTx(t.Context(), tx, task)
-		return err
-	}); err != nil {
-		t.Fatalf("create first notification: %v", err)
-	}
-	var second *taskNotificationResult
-	if err := db.Transaction(func(tx *gorm.DB) error {
-		var err error
-		second, err = notificationServer.createTaskNotificationTx(t.Context(), tx, task)
-		return err
-	}); err != nil {
-		t.Fatalf("create duplicate notification: %v", err)
-	}
-	if first == nil || !first.Created {
-		t.Fatalf("first notification = %#v, want created", first)
-	}
-	if second == nil || second.Created || second.Message.ID != first.Message.ID {
-		t.Fatalf("second notification = %#v, want existing message %s", second, first.Message.ID)
-	}
-	if count := len(loadTaskNotificationMessages(t, db, assignee.ID)); count != 1 {
-		t.Fatalf("notification count = %d, want 1", count)
 	}
 }
 

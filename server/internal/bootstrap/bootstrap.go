@@ -19,6 +19,9 @@ func Run(ctx context.Context, db *gorm.DB, cfg config.Config) error {
 	if err := runMigrations(db); err != nil {
 		return err
 	}
+	if err := store.EnsureMessagePartitionWindow(ctx, db, time.Now().UTC()); err != nil {
+		return fmt.Errorf("ensure message partitions: %w", err)
+	}
 	if err := bootstrapApps(db, cfg); err != nil {
 		return err
 	}

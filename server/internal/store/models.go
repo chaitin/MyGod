@@ -59,7 +59,7 @@ const (
 	AppVisibilityPublic  = "public"
 
 	AppSettingsID           = 1
-	DefaultAppName          = "MyGod"
+	DefaultAppName          = "即应"
 	DefaultOrganizationName = "长亭科技"
 	DefaultUserAvatar       = "/assets/avatars/builtin/01.webp"
 )
@@ -155,6 +155,26 @@ type Message struct {
 	DeletedAt        *time.Time      `gorm:"index"`
 }
 
+type MessageRegistry struct {
+	ID               string     `gorm:"type:uuid;primaryKey"`
+	ConversationID   string     `gorm:"type:uuid;not null;uniqueIndex:message_registry_conversation_seq_unique,priority:1;uniqueIndex:message_registry_client_message_unique,priority:1;index:message_registry_conversation_seq_visible_index,priority:1"`
+	Seq              int64      `gorm:"not null;uniqueIndex:message_registry_conversation_seq_unique,priority:2;index:message_registry_conversation_seq_visible_index,priority:2,sort:desc"`
+	SenderType       string     `gorm:"size:32;not null;uniqueIndex:message_registry_client_message_unique,priority:2"`
+	SenderID         *string    `gorm:"type:uuid;uniqueIndex:message_registry_client_message_unique,priority:3"`
+	ClientMessageID  *string    `gorm:"size:128;uniqueIndex:message_registry_client_message_unique,priority:4"`
+	ReplyToMessageID *string    `gorm:"type:uuid;index"`
+	CreatedAt        time.Time  `gorm:"not null"`
+	PartitionYear    int16      `gorm:"not null;index"`
+	Summary          string     `gorm:"not null;default:''"`
+	RevokedAt        *time.Time `gorm:"index"`
+	RevokedByUserID  *string    `gorm:"type:uuid"`
+	DeletedAt        *time.Time `gorm:"index"`
+}
+
+func (MessageRegistry) TableName() string {
+	return "message_registry"
+}
+
 type DirectConversation struct {
 	ConversationID string       `gorm:"type:uuid;primaryKey"`
 	Conversation   Conversation `gorm:"constraint:OnDelete:CASCADE;"`
@@ -210,6 +230,29 @@ type Task struct {
 	CreatedAt       time.Time `gorm:"not null"`
 	UpdatedAt       time.Time `gorm:"not null;index"`
 	DeletedAt       gorm.DeletedAt
+	Reminder        *TaskReminder `gorm:"foreignKey:TaskID"`
+}
+
+type TaskReminder struct {
+	ID                  string  `gorm:"type:uuid;primaryKey"`
+	TaskID              string  `gorm:"type:uuid;not null;uniqueIndex"`
+	Task                Task    `gorm:"constraint:OnDelete:CASCADE;"`
+	Mode                string  `gorm:"size:16;not null"`
+	Frequency           *string `gorm:"size:16"`
+	Timezone            string  `gorm:"size:64;not null"`
+	OnceAt              *time.Time
+	TimeOfDay           *string       `gorm:"size:5"`
+	Weekdays            pq.Int64Array `gorm:"type:text;not null;default:'{}'"`
+	DayOfMonth          *int16
+	NextTriggerAt       *time.Time `gorm:"index"`
+	LastOccurrenceAt    *time.Time
+	LastProcessedAt     *time.Time
+	LastResult          string     `gorm:"size:32;not null;default:''"`
+	ConsecutiveFailures int        `gorm:"not null;default:0"`
+	RetryAt             *time.Time `gorm:"index"`
+	LastError           string     `gorm:"not null;default:''"`
+	CreatedAt           time.Time  `gorm:"not null"`
+	UpdatedAt           time.Time  `gorm:"not null"`
 }
 
 type TemporaryFile struct {

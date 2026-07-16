@@ -17,7 +17,7 @@ type InfoAPI struct {
 }
 
 type infoSettingsResponse struct {
-	AppName             string                             `json:"app_name" example:"MyGod"`
+	AppName             string                             `json:"app_name" example:"即应"`
 	Authenticated       *bool                              `json:"authenticated,omitempty" example:"false"`
 	OrganizationName    string                             `json:"organization_name" example:"长亭科技"`
 	ThirdPartyProviders []publicThirdPartyProviderResponse `json:"third_party_providers"`

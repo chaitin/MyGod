@@ -403,6 +403,10 @@ func (s *Service) Delete(ctx context.Context, cmd ProjectCommand) (Project, erro
 		if value.IsPersonal {
 			return errPersonalDelete
 		}
+		taskIDs := tx.Unscoped().Model(&store.Task{}).Select("id").Where("project_id = ?", value.ID)
+		if err := tx.Where("task_id IN (?)", taskIDs).Delete(&store.TaskReminder{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("project_id = ?", value.ID).Delete(&store.ProjectGroup{}).Error; err != nil {
 			return err
 		}

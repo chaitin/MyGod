@@ -13,6 +13,7 @@ import (
 
 	"github.com/glebarez/sqlite"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -58,6 +59,44 @@ func TestServiceProjectLifecycleAndListing(t *testing.T) {
 	}
 	if listed.PersonalProject == nil || len(listed.Projects) != 1 || listed.Projects[0].ID != created.ID {
 		t.Fatalf("list result = %#v", listed)
+	}
+}
+
+func TestServiceDeleteRemovesTaskReminders(t *testing.T) {
+	db := openProjectTestDB(t)
+	now := time.Date(2026, 7, 15, 6, 0, 0, 0, time.UTC)
+	owner := insertProjectTestUser(t, db, "delete-reminders@example.com", now)
+	service := NewService(Dependencies{DB: db, Now: func() time.Time { return now }})
+	created, err := service.Create(context.Background(), CreateCommand{AccountID: owner.ID, Name: "Release"})
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	taskValue := store.Task{
+		ID: uuid.NewString(), ProjectID: created.ID, Title: "Check release", Status: store.TaskStatusTodo,
+		Priority: 2, Labels: pq.StringArray{}, CreatedByUserID: owner.ID, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Create(&taskValue).Error; err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	frequency, timeOfDay := "daily", "14:30"
+	reminder := store.TaskReminder{
+		ID: uuid.NewString(), TaskID: taskValue.ID, Mode: "recurring", Frequency: &frequency,
+		Timezone: "Asia/Shanghai", TimeOfDay: &timeOfDay, Weekdays: pq.Int64Array{},
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Create(&reminder).Error; err != nil {
+		t.Fatalf("create reminder: %v", err)
+	}
+
+	if _, err := service.Delete(context.Background(), ProjectCommand{AccountID: owner.ID, ProjectID: created.ID}); err != nil {
+		t.Fatalf("delete project: %v", err)
+	}
+	var count int64
+	if err := db.Model(&store.TaskReminder{}).Where("task_id = ?", taskValue.ID).Count(&count).Error; err != nil {
+		t.Fatalf("count reminders: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("reminder count = %d, want 0", count)
 	}
 }
 
@@ -126,7 +165,7 @@ func openProjectTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
-	if err := db.AutoMigrate(&store.User{}, &store.Project{}, &store.Conversation{}, &store.ProjectGroup{}, &store.ConversationMember{}, &store.Task{}); err != nil {
+	if err := db.AutoMigrate(&store.User{}, &store.Project{}, &store.Conversation{}, &store.ProjectGroup{}, &store.ConversationMember{}, &store.Task{}, &store.TaskReminder{}); err != nil {
 		t.Fatalf("migrate database: %v", err)
 	}
 	return db

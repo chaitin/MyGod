@@ -66,6 +66,7 @@ type appCreateProjectTaskRequest struct {
 	StartDate      taskOptionalString      `json:"start_date"`
 	Status         taskOptionalString      `json:"status"`
 	Title          taskOptionalString      `json:"title"`
+	Reminder       taskOptionalReminder    `json:"reminder"`
 }
 
 type appUpdateProjectTaskRequest struct {
@@ -81,4 +82,5 @@ type appUpdateProjectTaskRequest struct {
 	Status          taskOptionalString      `json:"status"`
 	TaskID          string                  `json:"task_id"`
 	Title           taskOptionalString      `json:"title"`
+	Reminder        taskOptionalReminder    `json:"reminder"`
 }

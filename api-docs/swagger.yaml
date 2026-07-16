@@ -1,5 +1,79 @@
 basePath: /
 definitions:
+  admin.adminAppEnvelope:
+    properties:
+      app:
+        $ref: '#/definitions/admin.adminAppResponse'
+    type: object
+  admin.adminAppRequest:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+      visibility:
+        type: string
+    type: object
+  admin.adminAppResponse:
+    properties:
+      avatar:
+        type: string
+      connection_secret:
+        type: string
+      connection_status:
+        type: string
+      created_at:
+        format: date-time
+        type: string
+      creator_user_id:
+        type: string
+      description:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: string
+      name:
+        type: string
+      system:
+        type: boolean
+      updated_at:
+        format: date-time
+        type: string
+      visibility:
+        type: string
+    type: object
+  admin.adminLoginResponse:
+    properties:
+      admin:
+        $ref: '#/definitions/admin.adminResponse'
+    type: object
+  admin.adminResponse:
+    properties:
+      email:
+        example: admin
+        type: string
+    type: object
+  admin.createUserRequest:
+    properties:
+      email:
+        example: user@example.com
+        type: string
+      name:
+        example: 张三
+        type: string
+      phone:
+        example: "13812345678"
+        type: string
+    type: object
+  admin.createUserResponse:
+    properties:
+      initial_password:
+        example: aB3dE5gH7jK9mN2p
+        type: string
+      user:
+        $ref: '#/definitions/admin.userResponse'
+    type: object
   admin.errorBody:
     properties:
       code:
@@ -18,7 +92,7 @@ definitions:
   admin.infoSettingsResponse:
     properties:
       app_name:
-        example: MyGod
+        example: 即应
         type: string
       organization_name:
         example: 长亭科技
@@ -27,6 +101,51 @@ definitions:
         items:
           $ref: '#/definitions/admin.publicThirdPartyProviderResponse'
         type: array
+    type: object
+  admin.listAdminAppsResponse:
+    properties:
+      apps:
+        items:
+          $ref: '#/definitions/admin.adminAppResponse'
+        type: array
+    type: object
+  admin.listThirdPartyProvidersResponse:
+    properties:
+      providers:
+        items:
+          $ref: '#/definitions/admin.thirdPartyProviderResponse'
+        type: array
+    type: object
+  admin.listUsersResponse:
+    properties:
+      order:
+        example: desc
+        type: string
+      page:
+        example: 1
+        type: integer
+      page_size:
+        example: 20
+        type: integer
+      sort:
+        example: created_at
+        type: string
+      total:
+        example: 12
+        type: integer
+      users:
+        items:
+          $ref: '#/definitions/admin.userResponse'
+        type: array
+    type: object
+  admin.loginRequest:
+    properties:
+      email:
+        example: user@example.com
+        type: string
+      password:
+        example: password
+        type: string
     type: object
   admin.publicThirdPartyProviderResponse:
     properties:
@@ -37,6 +156,14 @@ definitions:
         example: 企业 SSO
         type: string
     type: object
+  admin.resetUserPasswordResponse:
+    properties:
+      new_password:
+        example: aB3dE5gH7jK9mN2p
+        type: string
+      user:
+        $ref: '#/definitions/admin.userResponse'
+    type: object
   admin.successEnvelope:
     properties:
       data: {}
@@ -44,13 +171,107 @@ definitions:
         example: true
         type: boolean
     type: object
+  admin.thirdPartyProviderEnvelope:
+    properties:
+      provider:
+        $ref: '#/definitions/admin.thirdPartyProviderResponse'
+    type: object
+  admin.thirdPartyProviderMoveRequest:
+    properties:
+      direction:
+        type: string
+    type: object
+  admin.thirdPartyProviderRequest:
+    properties:
+      client_id:
+        type: string
+      client_secret:
+        type: string
+      config:
+        additionalProperties: {}
+        type: object
+      name:
+        type: string
+      scopes:
+        items:
+          type: string
+        type: array
+      type:
+        type: string
+    type: object
+  admin.thirdPartyProviderResponse:
+    properties:
+      callback_url:
+        type: string
+      client_id:
+        type: string
+      client_secret:
+        type: string
+      config:
+        additionalProperties: {}
+        type: object
+      enabled:
+        type: boolean
+      id:
+        type: string
+      key:
+        type: string
+      name:
+        type: string
+      scopes:
+        items:
+          type: string
+        type: array
+      sort_order:
+        type: integer
+      type:
+        type: string
+    type: object
   admin.updateInfoSettingsRequest:
     properties:
       app_name:
-        example: MyGod
+        example: 即应
         type: string
       organization_name:
         example: 长亭科技
+        type: string
+    type: object
+  admin.updateUserStatusResponse:
+    properties:
+      user:
+        $ref: '#/definitions/admin.userResponse'
+    type: object
+  admin.userResponse:
+    properties:
+      avatar:
+        example: /assets/avatars/builtin/07.webp
+        type: string
+      created_at:
+        format: date-time
+        type: string
+      email:
+        example: user@example.com
+        type: string
+      id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      last_online_at:
+        example: "2026-07-03T01:00:00Z"
+        type: string
+      name:
+        example: 张三
+        type: string
+      nickname:
+        example: 小张
+        type: string
+      online:
+        example: true
+        type: boolean
+      phone:
+        example: "+8613812345678"
+        type: string
+      status:
+        example: active
         type: string
     type: object
   client.accountEnvelope:
@@ -87,6 +308,276 @@ definitions:
       status:
         example: active
         type: string
+    type: object
+  client.addGroupConversationMembersRequest:
+    properties:
+      app_ids:
+        example:
+        - 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        items:
+          type: string
+        type: array
+      member_ids:
+        example:
+        - 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        items:
+          type: string
+        type: array
+    type: object
+  client.addGroupConversationMembersResponse:
+    properties:
+      conversation:
+        $ref: '#/definitions/client.conversationListItemResponse'
+      message:
+        $ref: '#/definitions/client.messageResponse'
+    type: object
+  client.contactAppResponse:
+    properties:
+      avatar:
+        example: /assets/apps/assistant.webp
+        type: string
+      description:
+        example: AI 助手
+        type: string
+      id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      name:
+        example: 茉莉
+        type: string
+      online:
+        example: false
+        type: boolean
+      type:
+        example: app
+        type: string
+    type: object
+  client.contactGroupAvatarMemberResponse:
+    properties:
+      avatar:
+        type: string
+      name:
+        type: string
+      nickname:
+        type: string
+      role:
+        type: string
+    type: object
+  client.contactGroupResponse:
+    properties:
+      avatar:
+        example: /assets/avatars/groups/07.webp
+        type: string
+      avatar_members:
+        items:
+          $ref: '#/definitions/client.contactGroupAvatarMemberResponse'
+        type: array
+      id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      joined:
+        example: false
+        type: boolean
+      member_count:
+        example: 8
+        type: integer
+      name:
+        example: IM探索
+        type: string
+      type:
+        example: group
+        type: string
+      visibility:
+        example: public
+        type: string
+    type: object
+  client.contactUserResponse:
+    properties:
+      avatar:
+        example: /assets/avatars/builtin/07.webp
+        type: string
+      email:
+        example: user@example.com
+        type: string
+      id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      last_online_at:
+        example: "2026-07-03T01:00:00Z"
+        type: string
+      name:
+        example: 张三
+        type: string
+      nickname:
+        example: 小张
+        type: string
+      online:
+        example: true
+        type: boolean
+      phone:
+        example: "+8613812345678"
+        type: string
+      type:
+        example: user
+        type: string
+    type: object
+  client.conversationListItemResponse:
+    properties:
+      avatar:
+        example: /assets/avatars/builtin/07.webp
+        type: string
+      created_at:
+        format: date-time
+        type: string
+      id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      last_mentioned_seq:
+        example: 0
+        type: integer
+      last_message_at:
+        format: date-time
+        type: string
+      last_message_id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      last_message_seq:
+        example: 12
+        type: integer
+      last_message_summary:
+        example: 好的，我看一下
+        type: string
+      last_read_seq:
+        example: 9
+        type: integer
+      member_count:
+        example: 2
+        type: integer
+      members:
+        items:
+          $ref: '#/definitions/client.conversationMemberResponse'
+        type: array
+      name:
+        example: 张三
+        type: string
+      projects:
+        items:
+          $ref: '#/definitions/client.conversationProjectResponse'
+        type: array
+      type:
+        example: direct
+        type: string
+      unread_count:
+        example: 3
+        type: integer
+      visibility:
+        example: private
+        type: string
+    type: object
+  client.conversationMemberResponse:
+    properties:
+      avatar:
+        example: /assets/avatars/builtin/07.webp
+        type: string
+      email:
+        example: user@example.com
+        type: string
+      id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      name:
+        example: 张三
+        type: string
+      nickname:
+        example: 小张
+        type: string
+      phone:
+        example: "+8613812345678"
+        type: string
+      role:
+        example: member
+        type: string
+      type:
+        example: user
+        type: string
+    type: object
+  client.conversationProjectResponse:
+    properties:
+      avatar:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+    type: object
+  client.createAppConversationRequest:
+    properties:
+      app_id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+    type: object
+  client.createDirectConversationRequest:
+    properties:
+      user_id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+    type: object
+  client.createDirectConversationResponse:
+    properties:
+      conversation:
+        $ref: '#/definitions/client.conversationListItemResponse'
+      created:
+        example: true
+        type: boolean
+    type: object
+  client.createGroupConversationRequest:
+    properties:
+      app_ids:
+        example:
+        - 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        items:
+          type: string
+        type: array
+      member_ids:
+        example:
+        - 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        items:
+          type: string
+        type: array
+      name:
+        example: 产品讨论组
+        type: string
+      project_ids:
+        example:
+        - 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        items:
+          type: string
+        type: array
+    required:
+    - name
+    type: object
+  client.createGroupConversationResponse:
+    properties:
+      conversation:
+        $ref: '#/definitions/client.groupConversationResponse'
+    type: object
+  client.createMessageRequest:
+    properties:
+      body:
+        type: object
+      client_message_id:
+        example: 9c08f2dd-0af6-4e99-b486-2f0c841822be
+        type: string
+      reply_to_message_id:
+        example: 9c08f2dd-0af6-4e99-b486-2f0c841822be
+        type: string
+    type: object
+  client.createMessageResponse:
+    properties:
+      message:
+        $ref: '#/definitions/client.messageResponse'
     type: object
   client.createProjectRequest:
     properties:
@@ -136,6 +627,9 @@ definitions:
         example: 2
         format: int32
         type: integer
+      reminder:
+        type: object
+        x-nullable: true
       start_date:
         example: "2026-07-11"
         format: date
@@ -166,6 +660,12 @@ definitions:
         example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
         type: string
     type: object
+  client.dissolveGroupConversationResponse:
+    properties:
+      conversation_id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+    type: object
   client.errorBody:
     properties:
       code:
@@ -181,10 +681,114 @@ definitions:
         example: false
         type: boolean
     type: object
+  client.forwardMessagesRequest:
+    properties:
+      client_forward_id:
+        type: string
+      message_ids:
+        items:
+          type: string
+        type: array
+      mode:
+        type: string
+      target_conversation_ids:
+        items:
+          type: string
+        type: array
+    type: object
+  client.forwardMessagesResponse:
+    properties:
+      failed_count:
+        type: integer
+      results:
+        items:
+          $ref: '#/definitions/client.forwardMessagesTargetResult'
+        type: array
+      sent_count:
+        type: integer
+    type: object
+  client.forwardMessagesTargetError:
+    properties:
+      code:
+        type: string
+      message:
+        type: string
+    type: object
+  client.forwardMessagesTargetResult:
+    properties:
+      conversation_id:
+        type: string
+      error:
+        $ref: '#/definitions/client.forwardMessagesTargetError'
+      messages:
+        items:
+          $ref: '#/definitions/client.messageResponse'
+        type: array
+      status:
+        type: string
+    type: object
+  client.groupConversationResponse:
+    properties:
+      avatar:
+        example: /assets/avatars/groups/07.webp
+        type: string
+      created_at:
+        format: date-time
+        type: string
+      created_by_user_id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      last_mentioned_seq:
+        example: 0
+        type: integer
+      last_message_at:
+        format: date-time
+        type: string
+      last_message_id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      last_message_seq:
+        example: 12
+        type: integer
+      last_message_summary:
+        example: 张三 邀请 李四 加入群聊
+        type: string
+      last_read_seq:
+        example: 12
+        type: integer
+      member_count:
+        example: 3
+        type: integer
+      members:
+        items:
+          $ref: '#/definitions/client.conversationMemberResponse'
+        type: array
+      name:
+        example: 产品讨论组
+        type: string
+      posting_policy:
+        example: open
+        type: string
+      status:
+        example: active
+        type: string
+      type:
+        example: group
+        type: string
+      unread_count:
+        example: 0
+        type: integer
+      visibility:
+        example: private
+        type: string
+    type: object
   client.infoSettingsResponse:
     properties:
       app_name:
-        example: MyGod
+        example: 即应
         type: string
       authenticated:
         example: false
@@ -197,6 +801,70 @@ definitions:
           $ref: '#/definitions/client.publicThirdPartyProviderResponse'
         type: array
     type: object
+  client.leaveGroupConversationResponse:
+    properties:
+      conversation_id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      message:
+        $ref: '#/definitions/client.messageResponse'
+    type: object
+  client.listClientContactsResponse:
+    properties:
+      apps:
+        items:
+          $ref: '#/definitions/client.contactAppResponse'
+        type: array
+      groups:
+        items:
+          $ref: '#/definitions/client.contactGroupResponse'
+        type: array
+      users:
+        items:
+          $ref: '#/definitions/client.contactUserResponse'
+        type: array
+    type: object
+  client.listClientConversationsResponse:
+    properties:
+      conversations:
+        items:
+          $ref: '#/definitions/client.conversationListItemResponse'
+        type: array
+    type: object
+  client.listContactUsersResponse:
+    properties:
+      contacts:
+        items:
+          $ref: '#/definitions/client.contactUserResponse'
+        type: array
+    type: object
+  client.listConversationMessagesResponse:
+    properties:
+      messages:
+        items:
+          $ref: '#/definitions/client.messageResponse'
+        type: array
+      page:
+        $ref: '#/definitions/client.listMessagesPageResponse'
+    type: object
+  client.listMessagesPageResponse:
+    properties:
+      has_more_after:
+        example: false
+        type: boolean
+      has_more_before:
+        example: true
+        type: boolean
+      limit:
+        example: 20
+        type: integer
+      newest_seq:
+        example: 120
+        type: integer
+      oldest_seq:
+        example: 101
+        type: integer
+    type: object
   client.loginRequest:
     properties:
       email:
@@ -204,6 +872,106 @@ definitions:
         type: string
       password:
         example: password
+        type: string
+    type: object
+  client.markConversationReadRequest:
+    properties:
+      up_to_seq:
+        example: 123
+        type: integer
+    type: object
+  client.markConversationReadResponse:
+    properties:
+      conversation_id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      last_read_seq:
+        example: 123
+        type: integer
+      unread_count:
+        example: 0
+        type: integer
+    type: object
+  client.messageDelegatedByResponse:
+    properties:
+      id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      name:
+        example: 女菩萨
+        type: string
+      type:
+        example: app
+        type: string
+    type: object
+  client.messageReplyToResponse:
+    properties:
+      id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      sender:
+        $ref: '#/definitions/client.messageReplyToSenderResponse'
+      seq:
+        example: 12
+        type: integer
+      summary:
+        example: 上一条消息摘要
+        type: string
+    type: object
+  client.messageReplyToSenderResponse:
+    properties:
+      id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      name:
+        example: Alice
+        type: string
+      type:
+        example: user
+        type: string
+    type: object
+  client.messageResponse:
+    properties:
+      body:
+        type: object
+      client_message_id:
+        example: 9c08f2dd-0af6-4e99-b486-2f0c841822be
+        type: string
+      conversation_id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      created_at:
+        format: date-time
+        type: string
+      delegated_by:
+        $ref: '#/definitions/client.messageDelegatedByResponse'
+      id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      reply_to:
+        $ref: '#/definitions/client.messageReplyToResponse'
+      reply_to_message_id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      revoked_at:
+        format: date-time
+        type: string
+      revoked_by_user_id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      sender:
+        $ref: '#/definitions/client.messageSenderResponse'
+      seq:
+        example: 13
+        type: integer
+    type: object
+  client.messageSenderResponse:
+    properties:
+      id:
+        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
+        type: string
+      type:
+        example: user
         type: string
     type: object
   client.projectGroupListResponse:
@@ -367,6 +1135,13 @@ definitions:
           $ref: '#/definitions/client.temporaryFileReadURLResponse'
         type: array
     type: object
+  client.revokeConversationMessageResponse:
+    properties:
+      message:
+        $ref: '#/definitions/client.messageResponse'
+      system_message:
+        $ref: '#/definitions/client.messageResponse'
+    type: object
   client.successEnvelope:
     properties:
       data: {}
@@ -382,6 +1157,33 @@ definitions:
       tasks:
         items:
           $ref: '#/definitions/client.taskResponse'
+        type: array
+    type: object
+  client.taskReminderResponse:
+    properties:
+      at:
+        type: string
+      day_of_month:
+        type: integer
+      frequency:
+        type: string
+      last_processed_at:
+        type: string
+        x-nullable: true
+      mode:
+        type: string
+      next_trigger_at:
+        type: string
+        x-nullable: true
+      state:
+        type: string
+      time:
+        type: string
+      timezone:
+        type: string
+      weekdays:
+        items:
+          type: integer
         type: array
     type: object
   client.taskResponse:
@@ -415,6 +1217,10 @@ definitions:
         type: integer
       project_id:
         type: string
+      reminder:
+        allOf:
+        - $ref: '#/definitions/client.taskReminderResponse'
+        x-nullable: true
       start_date:
         type: string
         x-nullable: true
@@ -447,6 +1253,19 @@ definitions:
       size_bytes:
         example: 123456
         type: integer
+    type: object
+  client.updateGroupConversationAvatarResponse:
+    properties:
+      conversation:
+        $ref: '#/definitions/client.conversationListItemResponse'
+      message:
+        $ref: '#/definitions/client.messageResponse'
+    type: object
+  client.updateGroupConversationNameRequest:
+    properties:
+      name:
+        example: 产品讨论组
+        type: string
     type: object
   client.updateProfileRequest:
     properties:
@@ -497,6 +1316,9 @@ definitions:
         example: 2
         format: int32
         type: integer
+      reminder:
+        type: object
+        x-nullable: true
       start_date:
         example: "2026-07-11"
         format: date
@@ -514,356 +1336,6 @@ definitions:
         example: 完成发布检查
         type: string
     type: object
-  httpserver.addGroupConversationMembersRequest:
-    properties:
-      app_ids:
-        example:
-        - 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
-        items:
-          type: string
-        type: array
-      member_ids:
-        example:
-        - 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
-        items:
-          type: string
-        type: array
-    type: object
-  httpserver.addGroupConversationMembersResponse:
-    properties:
-      conversation:
-        $ref: '#/definitions/httpserver.conversationListItemResponse'
-      message:
-        $ref: '#/definitions/httpserver.messageResponse'
-    type: object
-  httpserver.adminAppEnvelope:
-    properties:
-      app:
-        $ref: '#/definitions/httpserver.adminAppResponse'
-    type: object
-  httpserver.adminAppRequest:
-    properties:
-      description:
-        type: string
-      name:
-        type: string
-      visibility:
-        type: string
-    type: object
-  httpserver.adminAppResponse:
-    properties:
-      avatar:
-        type: string
-      connection_secret:
-        type: string
-      connection_status:
-        type: string
-      created_at:
-        format: date-time
-        type: string
-      creator_user_id:
-        type: string
-      description:
-        type: string
-      enabled:
-        type: boolean
-      id:
-        type: string
-      name:
-        type: string
-      system:
-        type: boolean
-      updated_at:
-        format: date-time
-        type: string
-      visibility:
-        type: string
-    type: object
-  httpserver.adminLoginResponse:
-    properties:
-      admin:
-        $ref: '#/definitions/httpserver.adminResponse'
-    type: object
-  httpserver.adminResponse:
-    properties:
-      email:
-        example: admin
-        type: string
-    type: object
-  httpserver.contactAppResponse:
-    properties:
-      avatar:
-        example: /assets/apps/assistant.webp
-        type: string
-      description:
-        example: AI 助手
-        type: string
-      id:
-        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
-        type: string
-      name:
-        example: AI 女菩萨
-        type: string
-      online:
-        example: false
-        type: boolean
-      type:
-        example: app
-        type: string
-    type: object
-  httpserver.contactGroupAvatarMemberResponse:
-    properties:
-      avatar:
-        type: string
-      name:
-        type: string
-      nickname:
-        type: string
-      role:
-        type: string
-    type: object
-  httpserver.contactGroupResponse:
-    properties:
-      avatar:
-        example: /assets/avatars/groups/07.webp
-        type: string
-      avatar_members:
-        items:
-          $ref: '#/definitions/httpserver.contactGroupAvatarMemberResponse'
-        type: array
-      id:
-        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
-        type: string
-      joined:
-        example: false
-        type: boolean
-      member_count:
-        example: 8
-        type: integer
-      name:
-        example: IM探索
-        type: string
-      type:
-        example: group
-        type: string
-      visibility:
-        example: public
-        type: string
-    type: object
-  httpserver.contactUserResponse:
-    properties:
-      avatar:
-        example: /assets/avatars/builtin/07.webp
-        type: string
-      email:
-        example: user@example.com
-        type: string
-      id:
-        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
-        type: string
-      last_online_at:
-        example: "2026-07-03T01:00:00Z"
-        type: string
-      name:
-        example: 张三
-        type: string
-      nickname:
-        example: 小张
-        type: string
-      online:
-        example: true
-        type: boolean
-      phone:
-        example: "+8613812345678"
-        type: string
-      type:
-        example: user
-        type: string
-    type: object
-  httpserver.conversationListItemResponse:
-    properties:
-      avatar:
-        example: /assets/avatars/builtin/07.webp
-        type: string
-      created_at:
-        format: date-time
-        type: string
-      id:
-        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
-        type: string
-      last_mentioned_seq:
-        example: 0
-        type: integer
-      last_message_at:
-        format: date-time
-        type: string
-      last_message_id:
-        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
-        type: string
-      last_message_seq:
-        example: 12
-        type: integer
-      last_message_summary:
-        example: 好的，我看一下
-        type: string
-      last_read_seq:
-        example: 9
-        type: integer
-      member_count:
-        example: 2
-        type: integer
-      members:
-        items:
-          $ref: '#/definitions/httpserver.conversationMemberResponse'
-        type: array
-      name:
-        example: 张三
-        type: string
-      projects:
-        items:
-          $ref: '#/definitions/httpserver.conversationProjectResponse'
-        type: array
-      type:
-        example: direct
-        type: string
-      unread_count:
-        example: 3
-        type: integer
-      visibility:
-        example: private
-        type: string
-    type: object
-  httpserver.conversationMemberResponse:
-    properties:
-      avatar:
-        example: /assets/avatars/builtin/07.webp
-        type: string
-      email:
-        example: user@example.com
-        type: string
-      id:
-        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
-        type: string
-      name:
-        example: 张三
-        type: string
-      nickname:
-        example: 小张
-        type: string
-      phone:
-        example: "+8613812345678"
-        type: string
-      role:
-        example: member
-        type: string
-      type:
-        example: user
-        type: string
-    type: object
-  httpserver.conversationProjectResponse:
-    properties:
-      avatar:
-        type: string
-      description:
-        type: string
-      id:
-        type: string
-      name:
-        type: string
-    type: object
-  httpserver.createAppConversationRequest:
-    properties:
-      app_id:
-        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
-        type: string
-    type: object
-  httpserver.createDirectConversationRequest:
-    properties:
-      user_id:
-        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
-        type: string
-    type: object
-  httpserver.createDirectConversationResponse:
-    properties:
-      conversation:
-        $ref: '#/definitions/httpserver.conversationListItemResponse'
-      created:
-        example: true
-        type: boolean
-    type: object
-  httpserver.createGroupConversationRequest:
-    properties:
-      app_ids:
-        example:
-        - 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
-        items:
-          type: string
-        type: array
-      member_ids:
-        example:
-        - 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
-        items:
-          type: string
-        type: array
-      name:
-        example: 产品讨论组
-        type: string
-      project_ids:
-        example:
-        - 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
-        items:
-          type: string
-        type: array
-    required:
-    - name
-    type: object
-  httpserver.createGroupConversationResponse:
-    properties:
-      conversation:
-        $ref: '#/definitions/httpserver.groupConversationResponse'
-    type: object
-  httpserver.createMessageRequest:
-    properties:
-      body:
-        type: object
-      client_message_id:
-        example: 9c08f2dd-0af6-4e99-b486-2f0c841822be
-        type: string
-      reply_to_message_id:
-        example: 9c08f2dd-0af6-4e99-b486-2f0c841822be
-        type: string
-    type: object
-  httpserver.createMessageResponse:
-    properties:
-      message:
-        $ref: '#/definitions/httpserver.messageResponse'
-    type: object
-  httpserver.createUserRequest:
-    properties:
-      email:
-        example: user@example.com
-        type: string
-      name:
-        example: 张三
-        type: string
-      phone:
-        example: "13812345678"
-        type: string
-    type: object
-  httpserver.createUserResponse:
-    properties:
-      initial_password:
-        example: aB3dE5gH7jK9mN2p
-        type: string
-      user:
-        $ref: '#/definitions/httpserver.userResponse'
-    type: object
-  httpserver.dissolveGroupConversationResponse:
-    properties:
-      conversation_id:
-        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
-        type: string
-    type: object
   httpserver.errorBody:
     properties:
       code:
@@ -878,450 +1350,6 @@ definitions:
       success:
         example: false
         type: boolean
-    type: object
-  httpserver.forwardMessagesRequest:
-    properties:
-      client_forward_id:
-        type: string
-      message_ids:
-        items:
-          type: string
-        type: array
-      mode:
-        type: string
-      target_conversation_ids:
-        items:
-          type: string
-        type: array
-    type: object
-  httpserver.forwardMessagesResponse:
-    properties:
-      failed_count:
-        type: integer
-      results:
-        items:
-          $ref: '#/definitions/httpserver.forwardMessagesTargetResult'
-        type: array
-      sent_count:
-        type: integer
-    type: object
-  httpserver.forwardMessagesTargetError:
-    properties:
-      code:
-        type: string
-      message:
-        type: string
-    type: object
-  httpserver.forwardMessagesTargetResult:
-    properties:
-      conversation_id:
-        type: string
-      error:
-        $ref: '#/definitions/httpserver.forwardMessagesTargetError'
-      messages:
-        items:
-          $ref: '#/definitions/httpserver.messageResponse'
-        type: array
-      status:
-        type: string
-    type: object
-  httpserver.groupConversationResponse:
-    properties:
-      avatar:
-        example: /assets/avatars/groups/07.webp
-        type: string
-      created_at:
-        format: date-time
-        type: string
-      created_by_user_id:
-        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
-        type: string
-      id:
-        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
-        type: string
-      last_mentioned_seq:
-        example: 0
-        type: integer
-      last_message_at:
-        format: date-time
-        type: string
-      last_message_id:
-        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
-        type: string
-      last_message_seq:
-        example: 12
-        type: integer
-      last_message_summary:
-        example: 张三 邀请 李四 加入群聊
-        type: string
-      last_read_seq:
-        example: 12
-        type: integer
-      member_count:
-        example: 3
-        type: integer
-      members:
-        items:
-          $ref: '#/definitions/httpserver.conversationMemberResponse'
-        type: array
-      name:
-        example: 产品讨论组
-        type: string
-      posting_policy:
-        example: open
-        type: string
-      status:
-        example: active
-        type: string
-      type:
-        example: group
-        type: string
-      unread_count:
-        example: 0
-        type: integer
-      visibility:
-        example: private
-        type: string
-    type: object
-  httpserver.leaveGroupConversationResponse:
-    properties:
-      conversation_id:
-        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
-        type: string
-      message:
-        $ref: '#/definitions/httpserver.messageResponse'
-    type: object
-  httpserver.listAdminAppsResponse:
-    properties:
-      apps:
-        items:
-          $ref: '#/definitions/httpserver.adminAppResponse'
-        type: array
-    type: object
-  httpserver.listClientContactsResponse:
-    properties:
-      apps:
-        items:
-          $ref: '#/definitions/httpserver.contactAppResponse'
-        type: array
-      groups:
-        items:
-          $ref: '#/definitions/httpserver.contactGroupResponse'
-        type: array
-      users:
-        items:
-          $ref: '#/definitions/httpserver.contactUserResponse'
-        type: array
-    type: object
-  httpserver.listClientConversationsResponse:
-    properties:
-      conversations:
-        items:
-          $ref: '#/definitions/httpserver.conversationListItemResponse'
-        type: array
-    type: object
-  httpserver.listContactUsersResponse:
-    properties:
-      contacts:
-        items:
-          $ref: '#/definitions/httpserver.contactUserResponse'
-        type: array
-    type: object
-  httpserver.listConversationMessagesResponse:
-    properties:
-      messages:
-        items:
-          $ref: '#/definitions/httpserver.messageResponse'
-        type: array
-      page:
-        $ref: '#/definitions/httpserver.listMessagesPageResponse'
-    type: object
-  httpserver.listMessagesPageResponse:
-    properties:
-      has_more_after:
-        example: false
-        type: boolean
-      has_more_before:
-        example: true
-        type: boolean
-      limit:
-        example: 20
-        type: integer
-      newest_seq:
-        example: 120
-        type: integer
-      oldest_seq:
-        example: 101
-        type: integer
-    type: object
-  httpserver.listThirdPartyProvidersResponse:
-    properties:
-      providers:
-        items:
-          $ref: '#/definitions/httpserver.thirdPartyProviderResponse'
-        type: array
-    type: object
-  httpserver.listUsersResponse:
-    properties:
-      order:
-        example: desc
-        type: string
-      page:
-        example: 1
-        type: integer
-      page_size:
-        example: 20
-        type: integer
-      sort:
-        example: created_at
-        type: string
-      total:
-        example: 12
-        type: integer
-      users:
-        items:
-          $ref: '#/definitions/httpserver.userResponse'
-        type: array
-    type: object
-  httpserver.loginRequest:
-    properties:
-      email:
-        example: user@example.com
-        type: string
-      password:
-        example: password
-        type: string
-    type: object
-  httpserver.markConversationReadRequest:
-    properties:
-      up_to_seq:
-        example: 123
-        type: integer
-    type: object
-  httpserver.markConversationReadResponse:
-    properties:
-      conversation_id:
-        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
-        type: string
-      last_read_seq:
-        example: 123
-        type: integer
-      unread_count:
-        example: 0
-        type: integer
-    type: object
-  httpserver.messageDelegatedByResponse:
-    properties:
-      id:
-        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
-        type: string
-      name:
-        example: 女菩萨
-        type: string
-      type:
-        example: app
-        type: string
-    type: object
-  httpserver.messageReplyToResponse:
-    properties:
-      id:
-        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
-        type: string
-      sender:
-        $ref: '#/definitions/httpserver.messageReplyToSenderResponse'
-      seq:
-        example: 12
-        type: integer
-      summary:
-        example: 上一条消息摘要
-        type: string
-    type: object
-  httpserver.messageReplyToSenderResponse:
-    properties:
-      id:
-        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
-        type: string
-      name:
-        example: Alice
-        type: string
-      type:
-        example: user
-        type: string
-    type: object
-  httpserver.messageResponse:
-    properties:
-      body:
-        type: object
-      client_message_id:
-        example: 9c08f2dd-0af6-4e99-b486-2f0c841822be
-        type: string
-      conversation_id:
-        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
-        type: string
-      created_at:
-        format: date-time
-        type: string
-      delegated_by:
-        $ref: '#/definitions/httpserver.messageDelegatedByResponse'
-      id:
-        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
-        type: string
-      reply_to:
-        $ref: '#/definitions/httpserver.messageReplyToResponse'
-      reply_to_message_id:
-        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
-        type: string
-      revoked_at:
-        format: date-time
-        type: string
-      revoked_by_user_id:
-        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
-        type: string
-      sender:
-        $ref: '#/definitions/httpserver.messageSenderResponse'
-      seq:
-        example: 13
-        type: integer
-    type: object
-  httpserver.messageSenderResponse:
-    properties:
-      id:
-        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
-        type: string
-      type:
-        example: user
-        type: string
-    type: object
-  httpserver.projectGroupMutationResponse:
-    type: object
-  httpserver.resetUserPasswordResponse:
-    properties:
-      new_password:
-        example: aB3dE5gH7jK9mN2p
-        type: string
-      user:
-        $ref: '#/definitions/httpserver.userResponse'
-    type: object
-  httpserver.revokeConversationMessageResponse:
-    properties:
-      message:
-        $ref: '#/definitions/httpserver.messageResponse'
-      system_message:
-        $ref: '#/definitions/httpserver.messageResponse'
-    type: object
-  httpserver.successEnvelope:
-    properties:
-      data: {}
-      success:
-        example: true
-        type: boolean
-    type: object
-  httpserver.thirdPartyProviderEnvelope:
-    properties:
-      provider:
-        $ref: '#/definitions/httpserver.thirdPartyProviderResponse'
-    type: object
-  httpserver.thirdPartyProviderMoveRequest:
-    properties:
-      direction:
-        type: string
-    type: object
-  httpserver.thirdPartyProviderRequest:
-    properties:
-      client_id:
-        type: string
-      client_secret:
-        type: string
-      config:
-        additionalProperties: {}
-        type: object
-      name:
-        type: string
-      scopes:
-        items:
-          type: string
-        type: array
-      type:
-        type: string
-    type: object
-  httpserver.thirdPartyProviderResponse:
-    properties:
-      callback_url:
-        type: string
-      client_id:
-        type: string
-      client_secret:
-        type: string
-      config:
-        additionalProperties: {}
-        type: object
-      enabled:
-        type: boolean
-      id:
-        type: string
-      key:
-        type: string
-      name:
-        type: string
-      scopes:
-        items:
-          type: string
-        type: array
-      sort_order:
-        type: integer
-      type:
-        type: string
-    type: object
-  httpserver.updateGroupConversationAvatarResponse:
-    properties:
-      conversation:
-        $ref: '#/definitions/httpserver.conversationListItemResponse'
-      message:
-        $ref: '#/definitions/httpserver.messageResponse'
-    type: object
-  httpserver.updateGroupConversationNameRequest:
-    properties:
-      name:
-        example: 产品讨论组
-        type: string
-    type: object
-  httpserver.updateUserStatusResponse:
-    properties:
-      user:
-        $ref: '#/definitions/httpserver.userResponse'
-    type: object
-  httpserver.userResponse:
-    properties:
-      avatar:
-        example: /assets/avatars/builtin/07.webp
-        type: string
-      created_at:
-        format: date-time
-        type: string
-      email:
-        example: user@example.com
-        type: string
-      id:
-        example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
-        type: string
-      last_online_at:
-        example: "2026-07-03T01:00:00Z"
-        type: string
-      name:
-        example: 张三
-        type: string
-      nickname:
-        example: 小张
-        type: string
-      online:
-        example: true
-        type: boolean
-      phone:
-        example: "+8613812345678"
-        type: string
-      status:
-        example: active
-        type: string
     type: object
 info:
   contact: {}
@@ -1339,19 +1367,19 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/admin.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.listAdminAppsResponse'
+                  $ref: '#/definitions/admin.listAdminAppsResponse'
               type: object
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
       summary: 列出应用
       tags:
       - 管理员应用
@@ -1365,7 +1393,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/httpserver.adminAppRequest'
+          $ref: '#/definitions/admin.adminAppRequest'
       produces:
       - application/json
       responses:
@@ -1373,29 +1401,29 @@ paths:
           description: Created
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/admin.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.adminAppEnvelope'
+                  $ref: '#/definitions/admin.adminAppEnvelope'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
       summary: 创建应用
       tags:
       - 管理员应用
   /api/admin/apps/{id}:
     delete:
-      description: 管理员删除普通应用。AI 女菩萨不能删除。
+      description: 管理员删除普通应用。茉莉不能删除。
       parameters:
       - description: 应用 ID
         in: path
@@ -1408,30 +1436,30 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/httpserver.successEnvelope'
+            $ref: '#/definitions/admin.successEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
       summary: 删除应用
       tags:
       - 管理员应用
     put:
       consumes:
       - application/json
-      description: 管理员更新一个应用配置。AI 女菩萨的可见范围固定为所有人。
+      description: 管理员更新一个应用配置。茉莉的可见范围固定为所有人。
       parameters:
       - description: 应用 ID
         in: path
@@ -1443,7 +1471,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/httpserver.adminAppRequest'
+          $ref: '#/definitions/admin.adminAppRequest'
       produces:
       - application/json
       responses:
@@ -1451,27 +1479,27 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/admin.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.adminAppEnvelope'
+                  $ref: '#/definitions/admin.adminAppEnvelope'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
       summary: 更新应用
       tags:
       - 管理员应用
@@ -1498,31 +1526,31 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/admin.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.adminAppEnvelope'
+                  $ref: '#/definitions/admin.adminAppEnvelope'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "413":
           description: Request Entity Too Large
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
       summary: 上传应用头像
       tags:
       - 管理端应用
@@ -1541,23 +1569,23 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/admin.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.adminAppEnvelope'
+                  $ref: '#/definitions/admin.adminAppEnvelope'
               type: object
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
       summary: 禁用应用
       tags:
       - 管理员应用
@@ -1576,29 +1604,29 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/admin.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.adminAppEnvelope'
+                  $ref: '#/definitions/admin.adminAppEnvelope'
               type: object
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
       summary: 启用应用
       tags:
       - 管理员应用
   /api/admin/apps/{id}/secret/regenerate:
     post:
-      description: 普通应用可以生成新密钥。AI 女菩萨密钥由配置管理，不能在后台生成。
+      description: 普通应用可以生成新密钥。茉莉密钥由配置管理，不能在后台生成。
       parameters:
       - description: 应用 ID
         in: path
@@ -1612,27 +1640,27 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/admin.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.adminAppEnvelope'
+                  $ref: '#/definitions/admin.adminAppEnvelope'
               type: object
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
       summary: 生成应用连接密钥
       tags:
       - 管理员应用
@@ -1647,7 +1675,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/httpserver.loginRequest'
+          $ref: '#/definitions/admin.loginRequest'
       produces:
       - application/json
       responses:
@@ -1655,23 +1683,23 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/admin.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.adminLoginResponse'
+                  $ref: '#/definitions/admin.adminLoginResponse'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
       summary: 管理员登录
       tags:
       - 管理员认证
@@ -1749,19 +1777,19 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/admin.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.listThirdPartyProvidersResponse'
+                  $ref: '#/definitions/admin.listThirdPartyProvidersResponse'
               type: object
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
       summary: 列出第三方登录方式
       tags:
       - 管理员第三方登录
@@ -1775,7 +1803,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/httpserver.thirdPartyProviderRequest'
+          $ref: '#/definitions/admin.thirdPartyProviderRequest'
       produces:
       - application/json
       responses:
@@ -1783,27 +1811,27 @@ paths:
           description: Created
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/admin.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.thirdPartyProviderEnvelope'
+                  $ref: '#/definitions/admin.thirdPartyProviderEnvelope'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "409":
           description: Conflict
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
       summary: 创建第三方登录方式
       tags:
       - 管理员第三方登录
@@ -1822,23 +1850,23 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/httpserver.successEnvelope'
+            $ref: '#/definitions/admin.successEnvelope'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
       summary: 删除第三方登录方式
       tags:
       - 管理员第三方登录
@@ -1857,7 +1885,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/httpserver.thirdPartyProviderRequest'
+          $ref: '#/definitions/admin.thirdPartyProviderRequest'
       produces:
       - application/json
       responses:
@@ -1865,31 +1893,31 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/admin.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.thirdPartyProviderEnvelope'
+                  $ref: '#/definitions/admin.thirdPartyProviderEnvelope'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "409":
           description: Conflict
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
       summary: 更新第三方登录方式
       tags:
       - 管理员第三方登录
@@ -1909,27 +1937,27 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/admin.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.thirdPartyProviderEnvelope'
+                  $ref: '#/definitions/admin.thirdPartyProviderEnvelope'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
       summary: 禁用第三方登录方式
       tags:
       - 管理员第三方登录
@@ -1949,27 +1977,27 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/admin.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.thirdPartyProviderEnvelope'
+                  $ref: '#/definitions/admin.thirdPartyProviderEnvelope'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
       summary: 启用第三方登录方式
       tags:
       - 管理员第三方登录
@@ -1989,7 +2017,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/httpserver.thirdPartyProviderMoveRequest'
+          $ref: '#/definitions/admin.thirdPartyProviderMoveRequest'
       produces:
       - application/json
       responses:
@@ -1997,27 +2025,27 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/admin.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.listThirdPartyProvidersResponse'
+                  $ref: '#/definitions/admin.listThirdPartyProvidersResponse'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
       summary: 移动第三方登录方式
       tags:
       - 管理员第三方登录
@@ -2053,23 +2081,23 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/admin.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.listUsersResponse'
+                  $ref: '#/definitions/admin.listUsersResponse'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
       summary: 列出普通用户
       tags:
       - 管理员用户
@@ -2083,7 +2111,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/httpserver.createUserRequest'
+          $ref: '#/definitions/admin.createUserRequest'
       produces:
       - application/json
       responses:
@@ -2091,27 +2119,27 @@ paths:
           description: Created
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/admin.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.createUserResponse'
+                  $ref: '#/definitions/admin.createUserResponse'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "409":
           description: Conflict
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
       summary: 创建普通用户
       tags:
       - 管理员用户
@@ -2131,27 +2159,27 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/admin.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.updateUserStatusResponse'
+                  $ref: '#/definitions/admin.updateUserStatusResponse'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
       summary: 禁用普通用户
       tags:
       - 管理员用户
@@ -2171,27 +2199,27 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/admin.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.updateUserStatusResponse'
+                  $ref: '#/definitions/admin.updateUserStatusResponse'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
       summary: 启用普通用户
       tags:
       - 管理员用户
@@ -2211,27 +2239,27 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/admin.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.resetUserPasswordResponse'
+                  $ref: '#/definitions/admin.resetUserPasswordResponse'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/admin.errorEnvelope'
       summary: 重置普通用户密码
       tags:
       - 管理员用户
@@ -2241,7 +2269,7 @@ paths:
       parameters:
       - description: 应用 ID
         in: header
-        name: X-MyGod-App-ID
+        name: X-MagicChat-App-ID
         required: true
         type: string
       - description: Bearer 连接密钥
@@ -2354,23 +2382,23 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "409":
           description: Conflict
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
       summary: 完成第三方登录
       tags:
       - 客户端认证
@@ -2395,15 +2423,15 @@ paths:
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
       summary: 发起第三方登录
       tags:
       - 客户端认证
@@ -2417,19 +2445,19 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.listClientContactsResponse'
+                  $ref: '#/definitions/client.listClientContactsResponse'
               type: object
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
       summary: 列出通讯录
       tags:
       - 客户端通讯录
@@ -2448,19 +2476,19 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.listContactUsersResponse'
+                  $ref: '#/definitions/client.listContactUsersResponse'
               type: object
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
       summary: 列出通讯录用户
       tags:
       - 客户端通讯录
@@ -2474,19 +2502,19 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.listClientConversationsResponse'
+                  $ref: '#/definitions/client.listClientConversationsResponse'
               type: object
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
       summary: 列出当前用户会话
       tags:
       - 客户端会话
@@ -2513,35 +2541,35 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.updateGroupConversationAvatarResponse'
+                  $ref: '#/definitions/client.updateGroupConversationAvatarResponse'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "413":
           description: Request Entity Too Large
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
       summary: 上传群聊头像
       tags:
       - 客户端会话
@@ -2561,7 +2589,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/httpserver.addGroupConversationMembersRequest'
+          $ref: '#/definitions/client.addGroupConversationMembersRequest'
       produces:
       - application/json
       responses:
@@ -2569,31 +2597,31 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.addGroupConversationMembersResponse'
+                  $ref: '#/definitions/client.addGroupConversationMembersResponse'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
       summary: 添加群聊成员
       tags:
       - 客户端会话
@@ -2625,31 +2653,31 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.listConversationMessagesResponse'
+                  $ref: '#/definitions/client.listConversationMessagesResponse'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
       summary: 拉取会话历史消息
       tags:
       - 客户端消息
@@ -2669,7 +2697,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/httpserver.createMessageRequest'
+          $ref: '#/definitions/client.createMessageRequest'
       produces:
       - application/json
       responses:
@@ -2677,44 +2705,44 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.createMessageResponse'
+                  $ref: '#/definitions/client.createMessageResponse'
               type: object
         "201":
           description: Created
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.createMessageResponse'
+                  $ref: '#/definitions/client.createMessageResponse'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "413":
           description: Request Entity Too Large
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
       summary: 发送消息
       tags:
       - 客户端消息
@@ -2739,35 +2767,35 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.revokeConversationMessageResponse'
+                  $ref: '#/definitions/client.revokeConversationMessageResponse'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "409":
           description: Conflict
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
       summary: 撤回会话消息
       tags:
       - 客户端消息
@@ -2799,44 +2827,44 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.createMessageResponse'
+                  $ref: '#/definitions/client.createMessageResponse'
               type: object
         "201":
           description: Created
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.createMessageResponse'
+                  $ref: '#/definitions/client.createMessageResponse'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "413":
           description: Request Entity Too Large
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
       summary: 发送文件消息
       tags:
       - 客户端消息
@@ -2856,7 +2884,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/httpserver.forwardMessagesRequest'
+          $ref: '#/definitions/client.forwardMessagesRequest'
       produces:
       - application/json
       responses:
@@ -2864,35 +2892,35 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.forwardMessagesResponse'
+                  $ref: '#/definitions/client.forwardMessagesResponse'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "409":
           description: Conflict
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
       summary: 转发会话消息
       tags:
       - 客户端消息
@@ -2924,44 +2952,44 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.createMessageResponse'
+                  $ref: '#/definitions/client.createMessageResponse'
               type: object
         "201":
           description: Created
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.createMessageResponse'
+                  $ref: '#/definitions/client.createMessageResponse'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "413":
           description: Request Entity Too Large
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
       summary: 发送图片消息
       tags:
       - 客户端消息
@@ -3003,44 +3031,44 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.createMessageResponse'
+                  $ref: '#/definitions/client.createMessageResponse'
               type: object
         "201":
           description: Created
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.createMessageResponse'
+                  $ref: '#/definitions/client.createMessageResponse'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "413":
           description: Request Entity Too Large
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
       summary: 发送语音消息
       tags:
       - 客户端消息
@@ -3065,31 +3093,31 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.projectGroupMutationResponse'
+                  $ref: '#/definitions/client.projectGroupMutationResponse'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
       summary: 解除群聊项目关联
       tags:
       - 客户端会话
@@ -3113,35 +3141,35 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.projectGroupMutationResponse'
+                  $ref: '#/definitions/client.projectGroupMutationResponse'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "409":
           description: Conflict
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
       summary: 关联群聊项目
       tags:
       - 客户端会话
@@ -3160,7 +3188,7 @@ paths:
         in: body
         name: body
         schema:
-          $ref: '#/definitions/httpserver.markConversationReadRequest'
+          $ref: '#/definitions/client.markConversationReadRequest'
       produces:
       - application/json
       responses:
@@ -3168,31 +3196,31 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.markConversationReadResponse'
+                  $ref: '#/definitions/client.markConversationReadResponse'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
       summary: 标记会话已读
       tags:
       - 客户端会话
@@ -3207,7 +3235,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/httpserver.createAppConversationRequest'
+          $ref: '#/definitions/client.createAppConversationRequest'
       produces:
       - application/json
       responses:
@@ -3215,36 +3243,36 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.createDirectConversationResponse'
+                  $ref: '#/definitions/client.createDirectConversationResponse'
               type: object
         "201":
           description: Created
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.createDirectConversationResponse'
+                  $ref: '#/definitions/client.createDirectConversationResponse'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
       summary: 创建或打开应用会话
       tags:
       - 客户端会话
@@ -3259,7 +3287,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/httpserver.createDirectConversationRequest'
+          $ref: '#/definitions/client.createDirectConversationRequest'
       produces:
       - application/json
       responses:
@@ -3267,32 +3295,32 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.createDirectConversationResponse'
+                  $ref: '#/definitions/client.createDirectConversationResponse'
               type: object
         "201":
           description: Created
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.createDirectConversationResponse'
+                  $ref: '#/definitions/client.createDirectConversationResponse'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
       summary: 创建或打开一对一会话
       tags:
       - 客户端会话
@@ -3308,7 +3336,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/httpserver.createGroupConversationRequest'
+          $ref: '#/definitions/client.createGroupConversationRequest'
       produces:
       - application/json
       responses:
@@ -3316,27 +3344,27 @@ paths:
           description: Created
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.createGroupConversationResponse'
+                  $ref: '#/definitions/client.createGroupConversationResponse'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
       security:
       - UserSession: []
       summary: 创建群聊
@@ -3358,35 +3386,35 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.dissolveGroupConversationResponse'
+                  $ref: '#/definitions/client.dissolveGroupConversationResponse'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "409":
           description: Conflict
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
       security:
       - UserSession: []
       summary: 解散群聊
@@ -3408,27 +3436,27 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.addGroupConversationMembersResponse'
+                  $ref: '#/definitions/client.addGroupConversationMembersResponse'
               type: object
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
       summary: 加入公开群
       tags:
       - 客户端会话
@@ -3448,31 +3476,31 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.leaveGroupConversationResponse'
+                  $ref: '#/definitions/client.leaveGroupConversationResponse'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
       summary: 退出群聊
       tags:
       - 客户端会话
@@ -3497,31 +3525,31 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.addGroupConversationMembersResponse'
+                  $ref: '#/definitions/client.addGroupConversationMembersResponse'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
       summary: 移出群聊成员
       tags:
       - 客户端会话
@@ -3551,31 +3579,31 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.addGroupConversationMembersResponse'
+                  $ref: '#/definitions/client.addGroupConversationMembersResponse'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
       summary: 移出群聊成员或应用
       tags:
       - 客户端会话
@@ -3595,7 +3623,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/httpserver.updateGroupConversationNameRequest'
+          $ref: '#/definitions/client.updateGroupConversationNameRequest'
       produces:
       - application/json
       responses:
@@ -3603,31 +3631,31 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.addGroupConversationMembersResponse'
+                  $ref: '#/definitions/client.addGroupConversationMembersResponse'
               type: object
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
       summary: 修改群聊名称
       tags:
       - 客户端会话
@@ -3647,27 +3675,27 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.addGroupConversationMembersResponse'
+                  $ref: '#/definitions/client.addGroupConversationMembersResponse'
               type: object
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
       summary: 取消公开群
       tags:
       - 客户端会话
@@ -3687,27 +3715,27 @@ paths:
           description: OK
           schema:
             allOf:
-            - $ref: '#/definitions/httpserver.successEnvelope'
+            - $ref: '#/definitions/client.successEnvelope'
             - properties:
                 data:
-                  $ref: '#/definitions/httpserver.addGroupConversationMembersResponse'
+                  $ref: '#/definitions/client.addGroupConversationMembersResponse'
               type: object
         "401":
           description: Unauthorized
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "403":
           description: Forbidden
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/httpserver.errorEnvelope'
+            $ref: '#/definitions/client.errorEnvelope'
       summary: 设置公开群
       tags:
       - 客户端会话

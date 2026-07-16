@@ -5,6 +5,9 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"app/internal/bootstrap"
 	"app/internal/config"
@@ -45,7 +48,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	router := httpserver.NewRouter(db, cfg)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	router := httpserver.NewRouterWithTaskReminderWorker(ctx, db, cfg)
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := router.Shutdown(shutdownCtx); err != nil {
+			logger.Error("shutdown server", "error", err)
+		}
+	}()
 	logger.Info("server starting", "addr", cfg.Server.Addr)
 	if err := router.Start(cfg.Server.Addr); err != nil && err != http.ErrServerClosed {
 		logger.Error("server stopped", "error", err)
