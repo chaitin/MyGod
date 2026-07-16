@@ -92,14 +92,9 @@ type ConversationWaitRegistrar interface {
 	RegisterConversationWait(conversationID string, afterSeq int64, actorType string, actorID string) (ConversationWaitRegistration, error)
 }
 
-type ConversationEnder interface {
-	RequestConversationEnd()
-}
-
 type Scope struct {
 	AuthorizationResolver AuthorizationResolver
 	ConversationWaiter    ConversationWaitRegistrar
-	ConversationEnder     ConversationEnder
 	ConversationID        string
 	ConversationType      string
 	CurrentAppID          string
@@ -383,29 +378,7 @@ func callEndConversation(ctx context.Context, input json.RawMessage) (mcpclient.
 			return mcpclient.ToolResult{}, fmt.Errorf("end_conversation does not accept arguments")
 		}
 	}
-	scope, err := requireScope(ctx)
-	if err != nil {
-		return mcpclient.ToolResult{}, err
-	}
-	if strings.TrimSpace(scope.ConversationID) == "" || strings.TrimSpace(scope.ConversationType) == "" {
-		return mcpclient.ToolResult{}, fmt.Errorf("current conversation scope is missing")
-	}
-	if _, err := requestTool(ctx, scope.Requester, methodMessageSend, sendMessagePayload{
-		Target: sendMessageTargetPayload{
-			Type:           strings.TrimSpace(scope.ConversationType),
-			ConversationID: strings.TrimSpace(scope.ConversationID),
-		},
-		Message: scopedMessagePayload{
-			Type:    messageTypeText,
-			Content: "已结束",
-		},
-	}); err != nil {
-		return mcpclient.ToolResult{}, err
-	}
-	if scope.ConversationEnder != nil {
-		scope.ConversationEnder.RequestConversationEnd()
-	}
-	return mcpclient.ToolResult{Content: "已结束", Final: true}, nil
+	return mcpclient.ToolResult{Content: "当前处理已结束", Final: true}, nil
 }
 
 func (s *Source) callSleep(ctx context.Context, input json.RawMessage) (mcpclient.ToolResult, error) {
@@ -861,8 +834,6 @@ func callReply(ctx context.Context, input json.RawMessage) (mcpclient.ToolResult
 	if err != nil {
 		return mcpclient.ToolResult{}, err
 	}
-	result.Final = message.Type != messageTypeChart
-
 	return result, nil
 }
 
@@ -920,8 +891,6 @@ func callReplyEntityCard(ctx context.Context, input json.RawMessage) (mcpclient.
 	if err != nil {
 		return mcpclient.ToolResult{}, err
 	}
-	result.Final = true
-
 	return result, nil
 }
 

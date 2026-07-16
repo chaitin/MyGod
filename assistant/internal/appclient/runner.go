@@ -68,7 +68,6 @@ type conversationAgentJob struct {
 	ctx            context.Context
 	lastSeenSeq    int64
 	running        bool
-	endRequested   bool
 	scope          builtintools.Scope
 	session        *agent.Session
 	sink           agent.OutputSink
@@ -93,7 +92,6 @@ func (r *conversationAgentRunner) Start(ctx context.Context, key string, sink ag
 		key = "unknown"
 	}
 	prepared.Scope.ConversationWaiter = r.waiters
-	prepared.Scope.ConversationEnder = conversationEnder{runner: r, key: key}
 	r.mu.Lock()
 	if prepared.MessageSeq > 0 && prepared.MessageSeq <= r.lastSeenSeq[key] {
 		r.mu.Unlock()
@@ -174,22 +172,6 @@ func (r *conversationAgentRunner) ClaimIncomingConversationMessage(conversationI
 		return false
 	}
 	return r.waiters.Claim(conversationID, seq, senderType, senderID)
-}
-
-type conversationEnder struct {
-	runner *conversationAgentRunner
-	key    string
-}
-
-func (r conversationEnder) RequestConversationEnd() {
-	if r.runner == nil {
-		return
-	}
-	r.runner.mu.Lock()
-	defer r.runner.mu.Unlock()
-	if job := r.runner.jobs[r.key]; job != nil {
-		job.endRequested = true
-	}
 }
 
 type conversationWaitRegistry struct {
@@ -320,12 +302,6 @@ func (r *conversationAgentRunner) runJob(key string, job *conversationAgentJob) 
 		current, ok := r.jobs[key]
 		if !ok || current != job {
 			r.mu.Unlock()
-			return
-		}
-		if job.endRequested {
-			delete(r.jobs, key)
-			r.mu.Unlock()
-			job.cancel()
 			return
 		}
 		if job.ctx.Err() == nil && job.session.HasPending() {

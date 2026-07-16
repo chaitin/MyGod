@@ -272,7 +272,7 @@ func (s *Source) listedTools() []mcpclient.Tool {
 		InputSchema: readFileURLsInputSchema(),
 	}, {
 		Name:        endConversationToolName,
-		Description: "结束当前 Agent 对话。仅在用户明确要求结束当前对话时调用；调用后回复“已结束”、立即结束当前处理并清除当前持久上下文，下一条消息将开启新对话。",
+		Description: "结束当前 Agent 的本轮处理，不发送额外消息，也不清理会话 Session。普通业务工具不会自动结束处理；完成用户要求的全部工具调用和消息发送后，如果不需要再输出文字，调用本工具结束。用户要求多个输出时，必须全部完成后才能调用。",
 		InputSchema: map[string]any{
 			"type":                 "object",
 			"properties":           map[string]any{},

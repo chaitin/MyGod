@@ -43,14 +43,6 @@ type fakeConversationWaitRegistration struct {
 	registrar *fakeConversationWaitRegistrar
 }
 
-type fakeConversationEnder struct {
-	requested bool
-}
-
-func (r *fakeConversationEnder) RequestConversationEnd() {
-	r.requested = true
-}
-
 func (r fakeConversationWaitRegistration) Close() {
 	r.registrar.closed = true
 }
@@ -158,33 +150,15 @@ func TestSleepToolListMetadata(t *testing.T) {
 	}
 }
 
-func TestEndConversationToolRepliesAndEndsCurrentCycle(t *testing.T) {
-	requester := &fakeRequester{}
-	ender := &fakeConversationEnder{}
-	ctx := WithScope(context.Background(), Scope{
-		ConversationEnder: ender,
-		ConversationID:    "conversation-1",
-		ConversationType:  "app",
-		Requester:         requester,
-	})
+func TestEndConversationToolEndsCurrentCycleWithoutVisibleOutput(t *testing.T) {
 	source := NewSource()
 
-	result, err := source.CallTool(ctx, endConversationToolName, json.RawMessage(`{}`))
+	result, err := source.CallTool(context.Background(), endConversationToolName, json.RawMessage(`{}`))
 	if err != nil {
 		t.Fatalf("CallTool() error = %v", err)
 	}
-	if result.Content != "已结束" || !result.Final || result.IsError || !ender.requested {
-		t.Fatalf("result = %#v, ender = %#v", result, ender)
-	}
-	if len(requester.calls) != 1 || requester.calls[0].method != methodMessageSend {
-		t.Fatalf("request calls = %#v", requester.calls)
-	}
-	var payload sendMessagePayload
-	if err := json.Unmarshal(requester.calls[0].payload, &payload); err != nil {
-		t.Fatalf("unmarshal payload: %v", err)
-	}
-	if payload.Target.ConversationID != "conversation-1" || payload.Target.Type != "app" || payload.Message.Type != messageTypeText || payload.Message.Content != "已结束" {
-		t.Fatalf("payload = %#v", payload)
+	if result.Content != "当前处理已结束" || !result.Final || result.IsError {
+		t.Fatalf("result = %#v", result)
 	}
 }
 
@@ -1348,7 +1322,7 @@ func TestReplyToolCallsMessageSendForCard(t *testing.T) {
 		Requester:        requester,
 	})
 
-	_, err := callReply(ctx, json.RawMessage(`{
+	result, err := callReply(ctx, json.RawMessage(`{
 		"type":"card",
 		"title":"任务标题",
 		"description":"任务说明",
@@ -1356,6 +1330,9 @@ func TestReplyToolCallsMessageSendForCard(t *testing.T) {
 	}`))
 	if err != nil {
 		t.Fatalf("CallTool() error = %v", err)
+	}
+	if result.Final {
+		t.Fatal("card reply result.Final = true, want false so multiple cards can be sent")
 	}
 	var payload struct {
 		Message scopedMessagePayload `json:"message"`
@@ -1438,7 +1415,7 @@ func TestReplyToolCallsMessageSendForSupportedCharts(t *testing.T) {
 	}
 }
 
-func TestReplyToolKeepsTextFinal(t *testing.T) {
+func TestReplyToolKeepsTextNonFinal(t *testing.T) {
 	ctx := WithScope(context.Background(), Scope{
 		ConversationID:   "conversation-1",
 		ConversationType: "app",
@@ -1448,8 +1425,8 @@ func TestReplyToolKeepsTextFinal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("callReply() error = %v", err)
 	}
-	if !result.Final {
-		t.Fatal("text reply result.Final = false, want true")
+	if result.Final {
+		t.Fatal("text reply result.Final = true, want false so the model controls completion")
 	}
 }
 
@@ -1507,8 +1484,8 @@ func TestReplyEntityCardUsesAuthorizedUserForResolutionAndAgentForSending(t *tes
 	if err != nil {
 		t.Fatalf("CallTool() error = %v", err)
 	}
-	if !result.Final {
-		t.Fatal("result.Final = false, want true")
+	if result.Final {
+		t.Fatal("result.Final = true, want false so multiple entity cards can be sent")
 	}
 	if len(requester.calls) != 1 || requester.calls[0].method != methodMessageSend {
 		t.Fatalf("request calls = %#v", requester.calls)
