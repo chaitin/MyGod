@@ -15,6 +15,7 @@ import { useEffect, useId, useState, type FormEvent } from "react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
+import { useProductInfo } from "@/components/product-info-provider"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Dialog,
@@ -122,6 +123,7 @@ const thirdPartyLoginProviderOptions: ThirdPartyLoginProviderOption[] = [
 ]
 
 export default function SettingsPage() {
+  const { setAppName: setProductName } = useProductInfo()
   const appNameId = useId()
   const organizationNameId = useId()
   const [appName, setAppName] = useState("")
@@ -204,6 +206,7 @@ export default function SettingsPage() {
       })
 
       setAppName(settings.appName)
+      setProductName(settings.appName)
       setOrganizationName(settings.organizationName)
       toast.success("系统设置已保存")
     } catch (error) {

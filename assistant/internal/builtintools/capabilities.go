@@ -239,7 +239,7 @@ func projectsCapabilitySpec() capabilitySpec {
 			},
 			{
 				Name:            projectsOperationCreateTask,
-				Description:     "以授权用户身份在其有权访问的项目中创建任务。本查重要求只适用于任务创建：调用前必须先在同一项目使用 search_tasks 检查相同或同义任务；确认重复时不得调用本操作，应使用已有任务的 task_id 和 updated_at 调用 update_task，只在没有重复任务时创建。创建时应尽量根据用户请求和必要聊天背景填写简洁、真实的 description，不复制整段聊天或编造信息。project_id 可直接使用按系统项目选择规则确定的可信 project_context 候选；否则先查询项目。title 必填；status 默认 todo，priority 默认 2；负责人必须是有项目访问权的 active 用户。返回创建后的完整任务。",
+				Description:     "以授权用户身份在其有权访问的项目中创建任务。本查重要求只适用于任务创建：调用前必须先在同一项目使用 search_tasks 检查相同或同义任务；确认重复时不得调用本操作，应使用已有任务的 task_id 和 updated_at 调用 update_task，只在没有重复任务时创建。创建时应尽量根据用户请求和必要聊天背景填写简洁、真实的 description，不复制整段聊天或编造信息。project_id 可直接使用按系统项目选择规则确定的可信 project_context 候选；否则先查询项目。title 必填；status 默认 todo，priority 默认 2；负责人必须是有项目访问权的 active 用户。reminder 支持一次性、每天、每周和每月提醒，时区固定为 Asia/Shanghai。返回创建后的完整任务。",
 				InputSchema:     projectOperationInputSchema(projectsOperationCreateTask, createTaskArgumentsSchema()),
 				ToolName:        projectsToolName,
 				ToolDescription: toolDescription,
@@ -247,7 +247,7 @@ func projectsCapabilitySpec() capabilitySpec {
 			},
 			{
 				Name:            projectsOperationUpdateTask,
-				Description:     "以授权用户身份修改其有权访问的项目任务，只更新明确传入的字段。assignee_user_id、start_date、due_date 传 null 可清除，labels 传空数组可清空；至少提供一个修改字段。expected_updated_at 可用于并发保护，冲突时需重新查询。返回更新后的完整任务。",
+				Description:     "以授权用户身份修改其有权访问的项目任务，只更新明确传入的字段。assignee_user_id、start_date、due_date 和 reminder 传 null 可清除，labels 传空数组可清空；至少提供一个修改字段。expected_updated_at 可用于并发保护，冲突时需重新查询。返回更新后的完整任务。",
 				InputSchema:     projectOperationInputSchema(projectsOperationUpdateTask, updateTaskArgumentsSchema()),
 				ToolName:        projectsToolName,
 				ToolDescription: toolDescription,
@@ -918,7 +918,7 @@ func updateTaskArgumentsSchema() map[string]any {
 	properties := taskMutationProperties(false)
 	properties["task_id"] = map[string]any{"type": "string", "minLength": 1}
 	properties["expected_updated_at"] = map[string]any{"type": "string", "format": "date-time", "description": "可选并发校验值，通常使用 search_tasks 返回的 updated_at。"}
-	mutable := []string{"title", "description", "status", "priority", "assignee_user_id", "start_date", "due_date", "labels"}
+	mutable := []string{"title", "description", "status", "priority", "assignee_user_id", "start_date", "due_date", "labels", "reminder"}
 	anyOf := make([]any, 0, len(mutable))
 	for _, field := range mutable {
 		anyOf = append(anyOf, map[string]any{"required": []string{field}})
@@ -946,12 +946,68 @@ func taskMutationProperties(create bool) map[string]any {
 			"type": "array", "maxItems": 20, "uniqueItems": true,
 			"items": map[string]any{"type": "string", "minLength": 1, "maxLength": 32},
 		},
+		"reminder": taskReminderSchema(!create),
 	}
 	if create {
 		properties["status"].(map[string]any)["description"] = "默认 todo。"
 		properties["priority"].(map[string]any)["description"] = "1=低、2=中、3=高，默认 2。"
 	}
 	return properties
+}
+
+func taskReminderSchema(nullable bool) map[string]any {
+	timeProperty := map[string]any{
+		"type": "string", "pattern": `^(?:[01]\d|2[0-3]):[0-5]\d$`,
+		"description": "精确到分钟的本地时间，格式 HH:mm。",
+	}
+	timezoneProperty := map[string]any{
+		"type": "string", "enum": []string{"Asia/Shanghai"},
+		"description": "固定使用东八区 Asia/Shanghai。",
+	}
+	variants := []any{
+		map[string]any{
+			"type": "object", "required": []string{"mode", "timezone", "at"},
+			"properties": map[string]any{
+				"mode": map[string]any{"type": "string", "enum": []string{"once"}}, "timezone": timezoneProperty,
+				"at": map[string]any{"type": "string", "format": "date-time", "description": "未来的 RFC3339 时间，秒必须为 00。"},
+			},
+			"additionalProperties": false,
+		},
+		map[string]any{
+			"type": "object", "required": []string{"mode", "frequency", "timezone", "time"},
+			"properties": map[string]any{
+				"mode": map[string]any{"type": "string", "enum": []string{"recurring"}}, "frequency": map[string]any{"type": "string", "enum": []string{"daily"}},
+				"timezone": timezoneProperty, "time": timeProperty,
+			},
+			"additionalProperties": false,
+		},
+		map[string]any{
+			"type": "object", "required": []string{"mode", "frequency", "timezone", "time", "weekdays"},
+			"properties": map[string]any{
+				"mode": map[string]any{"type": "string", "enum": []string{"recurring"}}, "frequency": map[string]any{"type": "string", "enum": []string{"weekly"}},
+				"timezone": timezoneProperty, "time": timeProperty,
+				"weekdays": map[string]any{
+					"type": "array", "minItems": 1, "maxItems": 7, "uniqueItems": true,
+					"items":       map[string]any{"type": "integer", "minimum": 1, "maximum": 7},
+					"description": "ISO 星期，1=周一，7=周日。",
+				},
+			},
+			"additionalProperties": false,
+		},
+		map[string]any{
+			"type": "object", "required": []string{"mode", "frequency", "timezone", "time", "day_of_month"},
+			"properties": map[string]any{
+				"mode": map[string]any{"type": "string", "enum": []string{"recurring"}}, "frequency": map[string]any{"type": "string", "enum": []string{"monthly"}},
+				"timezone": timezoneProperty, "time": timeProperty,
+				"day_of_month": map[string]any{"type": "integer", "minimum": 1, "maximum": 31, "description": "短月份没有该日期时跳过当月。"},
+			},
+			"additionalProperties": false,
+		},
+	}
+	if nullable {
+		variants = append(variants, map[string]any{"type": "null"})
+	}
+	return map[string]any{"oneOf": variants}
 }
 
 func stringArraySchema(values []string) map[string]any {

@@ -43,7 +43,7 @@ export type AppInfo = {
 }
 
 export const defaultAppInfo: AppInfo = {
-  appName: "MyGod",
+  appName: "即应",
   authenticated: false,
   oidcProviders: [],
   organizationName: "长亭科技",

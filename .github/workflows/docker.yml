@@ -35,7 +35,7 @@ jobs:
         working-directory: server
         run: go test ./...
 
-      - name: Test MyGod AI assistant
+      - name: Test MagicChat AI assistant
         working-directory: assistant
         run: go test ./...
 

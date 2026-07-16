@@ -107,7 +107,7 @@ func TestProjectsHelpExposesSixStrictUserOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("help error = %v", err)
 	}
-	for _, snippet := range []string{"expected_updated_at", "assignee_user_id", "additionalProperties", "authorization_ref"} {
+	for _, snippet := range []string{"expected_updated_at", "assignee_user_id", "reminder", "day_of_month", "weekdays", "Asia/Shanghai", "additionalProperties", "authorization_ref"} {
 		if !strings.Contains(result.Content, snippet) {
 			t.Fatalf("help = %s, want %s", result.Content, snippet)
 		}

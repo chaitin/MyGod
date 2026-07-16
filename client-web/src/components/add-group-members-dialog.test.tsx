@@ -25,7 +25,7 @@ describe("AddGroupMembersDialog", () => {
 
     await user.click(screen.getByRole("button", { name: "添加成员" }))
     await user.click(screen.getByRole("tab", { name: "应用" }))
-    await user.click(screen.getByRole("checkbox", { name: "AI 女菩萨" }))
+    await user.click(screen.getByRole("checkbox", { name: "茉莉" }))
     await user.click(screen.getByRole("button", { name: "添加" }))
 
     expect(addGroupConversationMembers).toHaveBeenCalledWith(
@@ -57,7 +57,7 @@ function createClientDataContextValue(
         avatar: "/assets/apps/assistant.webp",
         description: "AI 助手",
         id: "app-1",
-        name: "AI 女菩萨",
+        name: "茉莉",
         online: true,
         type: "app",
       },

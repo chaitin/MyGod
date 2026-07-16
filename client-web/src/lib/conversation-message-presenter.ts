@@ -21,12 +21,6 @@ import {
   type MentionLabelResolver,
 } from "@/lib/message-mentions"
 
-const messageTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
-  hour: "2-digit",
-  hour12: false,
-  minute: "2-digit",
-})
-
 export function toConversationPanelMessage(
   message: ClientMessage,
   conversation: ClientConversation,
@@ -74,7 +68,7 @@ export function toConversationPanelMessage(
     senderAppId: message.sender.type === "app" ? message.sender.id : null,
     senderAppProfile: getMessageAppProfile(message, conversation, appsById),
     senderUserId: message.sender.type === "user" ? message.sender.id : null,
-    time: getMessageTime(message.createdAt),
+    time: formatConversationMessageTime(message.createdAt),
   }
 }
 
@@ -88,14 +82,39 @@ export function formatConversationMessageSummary(
   )
 }
 
-function getMessageTime(createdAt: string) {
+export function formatConversationMessageTime(
+  createdAt: string,
+  now = new Date()
+) {
   const date = new Date(createdAt)
 
   if (Number.isNaN(date.getTime())) {
     return ""
   }
 
-  return messageTimeFormatter.format(date)
+  const time = `${padMessageTimePart(date.getHours())}:${padMessageTimePart(date.getMinutes())}`
+  if (isSameLocalMessageDay(date, now)) {
+    return time
+  }
+
+  const monthAndDay = `${padMessageTimePart(date.getMonth() + 1)}/${padMessageTimePart(date.getDate())}`
+  if (date.getFullYear() === now.getFullYear()) {
+    return `${monthAndDay} ${time}`
+  }
+
+  return `${date.getFullYear()}/${monthAndDay} ${time}`
+}
+
+function isSameLocalMessageDay(date: Date, otherDate: Date) {
+  return (
+    date.getFullYear() === otherDate.getFullYear() &&
+    date.getMonth() === otherDate.getMonth() &&
+    date.getDate() === otherDate.getDate()
+  )
+}
+
+function padMessageTimePart(value: number) {
+  return String(value).padStart(2, "0")
 }
 
 function canRevokeMessage(

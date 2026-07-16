@@ -14,6 +14,7 @@ import {
 import { useEffect, useId, useState, type FormEvent } from "react"
 import { toast } from "sonner"
 
+import { useProductInfo } from "@/components/product-info-provider"
 import {
   AdminAppsRequestError,
   createAdminApp,
@@ -506,6 +507,7 @@ function AdminAppConnectionDialog({
   app: AdminApp | null
   onOpenChange: (open: boolean) => void
 }) {
+  const { appName } = useProductInfo()
   const urlId = useId()
   const appIdId = useId()
   const authorizationId = useId()
@@ -523,7 +525,7 @@ function AdminAppConnectionDialog({
         <DialogHeader>
           <DialogTitle>连接地址</DialogTitle>
           <DialogDescription>
-            应用启动后使用这个地址和请求头连接 MyGod。
+            应用启动后使用这个地址和请求头连接到{appName}。
           </DialogDescription>
         </DialogHeader>
         <FieldGroup className="gap-4">
@@ -543,7 +545,7 @@ function AdminAppConnectionDialog({
             </div>
           </Field>
           <Field>
-            <FieldLabel htmlFor={appIdId}>X-MyGod-App-ID</FieldLabel>
+            <FieldLabel htmlFor={appIdId}>X-MagicChat-App-ID</FieldLabel>
             <div className="flex gap-2">
               <Input id={appIdId} readOnly value={app.id} />
               <Button

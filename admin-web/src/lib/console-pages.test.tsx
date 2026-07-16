@@ -8,7 +8,7 @@ describe("console pages", () => {
     expect(getConsolePage("/settings").page.title).toBe("系统设置")
   })
 
-  it("does not include MyGod assistant in the console navigation", () => {
+  it("does not include the built-in assistant in the console navigation", () => {
     expect(consolePages.map((page) => page.path)).not.toContain("/assistant")
     expect(getConsolePage("/assistant").page.title).toBe("成员管理")
   })

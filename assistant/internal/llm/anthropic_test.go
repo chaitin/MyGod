@@ -79,7 +79,7 @@ func TestAnthropicClientGenerateUsesMessagesAPI(t *testing.T) {
 	client.HTTPClient = server.Client()
 
 	reply, err := client.Generate(context.Background(), Request{
-		System: "你是 MyGod 助手",
+		System: "你是 MagicChat 助手",
 		Messages: []Message{
 			{
 				Role:    "user",
@@ -106,7 +106,7 @@ func TestAnthropicClientGenerateUsesMessagesAPI(t *testing.T) {
 	if gotMaxTokens != 4096 {
 		t.Fatalf("max_tokens = %d, want 4096", gotMaxTokens)
 	}
-	if gotSystem != "你是 MyGod 助手" {
+	if gotSystem != "你是 MagicChat 助手" {
 		t.Fatalf("system = %q, want system prompt", gotSystem)
 	}
 	if gotRole != "user" {

@@ -16,11 +16,13 @@ import { toast } from "sonner"
 import { ProjectMemberCombobox } from "@/components/projects/project-member-combobox"
 import { ProjectTaskDatePicker } from "@/components/projects/project-task-date-picker"
 import { ProjectTaskLabelsCombobox } from "@/components/projects/project-task-labels-combobox"
+import { ProjectTaskReminderField } from "@/components/projects/project-task-reminder-field"
 import { SendCardDialog } from "@/components/conversation/send-card-dialog"
 import { MessageMarkdown } from "@/components/message-markdown"
 import type {
   ProjectTask,
   ProjectTaskPriority,
+  ProjectTaskReminderInput,
   ProjectTaskStatus,
 } from "@/components/projects/project-types"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -65,6 +67,7 @@ type TaskEditForm = {
   dueDate: string
   labels: string[]
   priority: ProjectTaskPriority
+  reminder: ProjectTaskReminderInput | null
   startDate: string
   status: ProjectTaskStatus
   title: string
@@ -76,6 +79,7 @@ type NormalizedTaskEditForm = {
   dueDate: string | null
   labels: string[]
   priority: ProjectTaskPriority
+  reminder: ProjectTaskReminderInput | null
   startDate: string | null
   status: ProjectTaskStatus
   title: string
@@ -481,6 +485,23 @@ export function ProjectTaskDetailsDialog({
                     value={form.dueDate}
                   />
                 </TaskField>
+                <TaskField label="提醒时间">
+                  <ProjectTaskReminderField
+                    disabled={loading || saving}
+                    onValueChange={(value) => updateForm("reminder", value)}
+                    state={
+                      details.status === form.status &&
+                      reminderInputsEqual(
+                        form.reminder,
+                        toReminderInput(details.reminder)
+                      )
+                        ? details.reminder?.state
+                        : undefined
+                    }
+                    status={form.status}
+                    value={form.reminder}
+                  />
+                </TaskField>
               </div>
 
               {(validationError || error) && (
@@ -596,6 +617,7 @@ function createTaskEditForm(task: ProjectTask): TaskEditForm {
     dueDate: task.dueDate ?? "",
     labels: [...task.labels],
     priority: task.priority,
+    reminder: toReminderInput(task.reminder),
     startDate: task.startDate ?? "",
     status: task.status,
     title: task.title,
@@ -628,6 +650,7 @@ function normalizeTaskEditForm(form: TaskEditForm): NormalizedTaskEditForm {
     dueDate: form.dueDate || null,
     labels: normalizeLabels(form.labels),
     priority: form.priority,
+    reminder: normalizeReminderInput(form.reminder),
     startDate: form.startDate || null,
     status: form.status,
     title: form.title.trim(),
@@ -674,6 +697,7 @@ function taskEditFormsEqual(
     left.description === right.description &&
     left.dueDate === right.dueDate &&
     left.priority === right.priority &&
+    reminderInputsEqual(left.reminder, right.reminder) &&
     left.startDate === right.startDate &&
     left.status === right.status &&
     left.title === right.title &&
@@ -705,6 +729,9 @@ function createTaskEditPatch(
   if (form.priority !== baseline.priority) {
     patch.priority = form.priority
   }
+  if (!reminderInputsEqual(form.reminder, baseline.reminder)) {
+    patch.reminder = form.reminder
+  }
   if (form.startDate !== baseline.startDate) {
     patch.startDate = form.startDate
   }
@@ -715,6 +742,67 @@ function createTaskEditPatch(
     patch.title = form.title
   }
   return patch
+}
+
+function toReminderInput(
+  reminder: ProjectTask["reminder"] | undefined
+): ProjectTaskReminderInput | null {
+  if (!reminder) {
+    return null
+  }
+  if (reminder.mode === "once") {
+    return {
+      at: reminder.at,
+      mode: "once",
+      timezone: reminder.timezone,
+    }
+  }
+  return normalizeReminderInput(reminder)
+}
+
+function normalizeReminderInput(
+  reminder: ProjectTaskReminderInput | null
+): ProjectTaskReminderInput | null {
+  if (!reminder) {
+    return null
+  }
+  if (reminder.mode === "once") {
+    return { at: reminder.at, mode: "once", timezone: reminder.timezone }
+  }
+  if (reminder.frequency === "weekly") {
+    return {
+      frequency: "weekly",
+      mode: "recurring",
+      time: reminder.time,
+      timezone: reminder.timezone,
+      weekdays: [...(reminder.weekdays ?? [])].sort((a, b) => a - b),
+    }
+  }
+  if (reminder.frequency === "monthly") {
+    return {
+      dayOfMonth: reminder.dayOfMonth,
+      frequency: "monthly",
+      mode: "recurring",
+      time: reminder.time,
+      timezone: reminder.timezone,
+    }
+  }
+  return {
+    frequency: "daily",
+    mode: "recurring",
+    time: reminder.time,
+    timezone: reminder.timezone,
+  }
+}
+
+function reminderInputsEqual(
+  left: ProjectTaskReminderInput | null,
+  right: ProjectTaskReminderInput | null
+) {
+  return (
+    JSON.stringify(normalizeReminderInput(left)) ===
+    JSON.stringify(normalizeReminderInput(right))
+  )
 }
 
 async function listAllProjectTaskLabels(

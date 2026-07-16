@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router"
 
 import { AppLayout } from "@/components/app-layout"
 import { ClientConversationRealtimeSync } from "@/components/client-conversation-realtime-sync"
+import { ClientBrandMetadata } from "@/components/client-brand-metadata"
 import { ClientDataProvider } from "@/components/client-data-provider"
 import { ClientDocumentTitle } from "@/components/client-document-title"
 import { ClientMessageNotificationSync } from "@/components/client-message-notification-sync"
@@ -16,6 +17,7 @@ import { ProjectsPage } from "@/pages/projects-page"
 export function App() {
   return (
     <AppInfoProvider>
+      <ClientBrandMetadata />
       <Routes>
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route

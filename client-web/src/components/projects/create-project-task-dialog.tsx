@@ -3,7 +3,11 @@ import { ChevronsDown, ChevronsUp, Equal } from "lucide-react"
 import { toast } from "sonner"
 
 import { ProjectMemberCombobox } from "@/components/projects/project-member-combobox"
-import type { ProjectTaskPriority } from "@/components/projects/project-types"
+import { ProjectTaskReminderField } from "@/components/projects/project-task-reminder-field"
+import type {
+  ProjectTaskPriority,
+  ProjectTaskReminderInput,
+} from "@/components/projects/project-types"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -45,6 +49,8 @@ export function CreateProjectTaskDialog({
   const [membersError, setMembersError] = React.useState("")
   const [membersLoading, setMembersLoading] = React.useState(true)
   const [priority, setPriority] = React.useState<ProjectTaskPriority>(2)
+  const [reminder, setReminder] =
+    React.useState<ProjectTaskReminderInput | null>(null)
   const [saving, setSaving] = React.useState(false)
   const [title, setTitle] = React.useState("")
   const assigneeComboboxPortal = React.useRef<HTMLDivElement | null>(null)
@@ -92,6 +98,7 @@ export function CreateProjectTaskDialog({
     setMembersError("")
     setMembersLoading(true)
     setPriority(2)
+    setReminder(null)
     setSaving(false)
     setTitle("")
   }
@@ -118,6 +125,7 @@ export function CreateProjectTaskDialog({
         assigneeUserId: assigneeUserId || null,
         description,
         priority,
+        reminder,
         title: trimmedTitle,
       })
       await onCreated()
@@ -211,6 +219,15 @@ export function CreateProjectTaskDialog({
               )}
             </TaskSelectField>
           </div>
+
+          <TaskSelectField label="提醒时间">
+            <ProjectTaskReminderField
+              disabled={saving}
+              onValueChange={setReminder}
+              status="todo"
+              value={reminder}
+            />
+          </TaskSelectField>
 
           <DialogFooter>
             <Button

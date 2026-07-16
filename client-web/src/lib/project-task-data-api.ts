@@ -1,8 +1,12 @@
-import type {
-  ProjectTask,
-  ProjectTaskPriority,
-  ProjectTaskStatus,
-  ProjectTaskUser,
+import {
+  PROJECT_TASK_REMINDER_TIMEZONE,
+  type ProjectTask,
+  type ProjectTaskPriority,
+  type ProjectTaskReminder,
+  type ProjectTaskReminderInput,
+  type ProjectTaskReminderState,
+  type ProjectTaskStatus,
+  type ProjectTaskUser,
 } from "@/components/projects/project-types"
 import { ClientDataRequestError } from "@/lib/client-data-api"
 
@@ -42,11 +46,25 @@ type ProjectTaskResponse = {
   id?: string
   labels?: string[]
   priority?: number
+  reminder?: ProjectTaskReminderResponse | null
   project_id?: string
   start_date?: string | null
   status?: string
   title?: string
   updated_at?: string
+}
+
+type ProjectTaskReminderResponse = {
+  at?: string | null
+  day_of_month?: number | null
+  frequency?: string
+  last_processed_at?: string | null
+  mode?: string
+  next_trigger_at?: string | null
+  state?: string
+  time?: string
+  timezone?: string
+  weekdays?: number[]
 }
 
 type ProjectTaskListResponse = {
@@ -69,6 +87,7 @@ export type CreateClientProjectTaskInput = {
   dueDate?: string | null
   labels?: string[]
   priority?: ProjectTaskPriority
+  reminder?: ProjectTaskReminderInput | null
   startDate?: string | null
   status?: ProjectTaskStatus
   title: string
@@ -80,6 +99,7 @@ export type UpdateClientProjectTaskInput = {
   dueDate?: string | null
   labels?: string[]
   priority?: ProjectTaskPriority
+  reminder?: ProjectTaskReminderInput | null
   startDate?: string | null
   status?: ProjectTaskStatus
   title?: string
@@ -180,6 +200,7 @@ export async function createClientProjectTask(
         due_date: input.dueDate ?? null,
         labels: input.labels ?? [],
         priority: input.priority ?? 2,
+        reminder: serializeProjectTaskReminder(input.reminder ?? null),
         start_date: input.startDate ?? null,
         status: input.status ?? "todo",
         title: input.title,
@@ -225,6 +246,9 @@ export async function updateClientProjectTask(
   }
   if (input.priority !== undefined) {
     body.priority = input.priority
+  }
+  if (input.reminder !== undefined) {
+    body.reminder = serializeProjectTaskReminder(input.reminder)
   }
   if (input.startDate !== undefined) {
     body.start_date = input.startDate
@@ -292,12 +316,112 @@ function normalizeProjectTask(
       (label): label is string => typeof label === "string"
     ),
     priority: task.priority,
+    reminder: normalizeProjectTaskReminder(task.reminder),
     projectId: task.project_id,
     startDate: normalizeNullableString(task.start_date),
     status: task.status,
     title: task.title,
     updatedAt: task.updated_at,
   }
+}
+
+function normalizeProjectTaskReminder(
+  value: ProjectTaskReminderResponse | null | undefined
+): ProjectTaskReminder | null {
+  if (value === null || value === undefined) {
+    return null
+  }
+  if (
+    (value.mode !== "once" && value.mode !== "recurring") ||
+    typeof value.timezone !== "string" ||
+    !isProjectTaskReminderState(value.state)
+  ) {
+    throw new ClientDataRequestError("任务提醒响应格式不正确")
+  }
+  const runtime = {
+    lastProcessedAt: normalizeNullableString(value.last_processed_at),
+    nextTriggerAt: normalizeNullableString(value.next_trigger_at),
+    state: value.state,
+  }
+  if (value.mode === "once") {
+    if (typeof value.at !== "string") {
+      throw new ClientDataRequestError("任务提醒响应格式不正确")
+    }
+    return {
+      ...runtime,
+      at: value.at,
+      mode: "once",
+      timezone: PROJECT_TASK_REMINDER_TIMEZONE,
+    }
+  }
+  if (
+    (value.frequency !== "daily" &&
+      value.frequency !== "weekly" &&
+      value.frequency !== "monthly") ||
+    typeof value.time !== "string"
+  ) {
+    throw new ClientDataRequestError("任务提醒响应格式不正确")
+  }
+  const reminder: ProjectTaskReminder = {
+    ...runtime,
+    frequency: value.frequency,
+    mode: "recurring",
+    time: value.time,
+    timezone: PROJECT_TASK_REMINDER_TIMEZONE,
+  }
+  if (value.frequency === "weekly") {
+    if (!Array.isArray(value.weekdays)) {
+      throw new ClientDataRequestError("任务提醒响应格式不正确")
+    }
+    reminder.weekdays = value.weekdays.filter(
+      (weekday): weekday is number =>
+        Number.isInteger(weekday) && weekday >= 1 && weekday <= 7
+    )
+  }
+  if (value.frequency === "monthly") {
+    if (
+      typeof value.day_of_month !== "number" ||
+      !Number.isInteger(value.day_of_month)
+    ) {
+      throw new ClientDataRequestError("任务提醒响应格式不正确")
+    }
+    reminder.dayOfMonth = value.day_of_month
+  }
+  return reminder
+}
+
+function serializeProjectTaskReminder(
+  value: ProjectTaskReminderInput | null
+): Record<string, unknown> | null {
+  if (value === null) {
+    return null
+  }
+  if (value.mode === "once") {
+    return {
+      at: value.at,
+      mode: value.mode,
+      timezone: PROJECT_TASK_REMINDER_TIMEZONE,
+    }
+  }
+  return {
+    day_of_month: value.frequency === "monthly" ? value.dayOfMonth : undefined,
+    frequency: value.frequency,
+    mode: value.mode,
+    time: value.time,
+    timezone: PROJECT_TASK_REMINDER_TIMEZONE,
+    weekdays: value.frequency === "weekly" ? value.weekdays : undefined,
+  }
+}
+
+function isProjectTaskReminderState(
+  value: unknown
+): value is ProjectTaskReminderState {
+  return (
+    value === "scheduled" ||
+    value === "paused" ||
+    value === "fired" ||
+    value === "expired"
+  )
 }
 
 function normalizeProjectTaskUser(

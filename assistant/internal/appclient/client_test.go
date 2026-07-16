@@ -116,7 +116,7 @@ func TestHandleServerMessageSendsLLMReply(t *testing.T) {
 	payload, err := json.Marshal(messageCreatedPayload{
 		Conversation: conversationPayload{
 			ID:   "conversation-1",
-			Name: "AI 女菩萨",
+			Name: "茉莉",
 			Type: "app",
 		},
 		Message: messagePayload{
@@ -185,7 +185,7 @@ func TestHandleServerMessageSendsLLMReply(t *testing.T) {
 					Seq:       2,
 					Sender: senderPayload{
 						ID:   "assistant-app",
-						Name: "女菩萨",
+						Name: "茉莉",
 						Type: "app",
 					},
 					Summary: "回复预计今天下午完成",
@@ -242,8 +242,8 @@ func TestHandleServerMessageSendsLLMReply(t *testing.T) {
 	if agentRequest.Conversation.ID != "conversation-1" {
 		t.Fatalf("agent conversation id = %q, want conversation-1", agentRequest.Conversation.ID)
 	}
-	if agentRequest.Conversation.Name != "AI 女菩萨" {
-		t.Fatalf("agent conversation name = %q, want AI 女菩萨", agentRequest.Conversation.Name)
+	if agentRequest.Conversation.Name != "茉莉" {
+		t.Fatalf("agent conversation name = %q, want 茉莉", agentRequest.Conversation.Name)
 	}
 	if agentRequest.Conversation.Type != "app" {
 		t.Fatalf("agent conversation type = %q, want app", agentRequest.Conversation.Type)
@@ -272,8 +272,8 @@ func TestHandleServerMessageSendsLLMReply(t *testing.T) {
 	if agentRequest.History[0].Summary != "之前问了部署时间" {
 		t.Fatalf("first history summary = %q, want previous summary", agentRequest.History[0].Summary)
 	}
-	if agentRequest.History[1].SenderName != "女菩萨" {
-		t.Fatalf("second history sender = %q, want 女菩萨", agentRequest.History[1].SenderName)
+	if agentRequest.History[1].SenderName != "茉莉" {
+		t.Fatalf("second history sender = %q, want 茉莉", agentRequest.History[1].SenderName)
 	}
 	if len(sent) != 1 {
 		t.Fatalf("sent count = %d, want 1", len(sent))
@@ -1223,7 +1223,7 @@ func preparedTextRun(conversationID string, messageID string, seq int64, content
 			AuthorizationRef: "auth_1",
 			Conversation: agent.Conversation{
 				ID:   conversationID,
-				Name: "AI 女菩萨",
+				Name: "茉莉",
 				Type: "app",
 			},
 			Sender: agent.Sender{
@@ -1336,7 +1336,7 @@ func testMessageCreatedEnvelopeWithRawBody(t *testing.T, userID string, messageI
 	payload, err := json.Marshal(messageCreatedPayload{
 		Conversation: conversationPayload{
 			ID:   "conversation-1",
-			Name: "AI 女菩萨",
+			Name: "茉莉",
 			Type: "app",
 		},
 		Message: messagePayload{

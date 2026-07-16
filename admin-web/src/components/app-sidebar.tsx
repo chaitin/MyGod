@@ -34,7 +34,10 @@ const data = {
     },
   ],
 }
-export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+export function AppSidebar({
+  appName,
+  ...props
+}: React.ComponentProps<typeof Sidebar> & { appName: string }) {
   return (
     <Sidebar variant="inset" {...props}>
       <SidebarHeader>
@@ -52,7 +55,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 />
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-medium">MyGod</span>
+                <span className="truncate font-medium">{appName}</span>
                 <span className="truncate text-xs text-sidebar-foreground/70">
                   管理控制面板
                 </span>

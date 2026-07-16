@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom"
 
 import "./index.css"
 import App from "./App.tsx"
+import { ProductInfoProvider } from "@/components/product-info-provider.tsx"
 import { ThemeProvider } from "@/components/theme-provider.tsx"
 import { Toaster } from "@/components/ui/sonner.tsx"
 
@@ -11,7 +12,9 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
       <ThemeProvider>
-        <App />
+        <ProductInfoProvider>
+          <App />
+        </ProductInfoProvider>
         <Toaster position="top-center" />
       </ThemeProvider>
     </BrowserRouter>

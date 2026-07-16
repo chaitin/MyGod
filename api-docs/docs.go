@@ -31,13 +31,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/admin.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.listAdminAppsResponse"
+                                            "$ref": "#/definitions/admin.listAdminAppsResponse"
                                         }
                                     }
                                 }
@@ -47,13 +47,13 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     }
                 }
@@ -77,7 +77,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/httpserver.adminAppRequest"
+                            "$ref": "#/definitions/admin.adminAppRequest"
                         }
                     }
                 ],
@@ -87,13 +87,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/admin.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.adminAppEnvelope"
+                                            "$ref": "#/definitions/admin.adminAppEnvelope"
                                         }
                                     }
                                 }
@@ -103,19 +103,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     }
                 }
@@ -123,7 +123,7 @@ const docTemplate = `{
         },
         "/api/admin/apps/{id}": {
             "put": {
-                "description": "管理员更新一个应用配置。AI 女菩萨的可见范围固定为所有人。",
+                "description": "管理员更新一个应用配置。茉莉的可见范围固定为所有人。",
                 "consumes": [
                     "application/json"
                 ],
@@ -148,7 +148,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/httpserver.adminAppRequest"
+                            "$ref": "#/definitions/admin.adminAppRequest"
                         }
                     }
                 ],
@@ -158,13 +158,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/admin.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.adminAppEnvelope"
+                                            "$ref": "#/definitions/admin.adminAppEnvelope"
                                         }
                                     }
                                 }
@@ -174,31 +174,31 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     }
                 }
             },
             "delete": {
-                "description": "管理员删除普通应用。AI 女菩萨不能删除。",
+                "description": "管理员删除普通应用。茉莉不能删除。",
                 "produces": [
                     "application/json"
                 ],
@@ -219,31 +219,31 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.successEnvelope"
+                            "$ref": "#/definitions/admin.successEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     }
                 }
@@ -284,13 +284,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/admin.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.adminAppEnvelope"
+                                            "$ref": "#/definitions/admin.adminAppEnvelope"
                                         }
                                     }
                                 }
@@ -300,31 +300,31 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "413": {
                         "description": "Request Entity Too Large",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     }
                 }
@@ -354,13 +354,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/admin.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.adminAppEnvelope"
+                                            "$ref": "#/definitions/admin.adminAppEnvelope"
                                         }
                                     }
                                 }
@@ -370,19 +370,19 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     }
                 }
@@ -412,13 +412,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/admin.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.adminAppEnvelope"
+                                            "$ref": "#/definitions/admin.adminAppEnvelope"
                                         }
                                     }
                                 }
@@ -428,19 +428,19 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     }
                 }
@@ -448,7 +448,7 @@ const docTemplate = `{
         },
         "/api/admin/apps/{id}/secret/regenerate": {
             "post": {
-                "description": "普通应用可以生成新密钥。AI 女菩萨密钥由配置管理，不能在后台生成。",
+                "description": "普通应用可以生成新密钥。茉莉密钥由配置管理，不能在后台生成。",
                 "produces": [
                     "application/json"
                 ],
@@ -471,13 +471,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/admin.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.adminAppEnvelope"
+                                            "$ref": "#/definitions/admin.adminAppEnvelope"
                                         }
                                     }
                                 }
@@ -487,25 +487,25 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     }
                 }
@@ -531,7 +531,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/httpserver.loginRequest"
+                            "$ref": "#/definitions/admin.loginRequest"
                         }
                     }
                 ],
@@ -541,13 +541,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/admin.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.adminLoginResponse"
+                                            "$ref": "#/definitions/admin.adminLoginResponse"
                                         }
                                     }
                                 }
@@ -557,19 +557,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     }
                 }
@@ -697,13 +697,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/admin.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.listThirdPartyProvidersResponse"
+                                            "$ref": "#/definitions/admin.listThirdPartyProvidersResponse"
                                         }
                                     }
                                 }
@@ -713,13 +713,13 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     }
                 }
@@ -743,7 +743,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/httpserver.thirdPartyProviderRequest"
+                            "$ref": "#/definitions/admin.thirdPartyProviderRequest"
                         }
                     }
                 ],
@@ -753,13 +753,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/admin.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.thirdPartyProviderEnvelope"
+                                            "$ref": "#/definitions/admin.thirdPartyProviderEnvelope"
                                         }
                                     }
                                 }
@@ -769,25 +769,25 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     }
                 }
@@ -820,7 +820,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/httpserver.thirdPartyProviderRequest"
+                            "$ref": "#/definitions/admin.thirdPartyProviderRequest"
                         }
                     }
                 ],
@@ -830,13 +830,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/admin.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.thirdPartyProviderEnvelope"
+                                            "$ref": "#/definitions/admin.thirdPartyProviderEnvelope"
                                         }
                                     }
                                 }
@@ -846,31 +846,31 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     }
                 }
@@ -897,31 +897,31 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.successEnvelope"
+                            "$ref": "#/definitions/admin.successEnvelope"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     }
                 }
@@ -952,13 +952,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/admin.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.thirdPartyProviderEnvelope"
+                                            "$ref": "#/definitions/admin.thirdPartyProviderEnvelope"
                                         }
                                     }
                                 }
@@ -968,25 +968,25 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     }
                 }
@@ -1017,13 +1017,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/admin.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.thirdPartyProviderEnvelope"
+                                            "$ref": "#/definitions/admin.thirdPartyProviderEnvelope"
                                         }
                                     }
                                 }
@@ -1033,25 +1033,25 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     }
                 }
@@ -1084,7 +1084,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/httpserver.thirdPartyProviderMoveRequest"
+                            "$ref": "#/definitions/admin.thirdPartyProviderMoveRequest"
                         }
                     }
                 ],
@@ -1094,13 +1094,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/admin.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.listThirdPartyProvidersResponse"
+                                            "$ref": "#/definitions/admin.listThirdPartyProvidersResponse"
                                         }
                                     }
                                 }
@@ -1110,25 +1110,25 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     }
                 }
@@ -1182,13 +1182,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/admin.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.listUsersResponse"
+                                            "$ref": "#/definitions/admin.listUsersResponse"
                                         }
                                     }
                                 }
@@ -1198,19 +1198,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     }
                 }
@@ -1234,7 +1234,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/httpserver.createUserRequest"
+                            "$ref": "#/definitions/admin.createUserRequest"
                         }
                     }
                 ],
@@ -1244,13 +1244,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/admin.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.createUserResponse"
+                                            "$ref": "#/definitions/admin.createUserResponse"
                                         }
                                     }
                                 }
@@ -1260,25 +1260,25 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     }
                 }
@@ -1309,13 +1309,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/admin.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.updateUserStatusResponse"
+                                            "$ref": "#/definitions/admin.updateUserStatusResponse"
                                         }
                                     }
                                 }
@@ -1325,25 +1325,25 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     }
                 }
@@ -1374,13 +1374,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/admin.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.updateUserStatusResponse"
+                                            "$ref": "#/definitions/admin.updateUserStatusResponse"
                                         }
                                     }
                                 }
@@ -1390,25 +1390,25 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     }
                 }
@@ -1439,13 +1439,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/admin.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.resetUserPasswordResponse"
+                                            "$ref": "#/definitions/admin.resetUserPasswordResponse"
                                         }
                                     }
                                 }
@@ -1455,25 +1455,25 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/admin.errorEnvelope"
                         }
                     }
                 }
@@ -1490,7 +1490,7 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "description": "应用 ID",
-                        "name": "X-MyGod-App-ID",
+                        "name": "X-MagicChat-App-ID",
                         "in": "header",
                         "required": true
                     },
@@ -1663,31 +1663,31 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     }
                 }
@@ -1725,19 +1725,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     }
                 }
@@ -1759,13 +1759,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.listClientContactsResponse"
+                                            "$ref": "#/definitions/client.listClientContactsResponse"
                                         }
                                     }
                                 }
@@ -1775,13 +1775,13 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     }
                 }
@@ -1811,13 +1811,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.listContactUsersResponse"
+                                            "$ref": "#/definitions/client.listContactUsersResponse"
                                         }
                                     }
                                 }
@@ -1827,13 +1827,13 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     }
                 }
@@ -1855,13 +1855,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.listClientConversationsResponse"
+                                            "$ref": "#/definitions/client.listClientConversationsResponse"
                                         }
                                     }
                                 }
@@ -1871,13 +1871,13 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     }
                 }
@@ -1903,7 +1903,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/httpserver.createAppConversationRequest"
+                            "$ref": "#/definitions/client.createAppConversationRequest"
                         }
                     }
                 ],
@@ -1913,13 +1913,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.createDirectConversationResponse"
+                                            "$ref": "#/definitions/client.createDirectConversationResponse"
                                         }
                                     }
                                 }
@@ -1931,13 +1931,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.createDirectConversationResponse"
+                                            "$ref": "#/definitions/client.createDirectConversationResponse"
                                         }
                                     }
                                 }
@@ -1947,25 +1947,25 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     }
                 }
@@ -1991,7 +1991,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/httpserver.createDirectConversationRequest"
+                            "$ref": "#/definitions/client.createDirectConversationRequest"
                         }
                     }
                 ],
@@ -2001,13 +2001,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.createDirectConversationResponse"
+                                            "$ref": "#/definitions/client.createDirectConversationResponse"
                                         }
                                     }
                                 }
@@ -2019,13 +2019,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.createDirectConversationResponse"
+                                            "$ref": "#/definitions/client.createDirectConversationResponse"
                                         }
                                     }
                                 }
@@ -2035,19 +2035,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     }
                 }
@@ -2078,7 +2078,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/httpserver.createGroupConversationRequest"
+                            "$ref": "#/definitions/client.createGroupConversationRequest"
                         }
                     }
                 ],
@@ -2088,13 +2088,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.createGroupConversationResponse"
+                                            "$ref": "#/definitions/client.createGroupConversationResponse"
                                         }
                                     }
                                 }
@@ -2104,25 +2104,25 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     }
                 }
@@ -2158,13 +2158,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.dissolveGroupConversationResponse"
+                                            "$ref": "#/definitions/client.dissolveGroupConversationResponse"
                                         }
                                     }
                                 }
@@ -2174,37 +2174,37 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     }
                 }
@@ -2235,13 +2235,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.addGroupConversationMembersResponse"
+                                            "$ref": "#/definitions/client.addGroupConversationMembersResponse"
                                         }
                                     }
                                 }
@@ -2251,25 +2251,25 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     }
                 }
@@ -2300,13 +2300,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.leaveGroupConversationResponse"
+                                            "$ref": "#/definitions/client.leaveGroupConversationResponse"
                                         }
                                     }
                                 }
@@ -2316,31 +2316,31 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     }
                 }
@@ -2378,13 +2378,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.addGroupConversationMembersResponse"
+                                            "$ref": "#/definitions/client.addGroupConversationMembersResponse"
                                         }
                                     }
                                 }
@@ -2394,31 +2394,31 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     }
                 }
@@ -2463,13 +2463,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.addGroupConversationMembersResponse"
+                                            "$ref": "#/definitions/client.addGroupConversationMembersResponse"
                                         }
                                     }
                                 }
@@ -2479,31 +2479,31 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     }
                 }
@@ -2536,7 +2536,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/httpserver.updateGroupConversationNameRequest"
+                            "$ref": "#/definitions/client.updateGroupConversationNameRequest"
                         }
                     }
                 ],
@@ -2546,13 +2546,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.addGroupConversationMembersResponse"
+                                            "$ref": "#/definitions/client.addGroupConversationMembersResponse"
                                         }
                                     }
                                 }
@@ -2562,31 +2562,31 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     }
                 }
@@ -2617,13 +2617,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.addGroupConversationMembersResponse"
+                                            "$ref": "#/definitions/client.addGroupConversationMembersResponse"
                                         }
                                     }
                                 }
@@ -2633,25 +2633,25 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     }
                 }
@@ -2682,13 +2682,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.addGroupConversationMembersResponse"
+                                            "$ref": "#/definitions/client.addGroupConversationMembersResponse"
                                         }
                                     }
                                 }
@@ -2698,25 +2698,25 @@ const docTemplate = `{
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     }
                 }
@@ -2757,13 +2757,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.updateGroupConversationAvatarResponse"
+                                            "$ref": "#/definitions/client.updateGroupConversationAvatarResponse"
                                         }
                                     }
                                 }
@@ -2773,37 +2773,37 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "413": {
                         "description": "Request Entity Too Large",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     }
                 }
@@ -2836,7 +2836,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/httpserver.addGroupConversationMembersRequest"
+                            "$ref": "#/definitions/client.addGroupConversationMembersRequest"
                         }
                     }
                 ],
@@ -2846,13 +2846,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.addGroupConversationMembersResponse"
+                                            "$ref": "#/definitions/client.addGroupConversationMembersResponse"
                                         }
                                     }
                                 }
@@ -2862,31 +2862,31 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     }
                 }
@@ -2935,13 +2935,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.listConversationMessagesResponse"
+                                            "$ref": "#/definitions/client.listConversationMessagesResponse"
                                         }
                                     }
                                 }
@@ -2951,31 +2951,31 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     }
                 }
@@ -3006,7 +3006,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/httpserver.createMessageRequest"
+                            "$ref": "#/definitions/client.createMessageRequest"
                         }
                     }
                 ],
@@ -3016,13 +3016,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.createMessageResponse"
+                                            "$ref": "#/definitions/client.createMessageResponse"
                                         }
                                     }
                                 }
@@ -3034,13 +3034,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.createMessageResponse"
+                                            "$ref": "#/definitions/client.createMessageResponse"
                                         }
                                     }
                                 }
@@ -3050,37 +3050,37 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "413": {
                         "description": "Request Entity Too Large",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     }
                 }
@@ -3088,7 +3088,7 @@ const docTemplate = `{
         },
         "/api/client/conversations/{conversation_id}/messages/files": {
             "post": {
-                "description": "普通用户上传文件并发送为会话文件消息。文件写入 temporary bucket，消息 body 保存 file_id、文件名和文件大小。",
+                "description": "普通用户上传最大 200MiB 的文件并发送为会话文件消息。文件写入 temporary bucket，消息 body 保存 file_id、文件名和文件大小。",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -3128,13 +3128,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.createMessageResponse"
+                                            "$ref": "#/definitions/client.createMessageResponse"
                                         }
                                     }
                                 }
@@ -3146,13 +3146,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.createMessageResponse"
+                                            "$ref": "#/definitions/client.createMessageResponse"
                                         }
                                     }
                                 }
@@ -3162,37 +3162,37 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "413": {
                         "description": "Request Entity Too Large",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     }
                 }
@@ -3225,7 +3225,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/httpserver.forwardMessagesRequest"
+                            "$ref": "#/definitions/client.forwardMessagesRequest"
                         }
                     }
                 ],
@@ -3235,13 +3235,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.forwardMessagesResponse"
+                                            "$ref": "#/definitions/client.forwardMessagesResponse"
                                         }
                                     }
                                 }
@@ -3251,37 +3251,37 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     }
                 }
@@ -3329,13 +3329,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.createMessageResponse"
+                                            "$ref": "#/definitions/client.createMessageResponse"
                                         }
                                     }
                                 }
@@ -3347,13 +3347,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.createMessageResponse"
+                                            "$ref": "#/definitions/client.createMessageResponse"
                                         }
                                     }
                                 }
@@ -3363,37 +3363,37 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "413": {
                         "description": "Request Entity Too Large",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     }
                 }
@@ -3454,13 +3454,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.createMessageResponse"
+                                            "$ref": "#/definitions/client.createMessageResponse"
                                         }
                                     }
                                 }
@@ -3472,13 +3472,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.createMessageResponse"
+                                            "$ref": "#/definitions/client.createMessageResponse"
                                         }
                                     }
                                 }
@@ -3488,37 +3488,37 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "413": {
                         "description": "Request Entity Too Large",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     }
                 }
@@ -3556,13 +3556,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.revokeConversationMessageResponse"
+                                            "$ref": "#/definitions/client.revokeConversationMessageResponse"
                                         }
                                     }
                                 }
@@ -3572,37 +3572,37 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     }
                 }
@@ -3640,13 +3640,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.projectGroupMutationResponse"
+                                            "$ref": "#/definitions/client.projectGroupMutationResponse"
                                         }
                                     }
                                 }
@@ -3656,37 +3656,37 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     }
                 }
@@ -3722,13 +3722,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.projectGroupMutationResponse"
+                                            "$ref": "#/definitions/client.projectGroupMutationResponse"
                                         }
                                     }
                                 }
@@ -3738,31 +3738,31 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     }
                 }
@@ -3794,7 +3794,7 @@ const docTemplate = `{
                         "name": "body",
                         "in": "body",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.markConversationReadRequest"
+                            "$ref": "#/definitions/client.markConversationReadRequest"
                         }
                     }
                 ],
@@ -3804,13 +3804,13 @@ const docTemplate = `{
                         "schema": {
                             "allOf": [
                                 {
-                                    "$ref": "#/definitions/httpserver.successEnvelope"
+                                    "$ref": "#/definitions/client.successEnvelope"
                                 },
                                 {
                                     "type": "object",
                                     "properties": {
                                         "data": {
-                                            "$ref": "#/definitions/httpserver.markConversationReadResponse"
+                                            "$ref": "#/definitions/client.markConversationReadResponse"
                                         }
                                     }
                                 }
@@ -3820,31 +3820,31 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/httpserver.errorEnvelope"
+                            "$ref": "#/definitions/client.errorEnvelope"
                         }
                     }
                 }
@@ -5322,7 +5322,7 @@ const docTemplate = `{
                         "UserSession": []
                     }
                 ],
-                "description": "普通用户上传临时文件。文件会写入 temporary bucket，成功后返回临时文件 ID。",
+                "description": "普通用户上传临时文件，最大 200MiB。大于 10MiB 的文件保留 30 天，其余文件保留 180 天，统一写入 temporary bucket。",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -5395,7 +5395,7 @@ const docTemplate = `{
                         "UserSession": []
                     }
                 ],
-                "description": "普通用户按临时文件 ID 批量申请 24 小时有效的访问地址。",
+                "description": "普通用户按临时文件 ID 批量申请最长 24 小时、且不超过文件剩余寿命的访问地址。",
                 "consumes": [
                     "application/json"
                 ],
@@ -5517,6 +5517,117 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "admin.adminAppEnvelope": {
+            "type": "object",
+            "properties": {
+                "app": {
+                    "$ref": "#/definitions/admin.adminAppResponse"
+                }
+            }
+        },
+        "admin.adminAppRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "visibility": {
+                    "type": "string"
+                }
+            }
+        },
+        "admin.adminAppResponse": {
+            "type": "object",
+            "properties": {
+                "avatar": {
+                    "type": "string"
+                },
+                "connection_secret": {
+                    "type": "string"
+                },
+                "connection_status": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "creator_user_id": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "system": {
+                    "type": "boolean"
+                },
+                "updated_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "visibility": {
+                    "type": "string"
+                }
+            }
+        },
+        "admin.adminLoginResponse": {
+            "type": "object",
+            "properties": {
+                "admin": {
+                    "$ref": "#/definitions/admin.adminResponse"
+                }
+            }
+        },
+        "admin.adminResponse": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "admin"
+                }
+            }
+        },
+        "admin.createUserRequest": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "user@example.com"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "张三"
+                },
+                "phone": {
+                    "type": "string",
+                    "example": "13812345678"
+                }
+            }
+        },
+        "admin.createUserResponse": {
+            "type": "object",
+            "properties": {
+                "initial_password": {
+                    "type": "string",
+                    "example": "aB3dE5gH7jK9mN2p"
+                },
+                "user": {
+                    "$ref": "#/definitions/admin.userResponse"
+                }
+            }
+        },
         "admin.errorBody": {
             "type": "object",
             "properties": {
@@ -5545,7 +5656,7 @@ const docTemplate = `{
             "properties": {
                 "app_name": {
                     "type": "string",
-                    "example": "MyGod"
+                    "example": "即应"
                 },
                 "organization_name": {
                     "type": "string",
@@ -5556,6 +5667,72 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/admin.publicThirdPartyProviderResponse"
                     }
+                }
+            }
+        },
+        "admin.listAdminAppsResponse": {
+            "type": "object",
+            "properties": {
+                "apps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/admin.adminAppResponse"
+                    }
+                }
+            }
+        },
+        "admin.listThirdPartyProvidersResponse": {
+            "type": "object",
+            "properties": {
+                "providers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/admin.thirdPartyProviderResponse"
+                    }
+                }
+            }
+        },
+        "admin.listUsersResponse": {
+            "type": "object",
+            "properties": {
+                "order": {
+                    "type": "string",
+                    "example": "desc"
+                },
+                "page": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "page_size": {
+                    "type": "integer",
+                    "example": 20
+                },
+                "sort": {
+                    "type": "string",
+                    "example": "created_at"
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "users": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/admin.userResponse"
+                    }
+                }
+            }
+        },
+        "admin.loginRequest": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "user@example.com"
+                },
+                "password": {
+                    "type": "string",
+                    "example": "password"
                 }
             }
         },
@@ -5572,6 +5749,18 @@ const docTemplate = `{
                 }
             }
         },
+        "admin.resetUserPasswordResponse": {
+            "type": "object",
+            "properties": {
+                "new_password": {
+                    "type": "string",
+                    "example": "aB3dE5gH7jK9mN2p"
+                },
+                "user": {
+                    "$ref": "#/definitions/admin.userResponse"
+                }
+            }
+        },
         "admin.successEnvelope": {
             "type": "object",
             "properties": {
@@ -5582,16 +5771,154 @@ const docTemplate = `{
                 }
             }
         },
+        "admin.thirdPartyProviderEnvelope": {
+            "type": "object",
+            "properties": {
+                "provider": {
+                    "$ref": "#/definitions/admin.thirdPartyProviderResponse"
+                }
+            }
+        },
+        "admin.thirdPartyProviderMoveRequest": {
+            "type": "object",
+            "properties": {
+                "direction": {
+                    "type": "string"
+                }
+            }
+        },
+        "admin.thirdPartyProviderRequest": {
+            "type": "object",
+            "properties": {
+                "client_id": {
+                    "type": "string"
+                },
+                "client_secret": {
+                    "type": "string"
+                },
+                "config": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "name": {
+                    "type": "string"
+                },
+                "scopes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "admin.thirdPartyProviderResponse": {
+            "type": "object",
+            "properties": {
+                "callback_url": {
+                    "type": "string"
+                },
+                "client_id": {
+                    "type": "string"
+                },
+                "client_secret": {
+                    "type": "string"
+                },
+                "config": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "scopes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
         "admin.updateInfoSettingsRequest": {
             "type": "object",
             "properties": {
                 "app_name": {
                     "type": "string",
-                    "example": "MyGod"
+                    "example": "即应"
                 },
                 "organization_name": {
                     "type": "string",
                     "example": "长亭科技"
+                }
+            }
+        },
+        "admin.updateUserStatusResponse": {
+            "type": "object",
+            "properties": {
+                "user": {
+                    "$ref": "#/definitions/admin.userResponse"
+                }
+            }
+        },
+        "admin.userResponse": {
+            "type": "object",
+            "properties": {
+                "avatar": {
+                    "type": "string",
+                    "example": "/assets/avatars/builtin/07.webp"
+                },
+                "created_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "email": {
+                    "type": "string",
+                    "example": "user@example.com"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "last_online_at": {
+                    "type": "string",
+                    "example": "2026-07-03T01:00:00Z"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "张三"
+                },
+                "nickname": {
+                    "type": "string",
+                    "example": "小张"
+                },
+                "online": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "phone": {
+                    "type": "string",
+                    "example": "+8613812345678"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "active"
                 }
             }
         },
@@ -5641,6 +5968,394 @@ const docTemplate = `{
                 "status": {
                     "type": "string",
                     "example": "active"
+                }
+            }
+        },
+        "client.addGroupConversationMembersRequest": {
+            "type": "object",
+            "properties": {
+                "app_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                    ]
+                },
+                "member_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                    ]
+                }
+            }
+        },
+        "client.addGroupConversationMembersResponse": {
+            "type": "object",
+            "properties": {
+                "conversation": {
+                    "$ref": "#/definitions/client.conversationListItemResponse"
+                },
+                "message": {
+                    "$ref": "#/definitions/client.messageResponse"
+                }
+            }
+        },
+        "client.contactAppResponse": {
+            "type": "object",
+            "properties": {
+                "avatar": {
+                    "type": "string",
+                    "example": "/assets/apps/assistant.webp"
+                },
+                "description": {
+                    "type": "string",
+                    "example": "AI 助手"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "茉莉"
+                },
+                "online": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "type": {
+                    "type": "string",
+                    "example": "app"
+                }
+            }
+        },
+        "client.contactGroupAvatarMemberResponse": {
+            "type": "object",
+            "properties": {
+                "avatar": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "nickname": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.contactGroupResponse": {
+            "type": "object",
+            "properties": {
+                "avatar": {
+                    "type": "string",
+                    "example": "/assets/avatars/groups/07.webp"
+                },
+                "avatar_members": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.contactGroupAvatarMemberResponse"
+                    }
+                },
+                "id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "joined": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "member_count": {
+                    "type": "integer",
+                    "example": 8
+                },
+                "name": {
+                    "type": "string",
+                    "example": "IM探索"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "group"
+                },
+                "visibility": {
+                    "type": "string",
+                    "example": "public"
+                }
+            }
+        },
+        "client.contactUserResponse": {
+            "type": "object",
+            "properties": {
+                "avatar": {
+                    "type": "string",
+                    "example": "/assets/avatars/builtin/07.webp"
+                },
+                "email": {
+                    "type": "string",
+                    "example": "user@example.com"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "last_online_at": {
+                    "type": "string",
+                    "example": "2026-07-03T01:00:00Z"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "张三"
+                },
+                "nickname": {
+                    "type": "string",
+                    "example": "小张"
+                },
+                "online": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "phone": {
+                    "type": "string",
+                    "example": "+8613812345678"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "user"
+                }
+            }
+        },
+        "client.conversationListItemResponse": {
+            "type": "object",
+            "properties": {
+                "avatar": {
+                    "type": "string",
+                    "example": "/assets/avatars/builtin/07.webp"
+                },
+                "created_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "last_mentioned_seq": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "last_message_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "last_message_id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "last_message_seq": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "last_message_summary": {
+                    "type": "string",
+                    "example": "好的，我看一下"
+                },
+                "last_read_seq": {
+                    "type": "integer",
+                    "example": 9
+                },
+                "member_count": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "members": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.conversationMemberResponse"
+                    }
+                },
+                "name": {
+                    "type": "string",
+                    "example": "张三"
+                },
+                "projects": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.conversationProjectResponse"
+                    }
+                },
+                "type": {
+                    "type": "string",
+                    "example": "direct"
+                },
+                "unread_count": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "visibility": {
+                    "type": "string",
+                    "example": "private"
+                }
+            }
+        },
+        "client.conversationMemberResponse": {
+            "type": "object",
+            "properties": {
+                "avatar": {
+                    "type": "string",
+                    "example": "/assets/avatars/builtin/07.webp"
+                },
+                "email": {
+                    "type": "string",
+                    "example": "user@example.com"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "张三"
+                },
+                "nickname": {
+                    "type": "string",
+                    "example": "小张"
+                },
+                "phone": {
+                    "type": "string",
+                    "example": "+8613812345678"
+                },
+                "role": {
+                    "type": "string",
+                    "example": "member"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "user"
+                }
+            }
+        },
+        "client.conversationProjectResponse": {
+            "type": "object",
+            "properties": {
+                "avatar": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.createAppConversationRequest": {
+            "type": "object",
+            "properties": {
+                "app_id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                }
+            }
+        },
+        "client.createDirectConversationRequest": {
+            "type": "object",
+            "properties": {
+                "user_id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                }
+            }
+        },
+        "client.createDirectConversationResponse": {
+            "type": "object",
+            "properties": {
+                "conversation": {
+                    "$ref": "#/definitions/client.conversationListItemResponse"
+                },
+                "created": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "client.createGroupConversationRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "app_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                    ]
+                },
+                "member_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                    ]
+                },
+                "name": {
+                    "type": "string",
+                    "example": "产品讨论组"
+                },
+                "project_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                    ]
+                }
+            }
+        },
+        "client.createGroupConversationResponse": {
+            "type": "object",
+            "properties": {
+                "conversation": {
+                    "$ref": "#/definitions/client.groupConversationResponse"
+                }
+            }
+        },
+        "client.createMessageRequest": {
+            "type": "object",
+            "properties": {
+                "body": {
+                    "type": "object"
+                },
+                "client_message_id": {
+                    "type": "string",
+                    "example": "9c08f2dd-0af6-4e99-b486-2f0c841822be"
+                },
+                "reply_to_message_id": {
+                    "type": "string",
+                    "example": "9c08f2dd-0af6-4e99-b486-2f0c841822be"
+                }
+            }
+        },
+        "client.createMessageResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "$ref": "#/definitions/client.messageResponse"
                 }
             }
         },
@@ -5713,6 +6428,10 @@ const docTemplate = `{
                     ],
                     "example": 2
                 },
+                "reminder": {
+                    "type": "object",
+                    "x-nullable": true
+                },
                 "start_date": {
                     "type": "string",
                     "format": "date",
@@ -5752,6 +6471,15 @@ const docTemplate = `{
                 }
             }
         },
+        "client.dissolveGroupConversationResponse": {
+            "type": "object",
+            "properties": {
+                "conversation_id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                }
+            }
+        },
         "client.errorBody": {
             "type": "object",
             "properties": {
@@ -5775,12 +6503,162 @@ const docTemplate = `{
                 }
             }
         },
+        "client.forwardMessagesRequest": {
+            "type": "object",
+            "properties": {
+                "client_forward_id": {
+                    "type": "string"
+                },
+                "message_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "target_conversation_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "client.forwardMessagesResponse": {
+            "type": "object",
+            "properties": {
+                "failed_count": {
+                    "type": "integer"
+                },
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.forwardMessagesTargetResult"
+                    }
+                },
+                "sent_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "client.forwardMessagesTargetError": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.forwardMessagesTargetResult": {
+            "type": "object",
+            "properties": {
+                "conversation_id": {
+                    "type": "string"
+                },
+                "error": {
+                    "$ref": "#/definitions/client.forwardMessagesTargetError"
+                },
+                "messages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.messageResponse"
+                    }
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.groupConversationResponse": {
+            "type": "object",
+            "properties": {
+                "avatar": {
+                    "type": "string",
+                    "example": "/assets/avatars/groups/07.webp"
+                },
+                "created_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "created_by_user_id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "last_mentioned_seq": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "last_message_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "last_message_id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "last_message_seq": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "last_message_summary": {
+                    "type": "string",
+                    "example": "张三 邀请 李四 加入群聊"
+                },
+                "last_read_seq": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "member_count": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "members": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.conversationMemberResponse"
+                    }
+                },
+                "name": {
+                    "type": "string",
+                    "example": "产品讨论组"
+                },
+                "posting_policy": {
+                    "type": "string",
+                    "example": "open"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "active"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "group"
+                },
+                "unread_count": {
+                    "type": "integer",
+                    "example": 0
+                },
+                "visibility": {
+                    "type": "string",
+                    "example": "private"
+                }
+            }
+        },
         "client.infoSettingsResponse": {
             "type": "object",
             "properties": {
                 "app_name": {
                     "type": "string",
-                    "example": "MyGod"
+                    "example": "即应"
                 },
                 "authenticated": {
                     "type": "boolean",
@@ -5798,6 +6676,102 @@ const docTemplate = `{
                 }
             }
         },
+        "client.leaveGroupConversationResponse": {
+            "type": "object",
+            "properties": {
+                "conversation_id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "message": {
+                    "$ref": "#/definitions/client.messageResponse"
+                }
+            }
+        },
+        "client.listClientContactsResponse": {
+            "type": "object",
+            "properties": {
+                "apps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.contactAppResponse"
+                    }
+                },
+                "groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.contactGroupResponse"
+                    }
+                },
+                "users": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.contactUserResponse"
+                    }
+                }
+            }
+        },
+        "client.listClientConversationsResponse": {
+            "type": "object",
+            "properties": {
+                "conversations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.conversationListItemResponse"
+                    }
+                }
+            }
+        },
+        "client.listContactUsersResponse": {
+            "type": "object",
+            "properties": {
+                "contacts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.contactUserResponse"
+                    }
+                }
+            }
+        },
+        "client.listConversationMessagesResponse": {
+            "type": "object",
+            "properties": {
+                "messages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.messageResponse"
+                    }
+                },
+                "page": {
+                    "$ref": "#/definitions/client.listMessagesPageResponse"
+                }
+            }
+        },
+        "client.listMessagesPageResponse": {
+            "type": "object",
+            "properties": {
+                "has_more_after": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "has_more_before": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "limit": {
+                    "type": "integer",
+                    "example": 20
+                },
+                "newest_seq": {
+                    "type": "integer",
+                    "example": 120
+                },
+                "oldest_seq": {
+                    "type": "integer",
+                    "example": 101
+                }
+            }
+        },
         "client.loginRequest": {
             "type": "object",
             "properties": {
@@ -5808,6 +6782,148 @@ const docTemplate = `{
                 "password": {
                     "type": "string",
                     "example": "password"
+                }
+            }
+        },
+        "client.markConversationReadRequest": {
+            "type": "object",
+            "properties": {
+                "up_to_seq": {
+                    "type": "integer",
+                    "example": 123
+                }
+            }
+        },
+        "client.markConversationReadResponse": {
+            "type": "object",
+            "properties": {
+                "conversation_id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "last_read_seq": {
+                    "type": "integer",
+                    "example": 123
+                },
+                "unread_count": {
+                    "type": "integer",
+                    "example": 0
+                }
+            }
+        },
+        "client.messageDelegatedByResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "女菩萨"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "app"
+                }
+            }
+        },
+        "client.messageReplyToResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "sender": {
+                    "$ref": "#/definitions/client.messageReplyToSenderResponse"
+                },
+                "seq": {
+                    "type": "integer",
+                    "example": 12
+                },
+                "summary": {
+                    "type": "string",
+                    "example": "上一条消息摘要"
+                }
+            }
+        },
+        "client.messageReplyToSenderResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Alice"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "user"
+                }
+            }
+        },
+        "client.messageResponse": {
+            "type": "object",
+            "properties": {
+                "body": {
+                    "type": "object"
+                },
+                "client_message_id": {
+                    "type": "string",
+                    "example": "9c08f2dd-0af6-4e99-b486-2f0c841822be"
+                },
+                "conversation_id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "created_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "delegated_by": {
+                    "$ref": "#/definitions/client.messageDelegatedByResponse"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "reply_to": {
+                    "$ref": "#/definitions/client.messageReplyToResponse"
+                },
+                "reply_to_message_id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "revoked_at": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "revoked_by_user_id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "sender": {
+                    "$ref": "#/definitions/client.messageSenderResponse"
+                },
+                "seq": {
+                    "type": "integer",
+                    "example": 13
+                }
+            }
+        },
+        "client.messageSenderResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "type": {
+                    "type": "string",
+                    "example": "user"
                 }
             }
         },
@@ -6056,6 +7172,17 @@ const docTemplate = `{
                 }
             }
         },
+        "client.revokeConversationMessageResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "$ref": "#/definitions/client.messageResponse"
+                },
+                "system_message": {
+                    "$ref": "#/definitions/client.messageResponse"
+                }
+            }
+        },
         "client.successEnvelope": {
             "type": "object",
             "properties": {
@@ -6077,6 +7204,46 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/client.taskResponse"
+                    }
+                }
+            }
+        },
+        "client.taskReminderResponse": {
+            "type": "object",
+            "properties": {
+                "at": {
+                    "type": "string"
+                },
+                "day_of_month": {
+                    "type": "integer"
+                },
+                "frequency": {
+                    "type": "string"
+                },
+                "last_processed_at": {
+                    "type": "string",
+                    "x-nullable": true
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "next_trigger_at": {
+                    "type": "string",
+                    "x-nullable": true
+                },
+                "state": {
+                    "type": "string"
+                },
+                "time": {
+                    "type": "string"
+                },
+                "timezone": {
+                    "type": "string"
+                },
+                "weekdays": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
                     }
                 }
             }
@@ -6128,6 +7295,14 @@ const docTemplate = `{
                 "project_id": {
                     "type": "string"
                 },
+                "reminder": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/client.taskReminderResponse"
+                        }
+                    ],
+                    "x-nullable": true
+                },
                 "start_date": {
                     "type": "string",
                     "x-nullable": true
@@ -6173,6 +7348,26 @@ const docTemplate = `{
                 "size_bytes": {
                     "type": "integer",
                     "example": 123456
+                }
+            }
+        },
+        "client.updateGroupConversationAvatarResponse": {
+            "type": "object",
+            "properties": {
+                "conversation": {
+                    "$ref": "#/definitions/client.conversationListItemResponse"
+                },
+                "message": {
+                    "$ref": "#/definitions/client.messageResponse"
+                }
+            }
+        },
+        "client.updateGroupConversationNameRequest": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "example": "产品讨论组"
                 }
             }
         },
@@ -6243,6 +7438,10 @@ const docTemplate = `{
                     ],
                     "example": 2
                 },
+                "reminder": {
+                    "type": "object",
+                    "x-nullable": true
+                },
                 "start_date": {
                     "type": "string",
                     "format": "date",
@@ -6262,514 +7461,6 @@ const docTemplate = `{
                 "title": {
                     "type": "string",
                     "example": "完成发布检查"
-                }
-            }
-        },
-        "httpserver.addGroupConversationMembersRequest": {
-            "type": "object",
-            "properties": {
-                "app_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
-                    ]
-                },
-                "member_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
-                    ]
-                }
-            }
-        },
-        "httpserver.addGroupConversationMembersResponse": {
-            "type": "object",
-            "properties": {
-                "conversation": {
-                    "$ref": "#/definitions/httpserver.conversationListItemResponse"
-                },
-                "message": {
-                    "$ref": "#/definitions/httpserver.messageResponse"
-                }
-            }
-        },
-        "httpserver.adminAppEnvelope": {
-            "type": "object",
-            "properties": {
-                "app": {
-                    "$ref": "#/definitions/httpserver.adminAppResponse"
-                }
-            }
-        },
-        "httpserver.adminAppRequest": {
-            "type": "object",
-            "properties": {
-                "description": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "visibility": {
-                    "type": "string"
-                }
-            }
-        },
-        "httpserver.adminAppResponse": {
-            "type": "object",
-            "properties": {
-                "avatar": {
-                    "type": "string"
-                },
-                "connection_secret": {
-                    "type": "string"
-                },
-                "connection_status": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string",
-                    "format": "date-time"
-                },
-                "creator_user_id": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "enabled": {
-                    "type": "boolean"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "system": {
-                    "type": "boolean"
-                },
-                "updated_at": {
-                    "type": "string",
-                    "format": "date-time"
-                },
-                "visibility": {
-                    "type": "string"
-                }
-            }
-        },
-        "httpserver.adminLoginResponse": {
-            "type": "object",
-            "properties": {
-                "admin": {
-                    "$ref": "#/definitions/httpserver.adminResponse"
-                }
-            }
-        },
-        "httpserver.adminResponse": {
-            "type": "object",
-            "properties": {
-                "email": {
-                    "type": "string",
-                    "example": "admin"
-                }
-            }
-        },
-        "httpserver.contactAppResponse": {
-            "type": "object",
-            "properties": {
-                "avatar": {
-                    "type": "string",
-                    "example": "/assets/apps/assistant.webp"
-                },
-                "description": {
-                    "type": "string",
-                    "example": "AI 助手"
-                },
-                "id": {
-                    "type": "string",
-                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
-                },
-                "name": {
-                    "type": "string",
-                    "example": "AI 女菩萨"
-                },
-                "online": {
-                    "type": "boolean",
-                    "example": false
-                },
-                "type": {
-                    "type": "string",
-                    "example": "app"
-                }
-            }
-        },
-        "httpserver.contactGroupAvatarMemberResponse": {
-            "type": "object",
-            "properties": {
-                "avatar": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "nickname": {
-                    "type": "string"
-                },
-                "role": {
-                    "type": "string"
-                }
-            }
-        },
-        "httpserver.contactGroupResponse": {
-            "type": "object",
-            "properties": {
-                "avatar": {
-                    "type": "string",
-                    "example": "/assets/avatars/groups/07.webp"
-                },
-                "avatar_members": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/httpserver.contactGroupAvatarMemberResponse"
-                    }
-                },
-                "id": {
-                    "type": "string",
-                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
-                },
-                "joined": {
-                    "type": "boolean",
-                    "example": false
-                },
-                "member_count": {
-                    "type": "integer",
-                    "example": 8
-                },
-                "name": {
-                    "type": "string",
-                    "example": "IM探索"
-                },
-                "type": {
-                    "type": "string",
-                    "example": "group"
-                },
-                "visibility": {
-                    "type": "string",
-                    "example": "public"
-                }
-            }
-        },
-        "httpserver.contactUserResponse": {
-            "type": "object",
-            "properties": {
-                "avatar": {
-                    "type": "string",
-                    "example": "/assets/avatars/builtin/07.webp"
-                },
-                "email": {
-                    "type": "string",
-                    "example": "user@example.com"
-                },
-                "id": {
-                    "type": "string",
-                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
-                },
-                "last_online_at": {
-                    "type": "string",
-                    "example": "2026-07-03T01:00:00Z"
-                },
-                "name": {
-                    "type": "string",
-                    "example": "张三"
-                },
-                "nickname": {
-                    "type": "string",
-                    "example": "小张"
-                },
-                "online": {
-                    "type": "boolean",
-                    "example": true
-                },
-                "phone": {
-                    "type": "string",
-                    "example": "+8613812345678"
-                },
-                "type": {
-                    "type": "string",
-                    "example": "user"
-                }
-            }
-        },
-        "httpserver.conversationListItemResponse": {
-            "type": "object",
-            "properties": {
-                "avatar": {
-                    "type": "string",
-                    "example": "/assets/avatars/builtin/07.webp"
-                },
-                "created_at": {
-                    "type": "string",
-                    "format": "date-time"
-                },
-                "id": {
-                    "type": "string",
-                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
-                },
-                "last_mentioned_seq": {
-                    "type": "integer",
-                    "example": 0
-                },
-                "last_message_at": {
-                    "type": "string",
-                    "format": "date-time"
-                },
-                "last_message_id": {
-                    "type": "string",
-                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
-                },
-                "last_message_seq": {
-                    "type": "integer",
-                    "example": 12
-                },
-                "last_message_summary": {
-                    "type": "string",
-                    "example": "好的，我看一下"
-                },
-                "last_read_seq": {
-                    "type": "integer",
-                    "example": 9
-                },
-                "member_count": {
-                    "type": "integer",
-                    "example": 2
-                },
-                "members": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/httpserver.conversationMemberResponse"
-                    }
-                },
-                "name": {
-                    "type": "string",
-                    "example": "张三"
-                },
-                "projects": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/httpserver.conversationProjectResponse"
-                    }
-                },
-                "type": {
-                    "type": "string",
-                    "example": "direct"
-                },
-                "unread_count": {
-                    "type": "integer",
-                    "example": 3
-                },
-                "visibility": {
-                    "type": "string",
-                    "example": "private"
-                }
-            }
-        },
-        "httpserver.conversationMemberResponse": {
-            "type": "object",
-            "properties": {
-                "avatar": {
-                    "type": "string",
-                    "example": "/assets/avatars/builtin/07.webp"
-                },
-                "email": {
-                    "type": "string",
-                    "example": "user@example.com"
-                },
-                "id": {
-                    "type": "string",
-                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
-                },
-                "name": {
-                    "type": "string",
-                    "example": "张三"
-                },
-                "nickname": {
-                    "type": "string",
-                    "example": "小张"
-                },
-                "phone": {
-                    "type": "string",
-                    "example": "+8613812345678"
-                },
-                "role": {
-                    "type": "string",
-                    "example": "member"
-                },
-                "type": {
-                    "type": "string",
-                    "example": "user"
-                }
-            }
-        },
-        "httpserver.conversationProjectResponse": {
-            "type": "object",
-            "properties": {
-                "avatar": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                }
-            }
-        },
-        "httpserver.createAppConversationRequest": {
-            "type": "object",
-            "properties": {
-                "app_id": {
-                    "type": "string",
-                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
-                }
-            }
-        },
-        "httpserver.createDirectConversationRequest": {
-            "type": "object",
-            "properties": {
-                "user_id": {
-                    "type": "string",
-                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
-                }
-            }
-        },
-        "httpserver.createDirectConversationResponse": {
-            "type": "object",
-            "properties": {
-                "conversation": {
-                    "$ref": "#/definitions/httpserver.conversationListItemResponse"
-                },
-                "created": {
-                    "type": "boolean",
-                    "example": true
-                }
-            }
-        },
-        "httpserver.createGroupConversationRequest": {
-            "type": "object",
-            "required": [
-                "name"
-            ],
-            "properties": {
-                "app_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
-                    ]
-                },
-                "member_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
-                    ]
-                },
-                "name": {
-                    "type": "string",
-                    "example": "产品讨论组"
-                },
-                "project_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
-                    ]
-                }
-            }
-        },
-        "httpserver.createGroupConversationResponse": {
-            "type": "object",
-            "properties": {
-                "conversation": {
-                    "$ref": "#/definitions/httpserver.groupConversationResponse"
-                }
-            }
-        },
-        "httpserver.createMessageRequest": {
-            "type": "object",
-            "properties": {
-                "body": {
-                    "type": "object"
-                },
-                "client_message_id": {
-                    "type": "string",
-                    "example": "9c08f2dd-0af6-4e99-b486-2f0c841822be"
-                },
-                "reply_to_message_id": {
-                    "type": "string",
-                    "example": "9c08f2dd-0af6-4e99-b486-2f0c841822be"
-                }
-            }
-        },
-        "httpserver.createMessageResponse": {
-            "type": "object",
-            "properties": {
-                "message": {
-                    "$ref": "#/definitions/httpserver.messageResponse"
-                }
-            }
-        },
-        "httpserver.createUserRequest": {
-            "type": "object",
-            "properties": {
-                "email": {
-                    "type": "string",
-                    "example": "user@example.com"
-                },
-                "name": {
-                    "type": "string",
-                    "example": "张三"
-                },
-                "phone": {
-                    "type": "string",
-                    "example": "13812345678"
-                }
-            }
-        },
-        "httpserver.createUserResponse": {
-            "type": "object",
-            "properties": {
-                "initial_password": {
-                    "type": "string",
-                    "example": "aB3dE5gH7jK9mN2p"
-                },
-                "user": {
-                    "$ref": "#/definitions/httpserver.userResponse"
-                }
-            }
-        },
-        "httpserver.dissolveGroupConversationResponse": {
-            "type": "object",
-            "properties": {
-                "conversation_id": {
-                    "type": "string",
-                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
                 }
             }
         },
@@ -6793,654 +7484,6 @@ const docTemplate = `{
                 "success": {
                     "type": "boolean",
                     "example": false
-                }
-            }
-        },
-        "httpserver.forwardMessagesRequest": {
-            "type": "object",
-            "properties": {
-                "client_forward_id": {
-                    "type": "string"
-                },
-                "message_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "mode": {
-                    "type": "string"
-                },
-                "target_conversation_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "httpserver.forwardMessagesResponse": {
-            "type": "object",
-            "properties": {
-                "failed_count": {
-                    "type": "integer"
-                },
-                "results": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/httpserver.forwardMessagesTargetResult"
-                    }
-                },
-                "sent_count": {
-                    "type": "integer"
-                }
-            }
-        },
-        "httpserver.forwardMessagesTargetError": {
-            "type": "object",
-            "properties": {
-                "code": {
-                    "type": "string"
-                },
-                "message": {
-                    "type": "string"
-                }
-            }
-        },
-        "httpserver.forwardMessagesTargetResult": {
-            "type": "object",
-            "properties": {
-                "conversation_id": {
-                    "type": "string"
-                },
-                "error": {
-                    "$ref": "#/definitions/httpserver.forwardMessagesTargetError"
-                },
-                "messages": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/httpserver.messageResponse"
-                    }
-                },
-                "status": {
-                    "type": "string"
-                }
-            }
-        },
-        "httpserver.groupConversationResponse": {
-            "type": "object",
-            "properties": {
-                "avatar": {
-                    "type": "string",
-                    "example": "/assets/avatars/groups/07.webp"
-                },
-                "created_at": {
-                    "type": "string",
-                    "format": "date-time"
-                },
-                "created_by_user_id": {
-                    "type": "string",
-                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
-                },
-                "id": {
-                    "type": "string",
-                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
-                },
-                "last_mentioned_seq": {
-                    "type": "integer",
-                    "example": 0
-                },
-                "last_message_at": {
-                    "type": "string",
-                    "format": "date-time"
-                },
-                "last_message_id": {
-                    "type": "string",
-                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
-                },
-                "last_message_seq": {
-                    "type": "integer",
-                    "example": 12
-                },
-                "last_message_summary": {
-                    "type": "string",
-                    "example": "张三 邀请 李四 加入群聊"
-                },
-                "last_read_seq": {
-                    "type": "integer",
-                    "example": 12
-                },
-                "member_count": {
-                    "type": "integer",
-                    "example": 3
-                },
-                "members": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/httpserver.conversationMemberResponse"
-                    }
-                },
-                "name": {
-                    "type": "string",
-                    "example": "产品讨论组"
-                },
-                "posting_policy": {
-                    "type": "string",
-                    "example": "open"
-                },
-                "status": {
-                    "type": "string",
-                    "example": "active"
-                },
-                "type": {
-                    "type": "string",
-                    "example": "group"
-                },
-                "unread_count": {
-                    "type": "integer",
-                    "example": 0
-                },
-                "visibility": {
-                    "type": "string",
-                    "example": "private"
-                }
-            }
-        },
-        "httpserver.leaveGroupConversationResponse": {
-            "type": "object",
-            "properties": {
-                "conversation_id": {
-                    "type": "string",
-                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
-                },
-                "message": {
-                    "$ref": "#/definitions/httpserver.messageResponse"
-                }
-            }
-        },
-        "httpserver.listAdminAppsResponse": {
-            "type": "object",
-            "properties": {
-                "apps": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/httpserver.adminAppResponse"
-                    }
-                }
-            }
-        },
-        "httpserver.listClientContactsResponse": {
-            "type": "object",
-            "properties": {
-                "apps": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/httpserver.contactAppResponse"
-                    }
-                },
-                "groups": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/httpserver.contactGroupResponse"
-                    }
-                },
-                "users": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/httpserver.contactUserResponse"
-                    }
-                }
-            }
-        },
-        "httpserver.listClientConversationsResponse": {
-            "type": "object",
-            "properties": {
-                "conversations": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/httpserver.conversationListItemResponse"
-                    }
-                }
-            }
-        },
-        "httpserver.listContactUsersResponse": {
-            "type": "object",
-            "properties": {
-                "contacts": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/httpserver.contactUserResponse"
-                    }
-                }
-            }
-        },
-        "httpserver.listConversationMessagesResponse": {
-            "type": "object",
-            "properties": {
-                "messages": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/httpserver.messageResponse"
-                    }
-                },
-                "page": {
-                    "$ref": "#/definitions/httpserver.listMessagesPageResponse"
-                }
-            }
-        },
-        "httpserver.listMessagesPageResponse": {
-            "type": "object",
-            "properties": {
-                "has_more_after": {
-                    "type": "boolean",
-                    "example": false
-                },
-                "has_more_before": {
-                    "type": "boolean",
-                    "example": true
-                },
-                "limit": {
-                    "type": "integer",
-                    "example": 20
-                },
-                "newest_seq": {
-                    "type": "integer",
-                    "example": 120
-                },
-                "oldest_seq": {
-                    "type": "integer",
-                    "example": 101
-                }
-            }
-        },
-        "httpserver.listThirdPartyProvidersResponse": {
-            "type": "object",
-            "properties": {
-                "providers": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/httpserver.thirdPartyProviderResponse"
-                    }
-                }
-            }
-        },
-        "httpserver.listUsersResponse": {
-            "type": "object",
-            "properties": {
-                "order": {
-                    "type": "string",
-                    "example": "desc"
-                },
-                "page": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "page_size": {
-                    "type": "integer",
-                    "example": 20
-                },
-                "sort": {
-                    "type": "string",
-                    "example": "created_at"
-                },
-                "total": {
-                    "type": "integer",
-                    "example": 12
-                },
-                "users": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/httpserver.userResponse"
-                    }
-                }
-            }
-        },
-        "httpserver.loginRequest": {
-            "type": "object",
-            "properties": {
-                "email": {
-                    "type": "string",
-                    "example": "user@example.com"
-                },
-                "password": {
-                    "type": "string",
-                    "example": "password"
-                }
-            }
-        },
-        "httpserver.markConversationReadRequest": {
-            "type": "object",
-            "properties": {
-                "up_to_seq": {
-                    "type": "integer",
-                    "example": 123
-                }
-            }
-        },
-        "httpserver.markConversationReadResponse": {
-            "type": "object",
-            "properties": {
-                "conversation_id": {
-                    "type": "string",
-                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
-                },
-                "last_read_seq": {
-                    "type": "integer",
-                    "example": 123
-                },
-                "unread_count": {
-                    "type": "integer",
-                    "example": 0
-                }
-            }
-        },
-        "httpserver.messageDelegatedByResponse": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "type": "string",
-                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
-                },
-                "name": {
-                    "type": "string",
-                    "example": "女菩萨"
-                },
-                "type": {
-                    "type": "string",
-                    "example": "app"
-                }
-            }
-        },
-        "httpserver.messageReplyToResponse": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "type": "string",
-                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
-                },
-                "sender": {
-                    "$ref": "#/definitions/httpserver.messageReplyToSenderResponse"
-                },
-                "seq": {
-                    "type": "integer",
-                    "example": 12
-                },
-                "summary": {
-                    "type": "string",
-                    "example": "上一条消息摘要"
-                }
-            }
-        },
-        "httpserver.messageReplyToSenderResponse": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "type": "string",
-                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
-                },
-                "name": {
-                    "type": "string",
-                    "example": "Alice"
-                },
-                "type": {
-                    "type": "string",
-                    "example": "user"
-                }
-            }
-        },
-        "httpserver.messageResponse": {
-            "type": "object",
-            "properties": {
-                "body": {
-                    "type": "object"
-                },
-                "client_message_id": {
-                    "type": "string",
-                    "example": "9c08f2dd-0af6-4e99-b486-2f0c841822be"
-                },
-                "conversation_id": {
-                    "type": "string",
-                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
-                },
-                "created_at": {
-                    "type": "string",
-                    "format": "date-time"
-                },
-                "delegated_by": {
-                    "$ref": "#/definitions/httpserver.messageDelegatedByResponse"
-                },
-                "id": {
-                    "type": "string",
-                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
-                },
-                "reply_to": {
-                    "$ref": "#/definitions/httpserver.messageReplyToResponse"
-                },
-                "reply_to_message_id": {
-                    "type": "string",
-                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
-                },
-                "revoked_at": {
-                    "type": "string",
-                    "format": "date-time"
-                },
-                "revoked_by_user_id": {
-                    "type": "string",
-                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
-                },
-                "sender": {
-                    "$ref": "#/definitions/httpserver.messageSenderResponse"
-                },
-                "seq": {
-                    "type": "integer",
-                    "example": 13
-                }
-            }
-        },
-        "httpserver.messageSenderResponse": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "type": "string",
-                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
-                },
-                "type": {
-                    "type": "string",
-                    "example": "user"
-                }
-            }
-        },
-        "httpserver.projectGroupMutationResponse": {
-            "type": "object"
-        },
-        "httpserver.resetUserPasswordResponse": {
-            "type": "object",
-            "properties": {
-                "new_password": {
-                    "type": "string",
-                    "example": "aB3dE5gH7jK9mN2p"
-                },
-                "user": {
-                    "$ref": "#/definitions/httpserver.userResponse"
-                }
-            }
-        },
-        "httpserver.revokeConversationMessageResponse": {
-            "type": "object",
-            "properties": {
-                "message": {
-                    "$ref": "#/definitions/httpserver.messageResponse"
-                },
-                "system_message": {
-                    "$ref": "#/definitions/httpserver.messageResponse"
-                }
-            }
-        },
-        "httpserver.successEnvelope": {
-            "type": "object",
-            "properties": {
-                "data": {},
-                "success": {
-                    "type": "boolean",
-                    "example": true
-                }
-            }
-        },
-        "httpserver.thirdPartyProviderEnvelope": {
-            "type": "object",
-            "properties": {
-                "provider": {
-                    "$ref": "#/definitions/httpserver.thirdPartyProviderResponse"
-                }
-            }
-        },
-        "httpserver.thirdPartyProviderMoveRequest": {
-            "type": "object",
-            "properties": {
-                "direction": {
-                    "type": "string"
-                }
-            }
-        },
-        "httpserver.thirdPartyProviderRequest": {
-            "type": "object",
-            "properties": {
-                "client_id": {
-                    "type": "string"
-                },
-                "client_secret": {
-                    "type": "string"
-                },
-                "config": {
-                    "type": "object",
-                    "additionalProperties": {}
-                },
-                "name": {
-                    "type": "string"
-                },
-                "scopes": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "type": {
-                    "type": "string"
-                }
-            }
-        },
-        "httpserver.thirdPartyProviderResponse": {
-            "type": "object",
-            "properties": {
-                "callback_url": {
-                    "type": "string"
-                },
-                "client_id": {
-                    "type": "string"
-                },
-                "client_secret": {
-                    "type": "string"
-                },
-                "config": {
-                    "type": "object",
-                    "additionalProperties": {}
-                },
-                "enabled": {
-                    "type": "boolean"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "key": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "scopes": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "sort_order": {
-                    "type": "integer"
-                },
-                "type": {
-                    "type": "string"
-                }
-            }
-        },
-        "httpserver.updateGroupConversationAvatarResponse": {
-            "type": "object",
-            "properties": {
-                "conversation": {
-                    "$ref": "#/definitions/httpserver.conversationListItemResponse"
-                },
-                "message": {
-                    "$ref": "#/definitions/httpserver.messageResponse"
-                }
-            }
-        },
-        "httpserver.updateGroupConversationNameRequest": {
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "example": "产品讨论组"
-                }
-            }
-        },
-        "httpserver.updateUserStatusResponse": {
-            "type": "object",
-            "properties": {
-                "user": {
-                    "$ref": "#/definitions/httpserver.userResponse"
-                }
-            }
-        },
-        "httpserver.userResponse": {
-            "type": "object",
-            "properties": {
-                "avatar": {
-                    "type": "string",
-                    "example": "/assets/avatars/builtin/07.webp"
-                },
-                "created_at": {
-                    "type": "string",
-                    "format": "date-time"
-                },
-                "email": {
-                    "type": "string",
-                    "example": "user@example.com"
-                },
-                "id": {
-                    "type": "string",
-                    "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
-                },
-                "last_online_at": {
-                    "type": "string",
-                    "example": "2026-07-03T01:00:00Z"
-                },
-                "name": {
-                    "type": "string",
-                    "example": "张三"
-                },
-                "nickname": {
-                    "type": "string",
-                    "example": "小张"
-                },
-                "online": {
-                    "type": "boolean",
-                    "example": true
-                },
-                "phone": {
-                    "type": "string",
-                    "example": "+8613812345678"
-                },
-                "status": {
-                    "type": "string",
-                    "example": "active"
                 }
             }
         }

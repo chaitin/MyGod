@@ -5,6 +5,7 @@ import { Navigate, useLocation, useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
+import { useProductInfo } from "@/components/product-info-provider"
 import { Card, CardContent, CardFooter } from "@/components/ui/card"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -30,6 +31,7 @@ type LoginLocationState = {
 }
 
 export default function LoginPage({ authenticated, onLogin }: LoginPageProps) {
+  const { appName } = useProductInfo()
   const accountId = useId()
   const passwordId = useId()
   const location = useLocation()
@@ -74,7 +76,7 @@ export default function LoginPage({ authenticated, onLogin }: LoginPageProps) {
     <main className="flex min-h-svh items-center justify-center bg-background p-6">
       <div className="flex w-full max-w-sm flex-col gap-6">
         <h1 className="text-left text-2xl font-medium">
-          MyGod 管理控制面板
+          {appName}管理控制面板
         </h1>
         <form onSubmit={handleSubmit}>
           <Card>

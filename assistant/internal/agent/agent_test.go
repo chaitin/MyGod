@@ -54,7 +54,7 @@ func TestAgentBuildsSystemPromptAndUserContext(t *testing.T) {
 	reply, err := agent.Reply(context.Background(), Request{
 		Conversation: Conversation{
 			ID:   "conversation-1",
-			Name: "AI 女菩萨",
+			Name: "茉莉",
 			Type: "app",
 		},
 		Sender: Sender{
@@ -77,7 +77,7 @@ func TestAgentBuildsSystemPromptAndUserContext(t *testing.T) {
 			{
 				Seq:        2,
 				SenderType: "app",
-				SenderName: "女菩萨",
+				SenderName: "茉莉",
 				Summary:    "回复预计今天下午完成",
 			},
 		},
@@ -99,23 +99,23 @@ func TestAgentBuildsSystemPromptAndUserContext(t *testing.T) {
 	if gotRequest.System != DefaultSystemPrompt {
 		t.Fatalf("system prompt = %q, want default system prompt", gotRequest.System)
 	}
-	if !strings.Contains(gotRequest.System, "女菩萨") {
-		t.Fatalf("system prompt = %q, want to contain assistant name 女菩萨", gotRequest.System)
+	if !strings.Contains(gotRequest.System, "茉莉") {
+		t.Fatalf("system prompt = %q, want to contain assistant name 茉莉", gotRequest.System)
 	}
 	if !strings.Contains(gotRequest.System, "长亭科技打造") {
 		t.Fatalf("system prompt = %q, want to contain creator 长亭科技", gotRequest.System)
 	}
 	if !strings.Contains(gotRequest.System, "面向企业团队的 AI 原生工作入口") {
-		t.Fatalf("system prompt = %q, want MyGod product description", gotRequest.System)
+		t.Fatalf("system prompt = %q, want 即应 product description", gotRequest.System)
 	}
 	if !strings.Contains(gotRequest.System, "不是简单的聊天工具") {
-		t.Fatalf("system prompt = %q, want MyGod positioning", gotRequest.System)
+		t.Fatalf("system prompt = %q, want 即应 positioning", gotRequest.System)
 	}
 	if !strings.Contains(gotRequest.System, "助理优先") {
-		t.Fatalf("system prompt = %q, want MyGod assistant-first principle", gotRequest.System)
+		t.Fatalf("system prompt = %q, want 即应 assistant-first principle", gotRequest.System)
 	}
 	if !strings.Contains(gotRequest.System, "权限") {
-		t.Fatalf("system prompt = %q, want MyGod permission boundary", gotRequest.System)
+		t.Fatalf("system prompt = %q, want 即应 permission boundary", gotRequest.System)
 	}
 	if !strings.Contains(gotRequest.System, "主要任务是回答用户最后发送的问题") {
 		t.Fatalf("system prompt = %q, want final-question instruction", gotRequest.System)
@@ -186,8 +186,8 @@ func TestAgentBuildsSystemPromptAndUserContext(t *testing.T) {
 	if contextPayload.Conversation.ID != "conversation-1" {
 		t.Fatalf("context conversation id = %q, want conversation-1", contextPayload.Conversation.ID)
 	}
-	if contextPayload.Conversation.Name != "AI 女菩萨" {
-		t.Fatalf("context conversation name = %q, want AI 女菩萨", contextPayload.Conversation.Name)
+	if contextPayload.Conversation.Name != "茉莉" {
+		t.Fatalf("context conversation name = %q, want 茉莉", contextPayload.Conversation.Name)
 	}
 	if contextPayload.CurrentSender.Name != "Alice" {
 		t.Fatalf("context current sender name = %q, want Alice", contextPayload.CurrentSender.Name)
@@ -210,8 +210,8 @@ func TestAgentBuildsSystemPromptAndUserContext(t *testing.T) {
 	if contextPayload.Messages[0].Body.URL != "" {
 		t.Fatalf("first history body URL = %q, want omitted", contextPayload.Messages[0].Body.URL)
 	}
-	if contextPayload.Messages[1].SenderName != "女菩萨" {
-		t.Fatalf("second sender = %q, want 女菩萨", contextPayload.Messages[1].SenderName)
+	if contextPayload.Messages[1].SenderName != "茉莉" {
+		t.Fatalf("second sender = %q, want 茉莉", contextPayload.Messages[1].SenderName)
 	}
 	if contextPayload.ProjectContext.PersonalProject.ID != "project-personal" || contextPayload.ProjectContext.PersonalProject.Name != "个人工作区" {
 		t.Fatalf("personal project context = %#v", contextPayload.ProjectContext.PersonalProject)
@@ -547,7 +547,7 @@ func TestAgentRunCallsToolAndFeedsResultIntoNextTurn(t *testing.T) {
 	var outputs []string
 	err := agent.Run(context.Background(), Request{
 		Conversation: Conversation{ID: "conversation-1"},
-		Content:      "查一下 MyGod",
+		Content:      "查一下 MagicChat",
 	}, sinkFunc(func(ctx context.Context, content string) error {
 		outputs = append(outputs, content)
 		return nil
@@ -672,7 +672,7 @@ func TestAgentSessionCompactsConsumedToolResults(t *testing.T) {
 		}
 	}), WithToolRegistry(registry), WithMaxTurns(3))
 
-	session, err := agent.NewSession(Request{Content: "查一下 MyGod"})
+	session, err := agent.NewSession(Request{Content: "查一下 MagicChat"})
 	if err != nil {
 		t.Fatalf("NewSession() error = %v", err)
 	}

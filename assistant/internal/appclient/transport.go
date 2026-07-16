@@ -143,7 +143,7 @@ func (m *webSocketManager) Send(ctx context.Context, message envelope) (<-chan s
 
 func (m *webSocketManager) headers() http.Header {
 	header := http.Header{}
-	header.Set("X-MyGod-App-ID", m.cfg.AppID)
+	header.Set("X-MagicChat-App-ID", m.cfg.AppID)
 	header.Set("Authorization", "Bearer "+m.cfg.AppSecret)
 	return header
 }

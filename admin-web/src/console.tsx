@@ -1,6 +1,7 @@
 import { Link, Outlet, useLocation } from "react-router-dom"
 
 import { AppSidebar } from "@/components/app-sidebar"
+import { useProductInfo } from "@/components/product-info-provider"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { defaultConsolePage, getConsolePage } from "@/lib/console-pages"
 import {
@@ -21,10 +22,11 @@ import {
 export default function Console() {
   const location = useLocation()
   const { page: currentPage } = getConsolePage(location.pathname)
+  const { appName } = useProductInfo()
 
   return (
     <SidebarProvider>
-      <AppSidebar />
+      <AppSidebar appName={appName} />
       <SidebarInset>
         <header className="flex h-16 shrink-0 items-center gap-2">
           <div className="flex w-full items-center gap-2 px-4">
@@ -46,7 +48,7 @@ export default function Console() {
                 <BreadcrumbSeparator className="hidden md:block" />
                 <BreadcrumbItem className="hidden md:block">
                   <BreadcrumbLink render={<Link to={defaultConsolePage} />}>
-                    MyGod
+                    {appName}
                   </BreadcrumbLink>
                 </BreadcrumbItem>
                 <BreadcrumbSeparator className="hidden md:block" />

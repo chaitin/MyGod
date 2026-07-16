@@ -59,6 +59,8 @@ describe("ProjectTaskDetailsDialog card message", () => {
     mocks.sendConversationCard.mockResolvedValue({
       id: "message-1",
     })
+    mocks.updateClientProjectTask.mockReset()
+    mocks.updateClientProjectTask.mockResolvedValue(task)
   })
 
   it("sends the task card and keeps the task details open", async () => {
@@ -156,6 +158,43 @@ describe("ProjectTaskDetailsDialog card message", () => {
     expect(screen.getByRole("dialog", { name: "任务详情" })).toBeInTheDocument()
     expect(onOpenChange).not.toHaveBeenCalled()
   })
+
+  it("configures a recurring reminder in the task form", async () => {
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <ProjectTaskDetailsDialog
+          onOpenChange={vi.fn()}
+          open
+          task={createTask()}
+        />
+      </MemoryRouter>
+    )
+
+    const reminderButton = await screen.findByRole("button", {
+      name: "提醒时间",
+    })
+    expect(reminderButton).toHaveTextContent("不提醒")
+    await user.click(reminderButton)
+    await user.click(screen.getByRole("button", { name: "重复" }))
+    expect(mocks.updateClientProjectTask).not.toHaveBeenCalled()
+    await user.click(screen.getByRole("button", { name: "确定" }))
+    await user.click(screen.getByRole("button", { name: "保存" }))
+
+    await waitFor(() => {
+      expect(mocks.updateClientProjectTask).toHaveBeenCalledWith(
+        "project-1",
+        "task-1",
+        {
+          reminder: expect.objectContaining({
+            frequency: "daily",
+            mode: "recurring",
+            timezone: "Asia/Shanghai",
+          }),
+        }
+      )
+    })
+  })
 })
 
 function createTask(): ProjectTask {
@@ -175,6 +214,7 @@ function createTask(): ProjectTask {
     id: "task-1",
     labels: [],
     priority: 2,
+    reminder: null,
     projectId: "project-1",
     startDate: "2026-07-14",
     status: "todo",

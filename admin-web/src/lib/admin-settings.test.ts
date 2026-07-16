@@ -21,7 +21,7 @@ describe("admin settings", () => {
         JSON.stringify({
           success: true,
           data: {
-            app_name: "MyGod",
+            app_name: "即应",
             organization_name: "长亭科技",
           },
         }),
@@ -37,7 +37,7 @@ describe("admin settings", () => {
     const settings = await getInfoSettings(fetcher)
 
     expect(settings).toEqual({
-      appName: "MyGod",
+      appName: "即应",
       organizationName: "长亭科技",
     })
     expect(fetcher).toHaveBeenCalledWith("/api/admin/settings/info", {

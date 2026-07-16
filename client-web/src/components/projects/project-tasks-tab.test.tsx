@@ -146,6 +146,7 @@ function createProjectTask(): ProjectTask {
     id: "task-1",
     labels: [],
     priority: 2,
+    reminder: null,
     projectId: "project-1",
     startDate: "2026-07-14",
     status: "todo",

@@ -74,7 +74,7 @@ describe("client data API", () => {
                 avatar: "/assets/apps/assistant.webp",
                 description: "专属 AI 助理",
                 id: "app-1",
-                name: "AI 女菩萨",
+                name: "茉莉",
                 online: false,
                 type: "app",
               },
@@ -128,7 +128,7 @@ describe("client data API", () => {
           avatar: "/assets/apps/assistant.webp",
           description: "专属 AI 助理",
           id: "app-1",
-          name: "AI 女菩萨",
+          name: "茉莉",
           online: false,
           type: "app",
         },
@@ -361,7 +361,7 @@ describe("client data API", () => {
                 {
                   avatar: "/assets/apps/assistant.webp",
                   id: "app-1",
-                  name: "AI 女菩萨",
+                  name: "茉莉",
                   role: "member",
                   type: "app",
                 },
@@ -431,7 +431,7 @@ describe("client data API", () => {
                 delegated_by: {
                   type: "app",
                   id: "app-assistant",
-                  name: "女菩萨",
+                  name: "茉莉",
                 },
                 body: {
                   type: "text",
@@ -481,7 +481,7 @@ describe("client data API", () => {
           delegatedBy: {
             type: "app",
             id: "app-assistant",
-            name: "女菩萨",
+            name: "茉莉",
           },
           body: {
             type: "text",
