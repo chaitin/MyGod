@@ -79,22 +79,30 @@ services:
       retries: 10
       start_period: 10s
 
-  nginx:
-    container_name: mygod-nginx
-    image: ${IMAGE_REGISTRY:-ghcr.1ms.run/chaitin/magicchat}/nginx:${IMAGE_TAG:-latest}
+  caddy:
+    container_name: magic-chat-caddy
+    image: ${IMAGE_REGISTRY:-ghcr.1ms.run/chaitin/magicchat}/caddy:${IMAGE_TAG:-latest}
     restart: unless-stopped
     depends_on:
       server:
         condition: service_healthy
+    environment:
+      PUBLIC_HOSTNAME: ${PUBLIC_HOSTNAME:-localhost}
+      CLIENT_HTTPS_PORT: ${CLIENT_HTTPS_PORT:-443}
     ports:
       - "80:80"
       - "${CLIENT_HTTPS_PORT:-443}:443"
       - "${ADMIN_HTTPS_PORT:-1443}:1443"
     volumes:
-      - ./data/nginx/certs:/etc/nginx/certs:ro
-      - ./data/nginx/log:/var/log/nginx
+      - ./data/caddy/data:/data
+      - ./data/caddy/config:/config
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-check-certificate -qO- https://127.0.0.1:443/nginx-healthz >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "wget --no-check-certificate --header=\"Host: $${PUBLIC_HOSTNAME}\" -qO- https://127.0.0.1:443/gateway-healthz >/dev/null || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10

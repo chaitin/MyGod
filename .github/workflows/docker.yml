@@ -86,8 +86,8 @@ jobs:
             dockerfile: server/Dockerfile
           - image: assistant
             dockerfile: assistant/Dockerfile
-          - image: nginx
-            dockerfile: deploy/nginx/Dockerfile
+          - image: caddy
+            dockerfile: deploy/caddy/Dockerfile
     steps:
       - name: Checkout
         uses: actions/checkout@v7

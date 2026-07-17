@@ -1,0 +1,72 @@
+{
+	auto_https disable_redirects
+	fallback_sni bootstrap.invalid
+
+	servers {
+		protocols h1 h2
+	}
+}
+
+http://{$PUBLIC_HOSTNAME:localhost} {
+	redir https://{$PUBLIC_HOSTNAME:localhost}:{$CLIENT_HTTPS_PORT:443}{uri} 301
+}
+
+https://{$PUBLIC_HOSTNAME:localhost} {
+	encode zstd gzip
+
+	log {
+		output stdout
+	}
+
+	route {
+		handle /gateway-healthz {
+			respond "ok" 200
+		}
+
+		@client_api path /api/client/* /api/app/*
+		handle @client_api {
+			request_body {
+				max_size 201MiB
+			}
+			reverse_proxy server:20080
+		}
+
+		handle {
+			root * /srv/client
+			try_files {path} /index.html
+			file_server
+		}
+	}
+}
+
+https://{$PUBLIC_HOSTNAME:localhost}:1443 {
+	encode zstd gzip
+
+	log {
+		output stdout
+	}
+
+	route {
+		handle /gateway-healthz {
+			respond "ok" 200
+		}
+
+		handle /api/* {
+			request_body {
+				max_size 201MiB
+			}
+			reverse_proxy server:20080
+		}
+
+		handle {
+			root * /srv/admin
+			try_files {path} /index.html
+			file_server
+		}
+	}
+}
+
+https://bootstrap.invalid {
+	tls /etc/caddy/bootstrap/tls.crt /etc/caddy/bootstrap/tls.key
+	respond 421
+}
