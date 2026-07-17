@@ -2,6 +2,7 @@ import * as React from "react"
 import { Bot, MessagesSquare } from "lucide-react"
 import { toast } from "sonner"
 import { getAvatarInitial } from "@/lib/avatar"
+import { copyTemporaryImageToClipboard } from "@/lib/image-clipboard"
 import { cn } from "@/lib/utils"
 import {
   formatClientMessageBodySummary,
@@ -239,7 +240,7 @@ export const MessageBubble = React.memo(function MessageBubble({
           ) : (
             <MessageActionMenu
               canRevoke={message.canRevoke}
-              copyDisabled={!copyText}
+              copyDisabled={message.body.type !== "image" && !copyText}
               onCopy={handleCopyMessage}
               onForward={onForward ? () => onForward(message) : undefined}
               onMultiSelect={
@@ -383,6 +384,16 @@ async function copyMessageToClipboard(
   messageElement: HTMLElement | null,
   mentionLabelResolver: MentionLabelResolver
 ) {
+  if (message.body.type === "image") {
+    try {
+      await copyTemporaryImageToClipboard(message.body.fileId)
+      toast.success("图片已复制")
+    } catch {
+      toast.error("图片复制失败")
+    }
+    return
+  }
+
   const text =
     (selectedText.trim()
       ? selectedText

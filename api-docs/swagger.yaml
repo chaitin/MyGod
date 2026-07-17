@@ -3709,7 +3709,8 @@ paths:
     post:
       consumes:
       - multipart/form-data
-      description: 普通用户上传 WebP 图片并发送为会话图片消息。图片写入 temporary bucket，消息 body 只保存 file_id。
+      description: 普通用户上传 WebP 或 PNG 图片并发送为会话图片消息。PNG 会在服务端转换为 WebP，图片写入 temporary
+        bucket，消息 body 只保存 file_id。
       parameters:
       - description: 会话 ID
         in: path
@@ -3721,7 +3722,7 @@ paths:
         name: client_message_id
         required: true
         type: string
-      - description: WebP 图片
+      - description: WebP 或 PNG 图片
         in: formData
         name: image
         required: true

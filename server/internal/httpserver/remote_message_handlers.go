@@ -5,12 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"image"
-	_ "image/gif"
-	_ "image/jpeg"
-	_ "image/png"
 	"io"
-	"math"
 	"mime"
 	"net"
 	"net/http"
@@ -20,10 +15,7 @@ import (
 	"time"
 
 	fileapp "app/internal/application/file"
-
-	"github.com/HugoSmits86/nativewebp"
-	lossywebp "github.com/chai2010/webp"
-	xdraw "golang.org/x/image/draw"
+	"app/internal/media"
 )
 
 const (
@@ -49,18 +41,24 @@ func (s *Server) createRemoteImageMessageBody(ctx context.Context, rawURL string
 		return nil, err
 	}
 
-	webpContent, err := convertImageMessageContentToWebP(remoteFile.Content)
+	webpContent, width, height, err := media.ConvertImageToWebP(
+		remoteFile.Content,
+		maxImageMessageDimension,
+		remoteImageWebPQuality,
+	)
 	if err != nil {
-		return nil, err
+		switch {
+		case errors.Is(err, media.ErrImageEmpty):
+			return nil, newAppRequestFailure("invalid_request", "图片不能为空")
+		case errors.Is(err, media.ErrImageFormat):
+			return nil, newAppRequestFailure("invalid_request", "图片格式不支持")
+		default:
+			return nil, newAppRequestFailure("invalid_request", "图片转换失败")
+		}
 	}
 	if len(webpContent) > maxImageMessageUploadBytes {
 		return nil, newAppRequestFailure("request_too_large", "图片不能超过 5MiB")
 	}
-	width, height, err := parseWebPDimensions(webpContent)
-	if err != nil {
-		return nil, newAppRequestFailure("invalid_request", "图片转换失败")
-	}
-
 	temporaryFile, err := s.saveRemoteMessageTemporaryFile(ctx, webpContent, imageMessageContentType)
 	if err != nil {
 		return nil, err
@@ -262,46 +260,4 @@ func remoteMessageFilename(contentDisposition string, remoteURL *url.URL) string
 	}
 
 	return "file"
-}
-
-func convertImageMessageContentToWebP(content []byte) ([]byte, error) {
-	if len(content) == 0 {
-		return nil, newAppRequestFailure("invalid_request", "图片不能为空")
-	}
-
-	img, _, err := image.Decode(bytes.NewReader(content))
-	if err != nil {
-		img, err = nativewebp.Decode(bytes.NewReader(content))
-		if err != nil {
-			return nil, newAppRequestFailure("invalid_request", "图片格式不支持")
-		}
-	}
-	img = resizeImageToMaxDimension(img, maxImageMessageDimension)
-
-	var buffer bytes.Buffer
-	if err := lossywebp.Encode(&buffer, img, &lossywebp.Options{Quality: remoteImageWebPQuality}); err != nil {
-		return nil, newAppRequestFailure("invalid_request", "图片转换失败")
-	}
-
-	return buffer.Bytes(), nil
-}
-
-func resizeImageToMaxDimension(img image.Image, maxDimension int) image.Image {
-	bounds := img.Bounds()
-	width := bounds.Dx()
-	height := bounds.Dy()
-	if width <= 0 || height <= 0 || maxDimension <= 0 {
-		return img
-	}
-	if width <= maxDimension && height <= maxDimension {
-		return img
-	}
-
-	scale := float64(maxDimension) / float64(max(width, height))
-	targetWidth := max(1, int(math.Round(float64(width)*scale)))
-	targetHeight := max(1, int(math.Round(float64(height)*scale)))
-	target := image.NewRGBA(image.Rect(0, 0, targetWidth, targetHeight))
-	xdraw.CatmullRom.Scale(target, target.Bounds(), img, bounds, xdraw.Over, nil)
-
-	return target
 }

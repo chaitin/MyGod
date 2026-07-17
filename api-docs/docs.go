@@ -4295,7 +4295,7 @@ const docTemplate = `{
         },
         "/api/client/conversations/{conversation_id}/messages/images": {
             "post": {
-                "description": "普通用户上传 WebP 图片并发送为会话图片消息。图片写入 temporary bucket，消息 body 只保存 file_id。",
+                "description": "普通用户上传 WebP 或 PNG 图片并发送为会话图片消息。PNG 会在服务端转换为 WebP，图片写入 temporary bucket，消息 body 只保存 file_id。",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -4323,7 +4323,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "file",
-                        "description": "WebP 图片",
+                        "description": "WebP 或 PNG 图片",
                         "name": "image",
                         "in": "formData",
                         "required": true

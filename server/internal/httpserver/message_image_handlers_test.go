@@ -240,6 +240,65 @@ func TestClientCanSendConversationImageMessage(t *testing.T) {
 	requireNoRealtimeEvent(t, bobConn)
 }
 
+func TestClientCanSendConversationPNGImageMessage(t *testing.T) {
+	s3Server, uploadedObjects := newFakeS3Server(t)
+	defer s3Server.Close()
+
+	server, db := newTemporaryFileTestRouter(t, s3Server.URL, "assets.example.test")
+	defer server.Close()
+
+	now := time.Date(2026, 7, 17, 9, 0, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "bob@example.com", "Bob", store.UserStatusActive, now)
+	conversation := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID,
+		kind:            store.ConversationKindDirect,
+		memberIDs:       []string{alice.ID, bob.ID},
+		now:             now,
+	})
+
+	pngContent := testPNGImage(t, 640, 480)
+	resp, body := postMultipartImageMessage(
+		t,
+		server,
+		"/api/client/conversations/"+conversation.ID+"/messages/images",
+		"client-png-image-message-1",
+		"photo.png",
+		pngContent,
+		loginAsUser(t, server, alice.Email),
+	)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("send PNG image message status = %d, want 201: %#v", resp.StatusCode, body)
+	}
+
+	messageBody := requireSuccess(t, body)["message"].(map[string]any)["body"].(map[string]any)
+	if messageBody["width"] != float64(640) || messageBody["height"] != float64(480) {
+		t.Fatalf("message.body dimensions = %vx%v, want 640x480", messageBody["width"], messageBody["height"])
+	}
+	fileID := messageBody["file_id"].(string)
+
+	var storedFile store.TemporaryFile
+	if err := db.First(&storedFile, "id = ?", fileID).Error; err != nil {
+		t.Fatalf("find temporary file: %v", err)
+	}
+	uploadedObjects.mu.Lock()
+	uploadedBody := uploadedObjects.objects["/mygod-temporary/"+storedFile.ObjectKey]
+	uploadedObjects.mu.Unlock()
+	if bytes.Equal(uploadedBody, pngContent) {
+		t.Fatal("uploaded image equals source PNG, want converted WebP")
+	}
+	width, height, err := parseWebPDimensions(uploadedBody)
+	if err != nil {
+		t.Fatalf("parse uploaded WebP dimensions: %v", err)
+	}
+	if width != 640 || height != 480 {
+		t.Fatalf("uploaded WebP dimensions = %dx%d, want 640x480", width, height)
+	}
+	if storedFile.SizeBytes != int64(len(uploadedBody)) {
+		t.Fatalf("stored file size = %d, want uploaded size %d", storedFile.SizeBytes, len(uploadedBody))
+	}
+}
+
 func TestClientCanSendConversationImageMessageToAppConversationNotifiesApp(t *testing.T) {
 	s3Server, _ := newFakeS3Server(t)
 	defer s3Server.Close()

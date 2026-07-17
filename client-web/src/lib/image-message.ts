@@ -2,6 +2,7 @@ export const imageMessageMaxBytes = 2 * 1024 * 1024
 
 const imageMessageMaxDimension = 1920
 const imageMessageOutputType = "image/webp"
+const imageMessageFallbackType = "image/png"
 const imageMessageOutputQuality = 0.82
 const acceptedImageMessageTypes = new Set([
   "image/jpeg",
@@ -41,20 +42,16 @@ export async function compressImageForMessage(sourceFile: File) {
 
   context.drawImage(image, 0, 0, outputWidth, outputHeight)
 
-  const blob =
-    (await canvasToBlob(
-      canvas,
-      imageMessageOutputType,
-      imageMessageOutputQuality
-    )) ??
-    dataUrlToBlob(
-      canvas.toDataURL(imageMessageOutputType, imageMessageOutputQuality)
-    )
+  const encodedImage = await encodeMessageImage(canvas)
 
-  return new File([blob], createImageMessageFileName(sourceFile.name), {
-    lastModified: Date.now(),
-    type: blob.type || imageMessageOutputType,
-  })
+  return new File(
+    [encodedImage.blob],
+    createImageMessageFileName(sourceFile.name, encodedImage.extension),
+    {
+      lastModified: Date.now(),
+      type: encodedImage.type,
+    }
+  )
 }
 
 export function isAcceptedImageMessageFile(file: File) {
@@ -89,11 +86,81 @@ function loadImage(file: File) {
 function canvasToBlob(
   canvas: HTMLCanvasElement,
   type: string,
-  quality: number
+  quality?: number
 ) {
   return new Promise<Blob | null>((resolve) => {
     canvas.toBlob(resolve, type, quality)
   })
+}
+
+async function encodeMessageImage(canvas: HTMLCanvasElement) {
+  const webPBlob = await canvasToBlob(
+    canvas,
+    imageMessageOutputType,
+    imageMessageOutputQuality
+  )
+  if (webPBlob && (await isWebPBlob(webPBlob))) {
+    return {
+      blob: webPBlob,
+      extension: "webp",
+      type: imageMessageOutputType,
+    }
+  }
+  if (webPBlob?.type.toLowerCase() === imageMessageFallbackType) {
+    return {
+      blob: webPBlob,
+      extension: "png",
+      type: imageMessageFallbackType,
+    }
+  }
+
+  const webPDataURLBlob = dataUrlToBlob(
+    canvas.toDataURL(imageMessageOutputType, imageMessageOutputQuality)
+  )
+  if (await isWebPBlob(webPDataURLBlob)) {
+    return {
+      blob: webPDataURLBlob,
+      extension: "webp",
+      type: imageMessageOutputType,
+    }
+  }
+  if (webPDataURLBlob.type.toLowerCase() === imageMessageFallbackType) {
+    return {
+      blob: webPDataURLBlob,
+      extension: "png",
+      type: imageMessageFallbackType,
+    }
+  }
+
+  const pngBlob =
+    (await canvasToBlob(canvas, imageMessageFallbackType)) ??
+    dataUrlToBlob(canvas.toDataURL(imageMessageFallbackType))
+  if (pngBlob.type.toLowerCase() !== imageMessageFallbackType) {
+    throw new Error("转换图片失败")
+  }
+
+  return {
+    blob: pngBlob,
+    extension: "png",
+    type: imageMessageFallbackType,
+  }
+}
+
+async function isWebPBlob(blob: Blob) {
+  if (blob.type.toLowerCase() !== imageMessageOutputType || blob.size < 12) {
+    return false
+  }
+
+  const header = new Uint8Array(await blob.slice(0, 12).arrayBuffer())
+  return (
+    bytesEqualASCII(header, 0, "RIFF") && bytesEqualASCII(header, 8, "WEBP")
+  )
+}
+
+function bytesEqualASCII(bytes: Uint8Array, offset: number, value: string) {
+  return Array.from(value).every(
+    (character, index) => bytes[offset + index] === character.charCodeAt(0)
+  )
 }
 
 function dataUrlToBlob(dataUrl: string) {
@@ -109,8 +176,8 @@ function dataUrlToBlob(dataUrl: string) {
   return new Blob([bytes], { type: mimeType })
 }
 
-function createImageMessageFileName(fileName: string) {
+function createImageMessageFileName(fileName: string, extension: string) {
   const baseName = fileName.trim().replace(/\.[^.]+$/, "") || "image"
 
-  return `${baseName}.webp`
+  return `${baseName}.${extension}`
 }

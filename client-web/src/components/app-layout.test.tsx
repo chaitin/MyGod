@@ -127,6 +127,51 @@ describe("AppLayout", () => {
     ).not.toBeInTheDocument()
   })
 
+  it("shows download options for all client platforms", async () => {
+    const user = userEvent.setup()
+
+    render(
+      <MemoryRouter initialEntries={["/chat"]}>
+        <AppLayout />
+      </MemoryRouter>
+    )
+
+    const downloadButton = screen.getByRole("button", { name: "下载客户端" })
+    const themeButton = screen.getByRole("button", { name: "配色：跟随系统" })
+
+    expect(downloadButton).toHaveClass(
+      "hover:bg-transparent",
+      "hover:text-teal-500",
+      "data-[state=open]:bg-transparent",
+      "data-[state=open]:text-teal-500"
+    )
+    expect(themeButton).toHaveClass(
+      "hover:bg-transparent",
+      "hover:text-teal-500",
+      "data-[state=open]:bg-transparent",
+      "data-[state=open]:text-teal-500"
+    )
+
+    await user.click(downloadButton)
+
+    const dialog = await screen.findByRole("dialog", { name: "下载客户端" })
+    expect(within(dialog).getByText("Windows")).toBeInTheDocument()
+    expect(within(dialog).getByText("macOS")).toBeInTheDocument()
+    expect(within(dialog).getByText("Android")).toBeInTheDocument()
+    expect(within(dialog).getByText("iOS")).toBeInTheDocument()
+    expect(
+      within(dialog).getByRole("link", {
+        name: "下载 Android 客户端",
+      })
+    ).toMatchObject({
+      href: "https://chat-public-1450770193.cos.ap-guangzhou.myqcloud.com/releases/magic-chat-2026-07-17-1.apk",
+      target: "_blank",
+    })
+    expect(
+      within(dialog).getAllByRole("button", { name: "敬请期待" })
+    ).toHaveLength(3)
+  })
+
   it("stays on the login page after logout", async () => {
     const user = userEvent.setup()
     mocks.clientLogout.mockResolvedValue(undefined)

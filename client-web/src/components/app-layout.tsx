@@ -16,6 +16,7 @@ import { toast } from "sonner"
 
 import { ProfileSettingsDialog } from "@/components/profile-settings-dialog"
 import type { CroppedAvatar } from "@/components/custom-avatar-picker"
+import { ClientDownloadDialog } from "@/components/client-download-dialog"
 import { useTheme } from "@/components/theme-provider"
 import { UserSettingsDialog } from "@/components/user-settings-dialog"
 import {
@@ -114,7 +115,10 @@ export function AppLayout() {
             />
           ))}
         </nav>
-        <ThemeSwitcher />
+        <div className="flex flex-col items-center gap-2">
+          <ClientDownloadDialog />
+          <ThemeSwitcher />
+        </div>
       </aside>
       <Outlet />
     </div>
@@ -385,7 +389,7 @@ function ThemeSwitcher() {
           type="button"
           variant="ghost"
           size="icon-sm"
-          className="rounded-md"
+          className="rounded-md hover:bg-transparent hover:text-teal-500 aria-expanded:bg-transparent aria-expanded:text-teal-500 data-[state=open]:bg-transparent data-[state=open]:text-teal-500 dark:hover:bg-transparent"
           aria-label={`配色：${currentTheme.label}`}
           title={`配色：${currentTheme.label}`}
         >

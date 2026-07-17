@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image/png"
 	"io"
 	"mime"
 	"net/http"
@@ -23,6 +24,7 @@ const (
 	maxFileMessageNameLength = 255
 
 	imageMessageContentType     = "image/webp"
+	imageMessageWebPQuality     = 82
 	maxImageMessageUploadBytes  = 5 * 1024 * 1024
 	maxImageMessageRequestBytes = maxImageMessageUploadBytes + 1*1024*1024
 	maxImageMessageDimension    = 1920
@@ -143,13 +145,13 @@ func (a *MessageAPI) createFile(c echo.Context) error {
 // createImage godoc
 //
 // @Summary 发送图片消息
-// @Description 普通用户上传 WebP 图片并发送为会话图片消息。图片写入 temporary bucket，消息 body 只保存 file_id。
+// @Description 普通用户上传 WebP 或 PNG 图片并发送为会话图片消息。PNG 会在服务端转换为 WebP，图片写入 temporary bucket，消息 body 只保存 file_id。
 // @Tags 客户端消息
 // @Accept multipart/form-data
 // @Produce json
 // @Param conversation_id path string true "会话 ID"
 // @Param client_message_id formData string true "客户端消息 ID"
-// @Param image formData file true "WebP 图片"
+// @Param image formData file true "WebP 或 PNG 图片"
 // @Success 200 {object} successEnvelope{data=createMessageResponse}
 // @Success 201 {object} successEnvelope{data=createMessageResponse}
 // @Failure 400 {object} errorEnvelope
@@ -199,15 +201,29 @@ func (a *MessageAPI) createImage(c echo.Context) error {
 		}
 		return writeFailure(c, http.StatusBadRequest, string(messageapp.CodeInvalidRequest), "读取图片失败")
 	}
-	width, height, err := media.WebPDimensions(content)
-	if err != nil {
-		return writeFailure(c, http.StatusBadRequest, string(messageapp.CodeInvalidRequest), "图片必须是 WebP 格式")
+	preparedContent := content
+	width, height, webPErr := media.WebPDimensions(content)
+	if webPErr != nil {
+		config, pngErr := png.DecodeConfig(bytes.NewReader(content))
+		if pngErr != nil {
+			return writeFailure(c, http.StatusBadRequest, string(messageapp.CodeInvalidRequest), "图片必须是 WebP 或 PNG 格式")
+		}
+		width, height = config.Width, config.Height
 	}
 	if width > maxImageMessageDimension || height > maxImageMessageDimension {
 		return writeFailure(c, http.StatusBadRequest, string(messageapp.CodeInvalidRequest), "图片最大宽高不能超过 1920px")
 	}
+	if webPErr != nil {
+		preparedContent, width, height, err = media.ConvertImageToWebP(content, maxImageMessageDimension, imageMessageWebPQuality)
+		if err != nil {
+			return writeFailure(c, http.StatusBadRequest, string(messageapp.CodeInvalidRequest), "图片转换失败")
+		}
+		if len(preparedContent) > maxImageMessageUploadBytes {
+			return writeFailure(c, http.StatusRequestEntityTooLarge, string(messageapp.CodeRequestTooLarge), "图片不能超过 5MiB")
+		}
+	}
 	temporary, err := a.files.UploadTemporary(c.Request().Context(), fileapp.UploadTemporaryCommand{
-		Content: bytes.NewReader(content), ContentType: imageMessageContentType, SizeBytes: int64(len(content)),
+		Content: bytes.NewReader(preparedContent), ContentType: imageMessageContentType, SizeBytes: int64(len(preparedContent)),
 	})
 	if err != nil {
 		return writeMessageFileError(c, err)
