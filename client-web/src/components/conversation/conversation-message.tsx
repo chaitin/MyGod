@@ -1,5 +1,5 @@
 import * as React from "react"
-import { MessagesSquare } from "lucide-react"
+import { Bot, MessagesSquare } from "lucide-react"
 import { toast } from "sonner"
 import { getAvatarInitial } from "@/lib/avatar"
 import { cn } from "@/lib/utils"
@@ -104,7 +104,13 @@ export const MessageBubble = React.memo(function MessageBubble({
   selectionMode = false,
 }: MessageBubbleProps) {
   const fromMe = message.role === "me"
-  const fallback = fromMe ? "我" : getAvatarInitial(conversation.name)
+  const fallback = message.senderAppId ? (
+    <Bot className="size-4" />
+  ) : fromMe ? (
+    "我"
+  ) : (
+    getAvatarInitial(conversation.name)
+  )
   const canInsertAuthorMention =
     conversation.type === "group" && message.mentionTarget !== null
   const unavailable =
@@ -487,7 +493,7 @@ function MessageAvatar({
   fallbackClassName,
   message,
 }: {
-  fallback: string
+  fallback: React.ReactNode
   fallbackClassName?: string
   message: ConversationPanelMessage
 }) {

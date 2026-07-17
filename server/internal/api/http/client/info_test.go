@@ -18,6 +18,7 @@ func TestInfoAPIReturnsPublicSettingsAndAuthenticationState(t *testing.T) {
 		Settings:              settingsapp.Settings{AppName: "即应", OrganizationName: "长亭科技"},
 		Providers:             []settingsapp.PublicProvider{{Key: "company-sso", Name: "企业 SSO"}},
 		EmailCodeLoginEnabled: true,
+		PasswordLoginEnabled:  true,
 	}}
 	sessions := &fakeInfoSessions{}
 	api := NewInfoAPI(settings, sessions)
@@ -52,7 +53,8 @@ func assertInfoResponse(t *testing.T, recorder *httptest.ResponseRecorder, authe
 		t.Fatalf("decode response: %v", err)
 	}
 	data := payload["data"].(map[string]any)
-	if data["app_name"] != "即应" || data["authenticated"] != authenticated || data["email_code_login_enabled"] != true {
+	if data["app_name"] != "即应" || data["authenticated"] != authenticated ||
+		data["email_code_login_enabled"] != true || data["password_login_enabled"] != true {
 		t.Fatalf("response = %#v", payload)
 	}
 	providers := data["third_party_providers"].([]any)

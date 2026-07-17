@@ -40,6 +40,8 @@ type EmailCodeRequestResult = {
 type LoginMode = "password" | "email-code"
 
 const rememberedLoginStorageKey = "client-web:remembered-login"
+const rememberedEmailCodeLoginStorageKey =
+  "client-web:remembered-email-code-login"
 
 type RememberedLoginCredentials = LoginCredentials
 
@@ -50,6 +52,7 @@ export function LoginForm({
   onEmailCodeLogin,
   onLogin,
   onRequestEmailCode,
+  passwordLoginEnabled = true,
   submitVariant = "default",
   ...props
 }: React.ComponentProps<"div"> & {
@@ -62,10 +65,12 @@ export function LoginForm({
   onRequestEmailCode?: (
     email: string
   ) => Promise<EmailCodeRequestResult> | EmailCodeRequestResult
+  passwordLoginEnabled?: boolean
   submitVariant?: "default" | "outline"
 }) {
   const [rememberedCredentials] = useState(readRememberedLoginCredentials)
   const [account, setAccount] = useState(rememberedCredentials?.account ?? "")
+  const [email, setEmail] = useState(readRememberedEmailCodeLoginEmail)
   const [emailCode, setEmailCode] = useState("")
   const [emailCodeLoginPending, setEmailCodeLoginPending] = useState(false)
   const [loginMode, setLoginMode] = useState<LoginMode>("email-code")
@@ -82,7 +87,12 @@ export function LoginForm({
   const emailInputRef = useRef<HTMLInputElement>(null)
   const pending =
     passwordLoginPending || emailCodeLoginPending || requestCodePending
-  const activeLoginMode = emailCodeLoginEnabled ? loginMode : "password"
+  const activeLoginMode = emailCodeLoginEnabled
+    ? passwordLoginEnabled
+      ? loginMode
+      : "email-code"
+    : "password"
+  const localLoginEnabled = emailCodeLoginEnabled || passwordLoginEnabled
 
   useEffect(() => {
     if (retryCodeAfter <= 0) {
@@ -125,7 +135,7 @@ export function LoginForm({
       if (!onRequestEmailCode) {
         throw new Error("邮箱验证码登录服务暂未接入")
       }
-      const result = await onRequestEmailCode(account.trim())
+      const result = await onRequestEmailCode(email.trim())
       setRetryCodeAfter(Math.max(1, Math.ceil(result.retryAfterSeconds)))
       toast.success("验证码已发送")
     } catch (requestError) {
@@ -143,7 +153,9 @@ export function LoginForm({
       if (!onEmailCodeLogin) {
         throw new Error("邮箱验证码登录服务暂未接入")
       }
-      await onEmailCodeLogin({ code: emailCode, email: account.trim() })
+      const normalizedEmail = email.trim()
+      await onEmailCodeLogin({ code: emailCode, email: normalizedEmail })
+      updateRememberedEmailCodeLoginEmail(normalizedEmail)
     } catch (loginError) {
       toast.error(getLoginErrorMessage(loginError))
     } finally {
@@ -155,188 +167,204 @@ export function LoginForm({
     <div className={cn("flex flex-col gap-6", className)} {...props}>
       <Card>
         <CardContent className="flex flex-col gap-5">
-          <Tabs
-            onValueChange={(mode) => {
-              if (mode === "password" || mode === "email-code") {
-                setLoginMode(mode)
-              }
-            }}
-            value={activeLoginMode}
-          >
-            <TabsList
-              className={cn(
-                "grid w-full",
-                emailCodeLoginEnabled ? "grid-cols-2" : "grid-cols-1"
-              )}
+          {localLoginEnabled && (
+            <Tabs
+              onValueChange={(mode) => {
+                if (mode === "password" || mode === "email-code") {
+                  setLoginMode(mode)
+                }
+              }}
+              value={activeLoginMode}
             >
+              <TabsList
+                className={cn(
+                  "grid w-full",
+                  emailCodeLoginEnabled && passwordLoginEnabled
+                    ? "grid-cols-2"
+                    : "grid-cols-1"
+                )}
+              >
+                {emailCodeLoginEnabled && (
+                  <TabsTrigger disabled={pending} value="email-code">
+                    验证码登录
+                  </TabsTrigger>
+                )}
+                {passwordLoginEnabled && (
+                  <TabsTrigger disabled={pending} value="password">
+                    密码登录
+                  </TabsTrigger>
+                )}
+              </TabsList>
+
               {emailCodeLoginEnabled && (
-                <TabsTrigger disabled={pending} value="email-code">
-                  验证码登录
-                </TabsTrigger>
-              )}
-              <TabsTrigger disabled={pending} value="password">
-                密码登录
-              </TabsTrigger>
-            </TabsList>
-
-            {emailCodeLoginEnabled && (
-              <TabsContent className="pt-2" value="email-code">
-                <form onSubmit={handleEmailCodeSubmit}>
-                  <FieldGroup className="gap-4">
-                    <Field>
-                      <FieldLabel htmlFor="email-code-email">邮箱</FieldLabel>
-                      <Input
-                        autoComplete="email"
-                        disabled={pending}
-                        id="email-code-email"
-                        name="email"
-                        onChange={(event) => setAccount(event.target.value)}
-                        placeholder="请输入邮箱"
-                        ref={emailInputRef}
-                        required
-                        type="email"
-                        value={account}
-                      />
-                    </Field>
-                    <Field>
-                      <FieldLabel htmlFor="email-code">验证码</FieldLabel>
-                      <InputGroup>
-                        <InputGroupInput
-                          autoComplete="one-time-code"
+                <TabsContent className="pt-2" value="email-code">
+                  <form onSubmit={handleEmailCodeSubmit}>
+                    <FieldGroup className="gap-4">
+                      <Field>
+                        <FieldLabel htmlFor="email-code-email">邮箱</FieldLabel>
+                        <Input
+                          autoComplete="email"
                           disabled={pending}
-                          id="email-code"
-                          inputMode="numeric"
-                          maxLength={8}
-                          name="code"
-                          onChange={(event) =>
-                            setEmailCode(
-                              event.target.value.replace(/\D/g, "").slice(0, 8)
-                            )
-                          }
-                          pattern="[0-9]{8}"
-                          placeholder="请输入 8 位验证码"
+                          id="email-code-email"
+                          name="email"
+                          onChange={(event) => setEmail(event.target.value)}
+                          placeholder="请输入邮箱"
+                          ref={emailInputRef}
                           required
-                          value={emailCode}
+                          type="email"
+                          value={email}
                         />
-                        <InputGroupAddon align="inline-end">
-                          <InputGroupButton
-                            className="min-w-20"
-                            disabled={pending || retryCodeAfter > 0}
-                            onClick={handleRequestEmailCode}
-                          >
-                            {requestCodePending && (
-                              <Loader2Icon
-                                aria-hidden="true"
-                                className="animate-spin"
-                              />
-                            )}
-                            {requestCodePending
-                              ? "发送中"
-                              : retryCodeAfter > 0
-                                ? `${retryCodeAfter} 秒`
-                                : "获取验证码"}
-                          </InputGroupButton>
-                        </InputGroupAddon>
-                      </InputGroup>
-                    </Field>
-                    <Field>
-                      <Button
-                        disabled={pending}
-                        type="submit"
-                        variant={submitVariant}
-                      >
-                        {emailCodeLoginPending && (
-                          <Loader2Icon
-                            aria-hidden="true"
-                            className="animate-spin"
+                      </Field>
+                      <Field>
+                        <FieldLabel htmlFor="email-code">验证码</FieldLabel>
+                        <InputGroup>
+                          <InputGroupInput
+                            autoComplete="one-time-code"
+                            disabled={pending}
+                            id="email-code"
+                            inputMode="numeric"
+                            maxLength={8}
+                            name="code"
+                            onChange={(event) =>
+                              setEmailCode(
+                                event.target.value
+                                  .replace(/\D/g, "")
+                                  .slice(0, 8)
+                              )
+                            }
+                            pattern="[0-9]{8}"
+                            placeholder="请输入 8 位验证码"
+                            required
+                            value={emailCode}
                           />
-                        )}
-                        登录
-                      </Button>
-                    </Field>
-                  </FieldGroup>
-                </form>
-              </TabsContent>
-            )}
-
-            <TabsContent className="pt-2" value="password">
-              <form onSubmit={handlePasswordSubmit}>
-                <FieldGroup className="gap-4">
-                  <Field>
-                    <FieldLabel htmlFor="account">账号</FieldLabel>
-                    <Input
-                      autoComplete="username"
-                      disabled={pending}
-                      id="account"
-                      name="account"
-                      onChange={(event) => {
-                        setAccount(event.target.value)
-                      }}
-                      placeholder="输入账号"
-                      required
-                      type="text"
-                      value={account}
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor="password">密码</FieldLabel>
-                    <InputGroup>
-                      <InputGroupInput
-                        autoComplete="current-password"
-                        disabled={pending}
-                        id="password"
-                        name="password"
-                        onChange={(event) => {
-                          setPassword(event.target.value)
-                        }}
-                        placeholder="请输入密码"
-                        required
-                        type={showPassword ? "text" : "password"}
-                        value={password}
-                      />
-                      <InputGroupAddon align="inline-end">
-                        <InputGroupButton
-                          aria-label={showPassword ? "隐藏密码" : "显示密码"}
-                          aria-pressed={showPassword}
+                          <InputGroupAddon align="inline-end">
+                            <InputGroupButton
+                              className="min-w-20"
+                              disabled={pending || retryCodeAfter > 0}
+                              onClick={handleRequestEmailCode}
+                            >
+                              {requestCodePending && (
+                                <Loader2Icon
+                                  aria-hidden="true"
+                                  className="animate-spin"
+                                />
+                              )}
+                              {requestCodePending
+                                ? "发送中"
+                                : retryCodeAfter > 0
+                                  ? `${retryCodeAfter} 秒`
+                                  : "获取验证码"}
+                            </InputGroupButton>
+                          </InputGroupAddon>
+                        </InputGroup>
+                      </Field>
+                      <Field>
+                        <Button
                           disabled={pending}
-                          onClick={() => setShowPassword((visible) => !visible)}
-                          size="icon-xs"
+                          type="submit"
+                          variant={submitVariant}
                         >
-                          {showPassword ? <EyeOffIcon /> : <EyeIcon />}
-                        </InputGroupButton>
-                      </InputGroupAddon>
-                    </InputGroup>
-                  </Field>
-                  <div className="flex w-fit items-center gap-2 text-sm text-muted-foreground select-none">
-                    <Checkbox
-                      checked={rememberCredentials}
-                      disabled={pending}
-                      id="remember-credentials"
-                      onCheckedChange={(checked) =>
-                        setRememberCredentials(checked === true)
-                      }
-                    />
-                    <Label htmlFor="remember-credentials">记住账号密码</Label>
-                  </div>
-                  <Field>
-                    <Button
-                      disabled={pending}
-                      type="submit"
-                      variant={submitVariant}
-                    >
-                      {passwordLoginPending && (
-                        <Loader2Icon
-                          aria-hidden="true"
-                          className="animate-spin"
+                          {emailCodeLoginPending && (
+                            <Loader2Icon
+                              aria-hidden="true"
+                              className="animate-spin"
+                            />
+                          )}
+                          登录
+                        </Button>
+                      </Field>
+                    </FieldGroup>
+                  </form>
+                </TabsContent>
+              )}
+
+              {passwordLoginEnabled && (
+                <TabsContent className="pt-2" value="password">
+                  <form onSubmit={handlePasswordSubmit}>
+                    <FieldGroup className="gap-4">
+                      <Field>
+                        <FieldLabel htmlFor="account">账号</FieldLabel>
+                        <Input
+                          autoComplete="username"
+                          disabled={pending}
+                          id="account"
+                          name="account"
+                          onChange={(event) => {
+                            setAccount(event.target.value)
+                          }}
+                          placeholder="输入账号"
+                          required
+                          type="text"
+                          value={account}
                         />
-                      )}
-                      登录
-                    </Button>
-                  </Field>
-                </FieldGroup>
-              </form>
-            </TabsContent>
-          </Tabs>
+                      </Field>
+                      <Field>
+                        <FieldLabel htmlFor="password">密码</FieldLabel>
+                        <InputGroup>
+                          <InputGroupInput
+                            autoComplete="current-password"
+                            disabled={pending}
+                            id="password"
+                            name="password"
+                            onChange={(event) => {
+                              setPassword(event.target.value)
+                            }}
+                            placeholder="请输入密码"
+                            required
+                            type={showPassword ? "text" : "password"}
+                            value={password}
+                          />
+                          <InputGroupAddon align="inline-end">
+                            <InputGroupButton
+                              aria-label={
+                                showPassword ? "隐藏密码" : "显示密码"
+                              }
+                              aria-pressed={showPassword}
+                              disabled={pending}
+                              onClick={() =>
+                                setShowPassword((visible) => !visible)
+                              }
+                              size="icon-xs"
+                            >
+                              {showPassword ? <EyeOffIcon /> : <EyeIcon />}
+                            </InputGroupButton>
+                          </InputGroupAddon>
+                        </InputGroup>
+                      </Field>
+                      <div className="flex w-fit items-center gap-2 text-sm text-muted-foreground select-none">
+                        <Checkbox
+                          checked={rememberCredentials}
+                          disabled={pending}
+                          id="remember-credentials"
+                          onCheckedChange={(checked) =>
+                            setRememberCredentials(checked === true)
+                          }
+                        />
+                        <Label htmlFor="remember-credentials">
+                          记住账号密码
+                        </Label>
+                      </div>
+                      <Field>
+                        <Button
+                          disabled={pending}
+                          type="submit"
+                          variant={submitVariant}
+                        >
+                          {passwordLoginPending && (
+                            <Loader2Icon
+                              aria-hidden="true"
+                              className="animate-spin"
+                            />
+                          )}
+                          登录
+                        </Button>
+                      </Field>
+                    </FieldGroup>
+                  </form>
+                </TabsContent>
+              )}
+            </Tabs>
+          )}
           {children}
         </CardContent>
       </Card>
@@ -401,6 +429,22 @@ function updateRememberedLoginCredentials(
       rememberedLoginStorageKey,
       JSON.stringify(credentials)
     )
+  } catch {
+    // Login should not fail just because the browser rejected local storage.
+  }
+}
+
+function readRememberedEmailCodeLoginEmail() {
+  try {
+    return window.localStorage.getItem(rememberedEmailCodeLoginStorageKey) ?? ""
+  } catch {
+    return ""
+  }
+}
+
+function updateRememberedEmailCodeLoginEmail(email: string) {
+  try {
+    window.localStorage.setItem(rememberedEmailCodeLoginStorageKey, email)
   } catch {
     // Login should not fail just because the browser rejected local storage.
   }

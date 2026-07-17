@@ -88,3 +88,7 @@ type VerifiedEmailLoginService interface {
 type ActivityRecorder interface {
 	RecordOnlineActivity(context.Context, string, time.Time) error
 }
+
+type PasswordLoginPolicy interface {
+	PasswordLoginEnabled(context.Context) (bool, error)
+}

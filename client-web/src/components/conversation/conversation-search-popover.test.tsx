@@ -59,6 +59,24 @@ describe("ConversationSearchPopover", () => {
     expect(screen.queryByText(/\{\(@user\//)).not.toBeInTheDocument()
   })
 
+  it("uses the application fallback avatar for app conversations", async () => {
+    const user = userEvent.setup()
+    renderSearch([
+      createConversation({
+        name: "智能助手",
+        type: "app",
+      }),
+    ])
+
+    await user.click(screen.getByRole("combobox", { name: "搜索消息" }))
+
+    expect(
+      screen
+        .getByRole("option", { name: /智能助手/ })
+        .querySelector(".lucide-bot")
+    ).toBeInTheDocument()
+  })
+
   it("searches by pinyin and selects a result with the mouse", async () => {
     const user = userEvent.setup()
     const onSelectConversation = vi.fn()

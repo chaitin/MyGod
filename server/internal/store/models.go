@@ -339,10 +339,11 @@ type AppSettings struct {
 	ID                    int       `gorm:"primaryKey"`
 	AppName               string    `gorm:"size:120;not null"`
 	OrganizationName      string    `gorm:"size:160;not null"`
+	PasswordLoginEnabled  bool      `gorm:"not null;default:true"`
 	EmailCodeLoginEnabled bool      `gorm:"not null;default:false"`
 	SMTPHost              string    `gorm:"size:255;not null;default:''"`
-	SMTPPort              int       `gorm:"not null;default:587"`
-	SMTPSecurity          string    `gorm:"size:16;not null;default:starttls"`
+	SMTPPort              int       `gorm:"not null;default:465"`
+	SMTPSecurity          string    `gorm:"size:16;not null;default:tls"`
 	SMTPUsername          string    `gorm:"size:320;not null;default:''"`
 	SMTPPassword          string    `gorm:"not null;default:''"`
 	SMTPFromEmail         string    `gorm:"size:320;not null;default:''"`

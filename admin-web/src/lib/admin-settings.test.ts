@@ -8,12 +8,14 @@ import {
   enableThirdPartyProvider,
   getEmailLoginSettings,
   getInfoSettings,
+  getPasswordLoginSettings,
   listThirdPartyProviders,
   moveThirdPartyProvider,
   testEmailLoginSettings,
   updateThirdPartyProvider,
   updateInfoSettings,
   updateEmailLoginSettings,
+  updatePasswordLoginSettings,
   type ThirdPartyProviderInput,
 } from "@/lib/admin-settings"
 
@@ -125,6 +127,51 @@ describe("admin settings", () => {
       message: "App 名称不能为空",
       name: "AdminSettingsRequestError",
     } satisfies AdminSettingsRequestError)
+  })
+
+  it("loads and updates password login settings through its own API", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ success: true, data: { enabled: true } }),
+          {
+            headers: { "content-type": "application/json" },
+            status: 200,
+          }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ success: true, data: { enabled: false } }),
+          {
+            headers: { "content-type": "application/json" },
+            status: 200,
+          }
+        )
+      )
+
+    await expect(getPasswordLoginSettings(fetcher)).resolves.toEqual({
+      enabled: true,
+    })
+    await expect(
+      updatePasswordLoginSettings({ enabled: false }, fetcher)
+    ).resolves.toEqual({ enabled: false })
+    expect(fetcher).toHaveBeenNthCalledWith(
+      1,
+      "/api/admin/settings/password-login",
+      { credentials: "include", method: "GET" }
+    )
+    expect(fetcher).toHaveBeenNthCalledWith(
+      2,
+      "/api/admin/settings/password-login",
+      {
+        body: JSON.stringify({ enabled: false }),
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        method: "PUT",
+      }
+    )
   })
 
   it("loads and updates email login settings with the SMTP password", async () => {

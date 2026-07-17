@@ -44,6 +44,9 @@ func TestSettingsAPIRoutesUseApplicationService(t *testing.T) {
 	if data["app_name"] != "星环协作" {
 		t.Fatalf("response = %#v", payload)
 	}
+	if _, exists := data["password_login_enabled"]; exists {
+		t.Fatalf("basic info response contains password login setting: %#v", payload)
+	}
 }
 
 type fakeSettingsService struct {

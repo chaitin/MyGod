@@ -13,6 +13,7 @@ describe("client app info", () => {
             authenticated: true,
             email_code_login_enabled: true,
             organization_name: "长亭科技",
+            password_login_enabled: false,
             third_party_providers: [
               {
                 key: "company-sso",
@@ -43,6 +44,7 @@ describe("client app info", () => {
         },
       ],
       organizationName: "长亭科技",
+      passwordLoginEnabled: false,
       thirdPartyProviders: [
         {
           key: "company-sso",

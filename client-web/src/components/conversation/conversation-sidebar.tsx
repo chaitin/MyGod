@@ -1,4 +1,4 @@
-import { Plus } from "lucide-react"
+import { Bot, Plus } from "lucide-react"
 
 import { ConversationListItemMenu } from "@/components/conversation-list-item-menu"
 import { ConversationSearchPopover } from "@/components/conversation/conversation-search-popover"
@@ -68,9 +68,7 @@ export function ConversationSidebar({
     event.preventDefault()
   }
 
-  function getSearchConversationDescription(
-    conversation: ClientConversation
-  ) {
+  function getSearchConversationDescription(conversation: ClientConversation) {
     return getConversationListDescription(
       conversation,
       createConversationMentionLabelResolver({
@@ -129,13 +127,14 @@ export function ConversationSidebar({
             const lastMessageTime = formatActivityTime(
               conversation.lastMessageAt ?? conversation.createdAt
             )
-            const mentionLabelResolver =
-              createConversationMentionLabelResolver({
+            const mentionLabelResolver = createConversationMentionLabelResolver(
+              {
                 appsById,
                 contactsById,
                 conversation,
                 currentUser,
-              })
+              }
+            )
             const hasUnreadMention =
               conversation.lastMentionedSeq > conversation.lastReadSeq
             const preview = getConversationListPreview({
@@ -265,7 +264,11 @@ function ConversationListAvatar({
             />
           )}
           <AvatarFallback className="rounded-sm">
-            {getConversationInitial(conversation.name)}
+            {conversation.type === "app" ? (
+              <Bot className="size-4" />
+            ) : (
+              getConversationInitial(conversation.name)
+            )}
           </AvatarFallback>
         </Avatar>
       )}

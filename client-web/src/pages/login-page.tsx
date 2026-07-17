@@ -18,6 +18,7 @@ export function LoginPage() {
     authenticated,
     emailCodeLoginEnabled,
     organizationName,
+    passwordLoginEnabled,
     setAuthenticated,
     thirdPartyProviders,
   } = useAppInfo()
@@ -71,6 +72,7 @@ export function LoginPage() {
             onEmailCodeLogin={handleEmailCodeLogin}
             onLogin={handleLogin}
             onRequestEmailCode={handleRequestEmailCode}
+            passwordLoginEnabled={passwordLoginEnabled}
             submitVariant={hasThirdPartyProviders ? "outline" : "default"}
           >
             {hasThirdPartyProviders && (

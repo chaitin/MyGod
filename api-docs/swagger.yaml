@@ -174,6 +174,12 @@ definitions:
         example: password
         type: string
     type: object
+  admin.passwordLoginSettingsResponse:
+    properties:
+      enabled:
+        example: true
+        type: boolean
+    type: object
   admin.publicThirdPartyProviderResponse:
     properties:
       key:
@@ -287,6 +293,11 @@ definitions:
       organization_name:
         example: 长亭科技
         type: string
+    type: object
+  admin.updatePasswordLoginSettingsRequest:
+    properties:
+      enabled:
+        type: boolean
     type: object
   admin.updateUserStatusResponse:
     properties:
@@ -914,6 +925,9 @@ definitions:
       organization_name:
         example: 长亭科技
         type: string
+      password_login_enabled:
+        example: true
+        type: boolean
       third_party_providers:
         items:
           $ref: '#/definitions/client.publicThirdPartyProviderResponse'
@@ -2023,6 +2037,70 @@ paths:
           schema:
             $ref: '#/definitions/admin.errorEnvelope'
       summary: 更新系统基础信息设置
+      tags:
+      - 管理员设置
+  /api/admin/settings/password-login:
+    get:
+      description: 管理员读取普通用户是否可以使用邮箱和密码登录。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/admin.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/admin.passwordLoginSettingsResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/admin.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/admin.errorEnvelope'
+      summary: 获取密码登录设置
+      tags:
+      - 管理员设置
+    put:
+      consumes:
+      - application/json
+      description: 管理员启用或关闭普通用户的邮箱密码登录。
+      parameters:
+      - description: 密码登录设置
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/admin.updatePasswordLoginSettingsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/admin.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/admin.passwordLoginSettingsResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/admin.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/admin.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/admin.errorEnvelope'
+      summary: 更新密码登录设置
       tags:
       - 管理员设置
   /api/admin/third-party/providers:

@@ -14,6 +14,7 @@ const (
 	CodeNotFound           ErrorCode = "not_found"
 	CodeConflict           ErrorCode = "conflict"
 	CodeRequestTooLarge    ErrorCode = "request_too_large"
+	CodeLoginUnavailable   ErrorCode = "password_login_unavailable"
 	CodeInternal           ErrorCode = "internal_error"
 )
 

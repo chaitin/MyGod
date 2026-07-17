@@ -31,6 +31,8 @@ func TestMigrationDirectoryContainsExpectedMigrations(t *testing.T) {
 		"00016_add_temporary_file_expiration.sql",
 		"00017_add_user_managed_apps.sql",
 		"00018_add_email_code_login_settings.sql",
+		"00019_default_email_login_to_tls.sql",
+		"00020_add_password_login_setting.sql",
 	}
 	if len(matches) != len(want) {
 		t.Fatalf("migration file count = %d, want %d: %v", len(matches), len(want), matches)
@@ -38,6 +40,50 @@ func TestMigrationDirectoryContainsExpectedMigrations(t *testing.T) {
 	for index, match := range matches {
 		if got := filepath.Base(match); got != want[index] {
 			t.Fatalf("migration file %d = %q, want %q", index, got, want[index])
+		}
+	}
+}
+
+func TestPasswordLoginSettingMigration(t *testing.T) {
+	rawSQL, err := os.ReadFile("../../migrations/00020_add_password_login_setting.sql")
+	if err != nil {
+		t.Fatalf("read password login setting migration: %v", err)
+	}
+	sql := normalizeSQL(string(rawSQL))
+	for _, required := range []string{
+		"-- +goose up",
+		"add column password_login_enabled boolean not null default true",
+		"-- +goose down",
+		"drop column password_login_enabled",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("password login setting migration missing %q", required)
+		}
+	}
+}
+
+func TestDefaultEmailLoginToTLSMigration(t *testing.T) {
+	rawSQL, err := os.ReadFile("../../migrations/00019_default_email_login_to_tls.sql")
+	if err != nil {
+		t.Fatalf("read default email login TLS migration: %v", err)
+	}
+	sql := normalizeSQL(string(rawSQL))
+	for _, required := range []string{
+		"-- +goose up",
+		"alter column smtp_port set default 465",
+		"alter column smtp_security set default 'tls'",
+		"set smtp_port = 465",
+		"smtp_security = 'tls'",
+		"where email_code_login_enabled = false",
+		"and smtp_host = ''",
+		"and smtp_port = 587",
+		"and smtp_security = 'starttls'",
+		"-- +goose down",
+		"alter column smtp_port set default 587",
+		"alter column smtp_security set default 'starttls'",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("default email login TLS migration missing %q", required)
 		}
 	}
 }

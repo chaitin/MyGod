@@ -30,6 +30,7 @@ const (
 type Dependencies struct {
 	DB                   *gorm.DB
 	Files                fileapp.PublicUploader
+	PasswordLoginPolicy  PasswordLoginPolicy
 	Now                  func() time.Time
 	GenerateSessionToken func() (string, error)
 	SessionTTL           time.Duration
@@ -38,6 +39,7 @@ type Dependencies struct {
 type Service struct {
 	db                   *gorm.DB
 	files                fileapp.PublicUploader
+	passwordLoginPolicy  PasswordLoginPolicy
 	now                  func() time.Time
 	generateSessionToken func() (string, error)
 	sessionTTL           time.Duration
@@ -60,6 +62,7 @@ func NewService(deps Dependencies) *Service {
 	return &Service{
 		db:                   deps.DB,
 		files:                deps.Files,
+		passwordLoginPolicy:  deps.PasswordLoginPolicy,
 		now:                  now,
 		generateSessionToken: generateSessionToken,
 		sessionTTL:           sessionTTL,
@@ -67,6 +70,15 @@ func NewService(deps Dependencies) *Service {
 }
 
 func (s *Service) Login(ctx context.Context, cmd LoginCommand) (LoginResult, error) {
+	if s.passwordLoginPolicy != nil {
+		enabled, err := s.passwordLoginPolicy.PasswordLoginEnabled(ctx)
+		if err != nil {
+			return LoginResult{}, internalError(err)
+		}
+		if !enabled {
+			return LoginResult{}, newError(CodeLoginUnavailable, "密码登录未启用", nil)
+		}
+	}
 	email, err := normalizeEmail(cmd.Email)
 	if err != nil {
 		return LoginResult{}, invalidCredentials()

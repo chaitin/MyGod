@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Search } from "lucide-react"
+import { Bot, Search } from "lucide-react"
 
 import { GroupAvatar } from "@/components/group-avatar"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -241,7 +241,11 @@ function ConversationSearchResultAvatar({
         />
       )}
       <AvatarFallback className="rounded-sm text-xs">
-        {Array.from(conversation.name.trim())[0]?.toUpperCase() ?? "?"}
+        {conversation.type === "app" ? (
+          <Bot className="size-4" />
+        ) : (
+          (Array.from(conversation.name.trim())[0]?.toUpperCase() ?? "?")
+        )}
       </AvatarFallback>
     </Avatar>
   )

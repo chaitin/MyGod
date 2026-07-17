@@ -46,6 +46,25 @@ func TestAccountAPILoginMapsTransportDataAndSetsCookie(t *testing.T) {
 	}
 }
 
+func TestAccountAPIReturnsUnavailableForDisabledPasswordLogin(t *testing.T) {
+	service := &fakeAccountService{loginErr: &account.Error{
+		Code: account.CodeLoginUnavailable, Message: "密码登录未启用",
+	}}
+	api := NewAccountAPI(service, service, nil)
+	router := echo.New()
+	api.RegisterPublicRoutes(router)
+	request := httptest.NewRequest(http.MethodPost, "/api/client/auth/login", bytes.NewBufferString(
+		`{"email":"alice@example.com","password":"secret"}`,
+	))
+	request.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	recorder := httptest.NewRecorder()
+
+	router.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestAccountAPIProtectedRoutesUseSessionAuthenticator(t *testing.T) {
 	now := time.Date(2026, 7, 15, 4, 0, 0, 0, time.UTC)
 	service := &fakeAccountService{
@@ -89,13 +108,14 @@ func TestAccountAPIProtectedRoutesUseSessionAuthenticator(t *testing.T) {
 type fakeAccountService struct {
 	loginCommand  account.LoginCommand
 	loginResult   account.LoginResult
+	loginErr      error
 	authToken     string
 	authenticated account.AuthenticatedSession
 }
 
 func (s *fakeAccountService) Login(_ context.Context, cmd account.LoginCommand) (account.LoginResult, error) {
 	s.loginCommand = cmd
-	return s.loginResult, nil
+	return s.loginResult, s.loginErr
 }
 
 func (s *fakeAccountService) Logout(context.Context, account.LogoutCommand) error {

@@ -64,6 +64,7 @@ import {
   enableThirdPartyLoginProvider,
   getEmailLoginSettings,
   getInfoSettings,
+  getPasswordLoginSettings,
   listThirdPartyLoginProviders,
   moveThirdPartyLoginProvider,
   type ThirdPartyLoginProvider,
@@ -71,10 +72,12 @@ import {
   type ThirdPartyLoginProviderMoveDirection,
   type ThirdPartyLoginProviderType,
   type EmailLoginSettings,
+  type PasswordLoginSettings,
   type SMTPSecurity,
   testEmailLoginSettings,
   updateEmailLoginSettings,
   updateInfoSettings,
+  updatePasswordLoginSettings,
   updateThirdPartyLoginProvider,
 } from "@/lib/admin-settings"
 
@@ -412,6 +415,7 @@ export default function SettingsPage() {
             </form>
           </CardContent>
         </Card>
+        <PasswordLoginSettingsCard />
         <Card className={getSettingsCardClassName()}>
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
@@ -479,6 +483,104 @@ export default function SettingsPage() {
   )
 }
 
+const defaultPasswordLoginSettings: PasswordLoginSettings = {
+  enabled: true,
+}
+
+function PasswordLoginSettingsCard() {
+  const enabledId = useId()
+  const [settings, setSettings] = useState(defaultPasswordLoginSettings)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
+
+  useEffect(() => {
+    let ignore = false
+
+    async function load() {
+      try {
+        const loaded = await getPasswordLoginSettings()
+        if (!ignore) {
+          setSettings(loaded)
+        }
+      } catch (error) {
+        if (!ignore) {
+          toast.error(
+            error instanceof AdminSettingsRequestError
+              ? error.message
+              : "加载密码登录设置失败"
+          )
+        }
+      } finally {
+        if (!ignore) {
+          setIsLoading(false)
+        }
+      }
+    }
+
+    void load()
+    return () => {
+      ignore = true
+    }
+  }, [])
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setIsSaving(true)
+
+    try {
+      const updated = await updatePasswordLoginSettings(settings)
+      setSettings(updated)
+      toast.success("密码登录设置已保存")
+    } catch (error) {
+      toast.error(
+        error instanceof AdminSettingsRequestError
+          ? error.message
+          : "保存密码登录设置失败"
+      )
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const disabled = isLoading || isSaving
+
+  return (
+    <Card className={getSettingsCardClassName()}>
+      <CardHeader>
+        <CardTitle>密码登录</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <form className="flex flex-col gap-6" onSubmit={handleSubmit}>
+          <Field orientation="horizontal">
+            <div className="flex flex-1 flex-col gap-1">
+              <FieldLabel htmlFor={enabledId}>启用密码登录</FieldLabel>
+              <FieldDescription>
+                关闭后，普通用户无法通过邮箱和密码登录，不影响验证码和第三方登录。
+              </FieldDescription>
+            </div>
+            <Switch
+              checked={settings.enabled}
+              disabled={disabled}
+              id={enabledId}
+              onCheckedChange={(enabled) => setSettings({ enabled })}
+            />
+          </Field>
+          <div className="flex justify-end">
+            <Button disabled={disabled} type="submit">
+              {isSaving ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <SaveIcon data-icon="inline-start" />
+              )}
+              保存密码登录设置
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
+  )
+}
+
 const defaultEmailLoginSettings: EmailLoginSettings = {
   enabled: false,
   fromEmail: "",
@@ -486,8 +588,8 @@ const defaultEmailLoginSettings: EmailLoginSettings = {
   smtpHost: "",
   smtpPassword: "",
   smtpPasswordConfigured: false,
-  smtpPort: 587,
-  smtpSecurity: "starttls",
+  smtpPort: 465,
+  smtpSecurity: "tls",
   smtpUsername: "",
 }
 
@@ -667,8 +769,8 @@ function EmailLoginSettingsCard() {
                 </SelectTrigger>
                 <SelectContent alignItemWithTrigger={false}>
                   <SelectGroup>
-                    <SelectItem value="starttls">STARTTLS（推荐）</SelectItem>
-                    <SelectItem value="tls">TLS</SelectItem>
+                    <SelectItem value="tls">TLS（推荐）</SelectItem>
+                    <SelectItem value="starttls">STARTTLS</SelectItem>
                     <SelectItem disabled={settings.enabled} value="none">
                       无加密
                     </SelectItem>
@@ -814,9 +916,9 @@ function EmailLoginSettingsCard() {
 function getSMTPSecurityLabel(value: SMTPSecurity) {
   switch (value) {
     case "starttls":
-      return "STARTTLS（推荐）"
+      return "STARTTLS"
     case "tls":
-      return "TLS"
+      return "TLS（推荐）"
     case "none":
       return "无加密"
   }

@@ -845,6 +845,112 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/admin/settings/password-login": {
+            "get": {
+                "description": "管理员读取普通用户是否可以使用邮箱和密码登录。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "管理员设置"
+                ],
+                "summary": "获取密码登录设置",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/admin.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/admin.passwordLoginSettingsResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/admin.errorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/admin.errorEnvelope"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "管理员启用或关闭普通用户的邮箱密码登录。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "管理员设置"
+                ],
+                "summary": "更新密码登录设置",
+                "parameters": [
+                    {
+                        "description": "密码登录设置",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/admin.updatePasswordLoginSettingsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/admin.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/admin.passwordLoginSettingsResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/admin.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/admin.errorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/admin.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
         "/api/admin/third-party/providers": {
             "get": {
                 "description": "管理员读取已配置的第三方登录方式，包含 Client Secret。",
@@ -6674,6 +6780,15 @@ const docTemplate = `{
                 }
             }
         },
+        "admin.passwordLoginSettingsResponse": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
         "admin.publicThirdPartyProviderResponse": {
             "type": "object",
             "properties": {
@@ -6842,6 +6957,14 @@ const docTemplate = `{
                 "organization_name": {
                     "type": "string",
                     "example": "长亭科技"
+                }
+            }
+        },
+        "admin.updatePasswordLoginSettingsRequest": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
                 }
             }
         },
@@ -7742,6 +7865,10 @@ const docTemplate = `{
                 "organization_name": {
                     "type": "string",
                     "example": "长亭科技"
+                },
+                "password_login_enabled": {
+                    "type": "boolean",
+                    "example": true
                 },
                 "third_party_providers": {
                     "type": "array",

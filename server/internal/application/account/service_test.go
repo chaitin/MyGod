@@ -85,6 +85,23 @@ func TestServiceLoginDoesNotRevealDisabledOrMissingAccount(t *testing.T) {
 	}
 }
 
+func TestServiceRejectsPasswordLoginWhenDisabled(t *testing.T) {
+	policy := &fakePasswordLoginPolicy{enabled: false}
+	service := NewService(Dependencies{
+		DB: openAccountTestDB(t), PasswordLoginPolicy: policy,
+	})
+
+	_, err := service.Login(context.Background(), LoginCommand{
+		Email: "alice@example.com", Password: "test-password",
+	})
+	if ErrorCodeOf(err) != CodeLoginUnavailable || ErrorMessage(err) != "密码登录未启用" {
+		t.Fatalf("login error = %v, code = %q", err, ErrorCodeOf(err))
+	}
+	if policy.calls != 1 {
+		t.Fatalf("password login policy calls = %d", policy.calls)
+	}
+}
+
 func TestServiceIssuesSessionOnlyForVerifiedActiveEmail(t *testing.T) {
 	db := openAccountTestDB(t)
 	now := time.Date(2026, 7, 15, 4, 0, 0, 0, time.UTC)
@@ -200,6 +217,16 @@ type recordingAvatarStorage struct {
 	content     []byte
 	contentType string
 	url         string
+}
+
+type fakePasswordLoginPolicy struct {
+	enabled bool
+	calls   int
+}
+
+func (p *fakePasswordLoginPolicy) PasswordLoginEnabled(context.Context) (bool, error) {
+	p.calls++
+	return p.enabled, nil
 }
 
 func (s *recordingAvatarStorage) UploadPublic(_ context.Context, cmd fileapp.UploadPublicCommand) (fileapp.PublicFile, error) {

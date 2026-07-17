@@ -156,7 +156,7 @@ describe("ConversationPanel", () => {
             messages={[
               createAppPanelMessage({
                 appId: "app-1",
-                avatar: "/assets/apps/assistant.webp",
+                avatar: "",
                 author: "智能助手",
               }),
             ]}
@@ -178,7 +178,12 @@ describe("ConversationPanel", () => {
       </MemoryRouter>
     )
 
-    await user.click(screen.getByRole("button", { name: "智能助手资料" }))
+    const appProfileTrigger = screen.getByRole("button", {
+      name: "智能助手资料",
+    })
+    expect(appProfileTrigger.querySelector(".lucide-bot")).toBeInTheDocument()
+
+    await user.click(appProfileTrigger)
 
     expect(await screen.findByText("企业助手")).toBeInTheDocument()
     expect(screen.getByText("类型")).toBeInTheDocument()

@@ -67,6 +67,7 @@ type Server struct {
 	settings            *settingsapp.Service
 	clientInfo          *clientapi.InfoAPI
 	adminSettings       *adminapi.SettingsAPI
+	adminPasswordLogin  *adminapi.PasswordLoginSettingsAPI
 	adminEmailLogin     *adminapi.EmailLoginSettingsAPI
 	projects            *projectapp.Service
 	clientProjects      *clientapi.ProjectAPI
@@ -116,9 +117,11 @@ func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options,
 	server.clientApps = clientapi.NewAppAPI(server.apps)
 	server.settings = settingsapp.NewService(settingsapp.Dependencies{DB: db})
 	server.adminSettings = adminapi.NewSettingsAPI(server.settings)
+	server.adminPasswordLogin = adminapi.NewPasswordLoginSettingsAPI(server.settings)
 	server.accounts = account.NewService(account.Dependencies{
-		DB:    db,
-		Files: server.files,
+		DB:                  db,
+		Files:               server.files,
+		PasswordLoginPolicy: server.settings,
 	})
 	server.clientAccounts = clientapi.NewAccountAPI(
 		server.accounts,
@@ -227,6 +230,7 @@ func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options,
 
 	admin := router.Group("/api/admin", server.adminAuthAPI.RequireSession)
 	server.adminSettings.RegisterRoutes(admin)
+	server.adminPasswordLogin.RegisterRoutes(admin)
 	server.adminEmailLogin.RegisterRoutes(admin)
 	server.adminApps.RegisterRoutes(admin)
 	server.adminUsers.RegisterRoutes(admin)

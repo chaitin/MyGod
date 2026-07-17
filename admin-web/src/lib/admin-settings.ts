@@ -23,6 +23,10 @@ type InfoSettingsResponse = {
   organization_name?: string
 }
 
+type PasswordLoginSettingsResponse = {
+  enabled?: boolean
+}
+
 type EmailLoginSettingsResponse = {
   enabled?: boolean
   from_email?: string
@@ -52,6 +56,10 @@ type ThirdPartyLoginProviderResponse = {
 export type InfoSettings = {
   appName: string
   organizationName: string
+}
+
+export type PasswordLoginSettings = {
+  enabled: boolean
 }
 
 export type SMTPSecurity = "none" | "starttls" | "tls"
@@ -193,6 +201,61 @@ export async function getEmailLoginSettings(
   )?.data
 
   return normalizeEmailLoginSettings(data)
+}
+
+export async function getPasswordLoginSettings(
+  fetcher: AdminSettingsFetch = adminFetch
+) {
+  const response = await fetcher("/api/admin/settings/password-login", {
+    credentials: "include",
+    method: "GET",
+  })
+  const payload = await readJson<
+    | AdminSettingsErrorEnvelope
+    | AdminSettingsSuccessEnvelope<PasswordLoginSettingsResponse>
+  >(response)
+
+  if (!response.ok || payload?.success === false) {
+    throw createRequestError(payload, response, "加载密码登录设置失败")
+  }
+
+  const data = (
+    payload as
+      | AdminSettingsSuccessEnvelope<PasswordLoginSettingsResponse>
+      | undefined
+  )?.data
+
+  return normalizePasswordLoginSettings(data)
+}
+
+export async function updatePasswordLoginSettings(
+  input: PasswordLoginSettings,
+  fetcher: AdminSettingsFetch = adminFetch
+) {
+  const response = await fetcher("/api/admin/settings/password-login", {
+    body: JSON.stringify({ enabled: input.enabled }),
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    method: "PUT",
+  })
+  const payload = await readJson<
+    | AdminSettingsErrorEnvelope
+    | AdminSettingsSuccessEnvelope<PasswordLoginSettingsResponse>
+  >(response)
+
+  if (!response.ok || payload?.success === false) {
+    throw createRequestError(payload, response, "保存密码登录设置失败")
+  }
+
+  const data = (
+    payload as
+      | AdminSettingsSuccessEnvelope<PasswordLoginSettingsResponse>
+      | undefined
+  )?.data
+
+  return normalizePasswordLoginSettings(data)
 }
 
 export async function updateEmailLoginSettings(
@@ -484,6 +547,16 @@ function normalizeInfoSettings(
     appName: settings.app_name,
     organizationName: settings.organization_name,
   }
+}
+
+function normalizePasswordLoginSettings(
+  settings: PasswordLoginSettingsResponse | undefined
+): PasswordLoginSettings {
+  if (!settings || typeof settings.enabled !== "boolean") {
+    throw new AdminSettingsRequestError("密码登录设置响应格式不正确")
+  }
+
+  return { enabled: settings.enabled }
 }
 
 function normalizeEmailLoginSettings(

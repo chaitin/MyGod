@@ -67,6 +67,37 @@ describe("LoginForm", () => {
         email: "alice@example.com",
       })
     })
+    expect(
+      window.localStorage.getItem("client-web:remembered-email-code-login")
+    ).toBe("alice@example.com")
+  })
+
+  it("restores the email from the last successful email-code login", () => {
+    window.localStorage.setItem(
+      "client-web:remembered-email-code-login",
+      "alice@example.com"
+    )
+
+    render(<LoginForm onEmailCodeLogin={vi.fn()} />)
+
+    expect(screen.getByLabelText("邮箱")).toHaveValue("alice@example.com")
+  })
+
+  it("does not remember the email when email-code login fails", async () => {
+    const user = userEvent.setup()
+    const onEmailCodeLogin = vi.fn().mockRejectedValue(new Error("验证码错误"))
+    render(<LoginForm onEmailCodeLogin={onEmailCodeLogin} />)
+
+    await user.type(screen.getByLabelText("邮箱"), "alice@example.com")
+    await user.type(screen.getByLabelText("验证码"), "12345678")
+    await user.click(screen.getByRole("button", { name: "登录" }))
+
+    await waitFor(() => {
+      expect(onEmailCodeLogin).toHaveBeenCalled()
+    })
+    expect(
+      window.localStorage.getItem("client-web:remembered-email-code-login")
+    ).toBeNull()
   })
 
   it("hides email-code login when the server has not enabled it", () => {
@@ -79,5 +110,36 @@ describe("LoginForm", () => {
       "aria-selected",
       "true"
     )
+  })
+
+  it("hides password login when the server has disabled it", () => {
+    render(
+      <LoginForm
+        emailCodeLoginEnabled
+        onEmailCodeLogin={vi.fn()}
+        passwordLoginEnabled={false}
+      />
+    )
+
+    expect(
+      screen.queryByRole("tab", { name: "密码登录" })
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole("tab", { name: "验证码登录" })).toHaveAttribute(
+      "aria-selected",
+      "true"
+    )
+  })
+
+  it("hides local login forms when both methods are disabled", () => {
+    render(
+      <LoginForm emailCodeLoginEnabled={false} passwordLoginEnabled={false}>
+        <button type="button">第三方登录</button>
+      </LoginForm>
+    )
+
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument()
+    expect(
+      screen.getByRole("button", { name: "第三方登录" })
+    ).toBeInTheDocument()
   })
 })

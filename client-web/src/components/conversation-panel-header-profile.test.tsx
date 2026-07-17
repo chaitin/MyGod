@@ -97,7 +97,12 @@ describe("ConversationPanel header profile", () => {
       ],
     })
 
-    await user.click(screen.getByRole("button", { name: "智能助手资料" }))
+    const appProfileTrigger = screen.getByRole("button", {
+      name: "智能助手资料",
+    })
+    expect(appProfileTrigger.querySelector(".lucide-bot")).toBeInTheDocument()
+
+    await user.click(appProfileTrigger)
 
     expect(await screen.findByText("企业智能助手")).toBeInTheDocument()
     const profile = screen.getByRole("dialog")

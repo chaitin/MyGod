@@ -21,6 +21,7 @@ type infoSettingsResponse struct {
 	Authenticated         *bool                              `json:"authenticated,omitempty" example:"false"`
 	EmailCodeLoginEnabled bool                               `json:"email_code_login_enabled" example:"false"`
 	OrganizationName      string                             `json:"organization_name" example:"长亭科技"`
+	PasswordLoginEnabled  bool                               `json:"password_login_enabled" example:"true"`
 	ThirdPartyProviders   []publicThirdPartyProviderResponse `json:"third_party_providers"`
 }
 
@@ -90,6 +91,7 @@ func newClientInfoSettingsResponse(info settingsapp.PublicInfo, authenticated bo
 		Authenticated:         &authenticated,
 		EmailCodeLoginEnabled: info.EmailCodeLoginEnabled,
 		OrganizationName:      info.Settings.OrganizationName,
+		PasswordLoginEnabled:  info.PasswordLoginEnabled,
 		ThirdPartyProviders:   providers,
 	}
 }

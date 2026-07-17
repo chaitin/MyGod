@@ -193,7 +193,11 @@ function ConversationPanelHeaderAvatar({
         />
       )}
       <AvatarFallback className="rounded-sm">
-        {getAvatarInitial(conversation.name)}
+        {conversation.type === "app" ? (
+          <Bot className="size-4" />
+        ) : (
+          getAvatarInitial(conversation.name)
+        )}
       </AvatarFallback>
       {online !== undefined && <ConversationAvatarBadge online={online} />}
     </Avatar>

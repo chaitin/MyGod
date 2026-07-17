@@ -22,6 +22,7 @@ type ClientInfoResponse = {
   email_code_login_enabled?: boolean
   oidc_providers?: ClientInfoThirdPartyProviderResponse[]
   organization_name?: string
+  password_login_enabled?: boolean
   third_party_providers?: ClientInfoThirdPartyProviderResponse[]
 }
 
@@ -41,6 +42,7 @@ export type AppInfo = {
   emailCodeLoginEnabled: boolean
   oidcProviders: AppInfoThirdPartyProvider[]
   organizationName: string
+  passwordLoginEnabled: boolean
   thirdPartyProviders: AppInfoThirdPartyProvider[]
 }
 
@@ -50,6 +52,7 @@ export const defaultAppInfo: AppInfo = {
   emailCodeLoginEnabled: false,
   oidcProviders: [],
   organizationName: "长亭科技",
+  passwordLoginEnabled: true,
   thirdPartyProviders: [],
 }
 
@@ -114,6 +117,7 @@ function normalizeClientInfo(info: ClientInfoResponse | undefined): AppInfo {
     emailCodeLoginEnabled: info.email_code_login_enabled === true,
     oidcProviders: thirdPartyProviders,
     organizationName: info.organization_name,
+    passwordLoginEnabled: info.password_login_enabled !== false,
     thirdPartyProviders,
   }
 }

@@ -86,6 +86,7 @@ func (s *Service) GetPublicInfo(ctx context.Context) (PublicInfo, error) {
 		Settings:              value,
 		Providers:             result,
 		EmailCodeLoginEnabled: stored.EmailCodeLoginEnabled,
+		PasswordLoginEnabled:  stored.PasswordLoginEnabled,
 	}, nil
 }
 
@@ -95,6 +96,37 @@ func (s *Service) GetEmailLogin(ctx context.Context) (EmailLoginSettings, error)
 		return EmailLoginSettings{}, internalError(err)
 	}
 	return newEmailLoginSettings(value), nil
+}
+
+func (s *Service) PasswordLoginEnabled(ctx context.Context) (bool, error) {
+	value, err := s.GetPasswordLogin(ctx)
+	if err != nil {
+		return false, err
+	}
+	return value.Enabled, nil
+}
+
+func (s *Service) GetPasswordLogin(ctx context.Context) (PasswordLoginSettings, error) {
+	value, err := s.getOrCreate(ctx)
+	if err != nil {
+		return PasswordLoginSettings{}, internalError(err)
+	}
+	return PasswordLoginSettings{Enabled: value.PasswordLoginEnabled}, nil
+}
+
+func (s *Service) UpdatePasswordLogin(ctx context.Context, cmd UpdatePasswordLoginCommand) (PasswordLoginSettings, error) {
+	if _, err := s.getOrCreate(ctx); err != nil {
+		return PasswordLoginSettings{}, internalError(err)
+	}
+	if err := s.db.WithContext(ctx).Model(&store.AppSettings{}).
+		Where("id = ?", store.AppSettingsID).
+		Updates(map[string]any{
+			"password_login_enabled": cmd.Enabled,
+			"updated_at":             s.now().UTC(),
+		}).Error; err != nil {
+		return PasswordLoginSettings{}, internalError(err)
+	}
+	return PasswordLoginSettings{Enabled: cmd.Enabled}, nil
 }
 
 func (s *Service) UpdateEmailLogin(ctx context.Context, cmd UpdateEmailLoginCommand) (EmailLoginSettings, error) {
@@ -117,10 +149,10 @@ func (s *Service) UpdateEmailLogin(ctx context.Context, cmd UpdateEmailLoginComm
 		value.SMTPPassword = *cmd.SMTPPassword
 	}
 	if value.SMTPPort == 0 {
-		value.SMTPPort = 587
+		value.SMTPPort = 465
 	}
 	if value.SMTPSecurity == "" {
-		value.SMTPSecurity = SMTPSecuritySTARTTLS
+		value.SMTPSecurity = SMTPSecurityTLS
 	}
 	if err := validateEmailLoginSettings(value); err != nil {
 		return EmailLoginSettings{}, err
@@ -156,13 +188,14 @@ func (s *Service) getOrCreate(ctx context.Context) (store.AppSettings, error) {
 
 	now := s.now().UTC()
 	defaults := store.AppSettings{
-		ID:               store.AppSettingsID,
-		AppName:          store.DefaultAppName,
-		OrganizationName: store.DefaultOrganizationName,
-		SMTPPort:         587,
-		SMTPSecurity:     SMTPSecuritySTARTTLS,
-		CreatedAt:        now,
-		UpdatedAt:        now,
+		ID:                   store.AppSettingsID,
+		AppName:              store.DefaultAppName,
+		OrganizationName:     store.DefaultOrganizationName,
+		PasswordLoginEnabled: true,
+		SMTPPort:             465,
+		SMTPSecurity:         SMTPSecurityTLS,
+		CreatedAt:            now,
+		UpdatedAt:            now,
 	}
 	if err := s.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&defaults).Error; err != nil {
 		return store.AppSettings{}, err
@@ -230,3 +263,5 @@ func validateEmailLoginSettings(value EmailLoginSettings) error {
 var _ AdminService = (*Service)(nil)
 var _ PublicService = (*Service)(nil)
 var _ EmailLoginSettingsService = (*Service)(nil)
+var _ PasswordLoginSettingsService = (*Service)(nil)
+var _ PasswordLoginPolicy = (*Service)(nil)

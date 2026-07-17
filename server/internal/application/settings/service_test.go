@@ -27,8 +27,7 @@ func TestServiceCreatesDefaultsAndUpdatesSettings(t *testing.T) {
 	}
 
 	updated, err := service.Update(context.Background(), UpdateCommand{
-		AppName:          "  星环协作  ",
-		OrganizationName: " 长亭科技企业安全 ",
+		AppName: "  星环协作  ", OrganizationName: " 长亭科技企业安全 ",
 	})
 	if err != nil {
 		t.Fatalf("update settings: %v", err)
@@ -43,6 +42,18 @@ func TestServiceCreatesDefaultsAndUpdatesSettings(t *testing.T) {
 	}
 	if stored.AppName != updated.AppName || stored.OrganizationName != updated.OrganizationName || !stored.UpdatedAt.Equal(now) {
 		t.Fatalf("stored settings = %#v", stored)
+	}
+
+	passwordSettings, err := service.GetPasswordLogin(context.Background())
+	if err != nil || !passwordSettings.Enabled {
+		t.Fatalf("default password login settings = %#v, error = %v", passwordSettings, err)
+	}
+	passwordSettings, err = service.UpdatePasswordLogin(context.Background(), UpdatePasswordLoginCommand{Enabled: false})
+	if err != nil || passwordSettings.Enabled {
+		t.Fatalf("updated password login settings = %#v, error = %v", passwordSettings, err)
+	}
+	if enabled, err := service.PasswordLoginEnabled(context.Background()); err != nil || enabled {
+		t.Fatalf("password login enabled = %t, error = %v", enabled, err)
 	}
 
 	if _, err := service.Update(context.Background(), UpdateCommand{OrganizationName: "长亭科技"}); ErrorCodeOf(err) != CodeInvalidRequest {
@@ -115,6 +126,26 @@ func TestServiceUpdatesEmailLoginSettingsAndPreservesPassword(t *testing.T) {
 	})
 	if err != nil || disabled.SMTPPassword != "" || disabled.SMTPUsername != "" {
 		t.Fatalf("disabled email login = %#v, error = %v", disabled, err)
+	}
+}
+
+func TestServiceDefaultsEmailLoginToTLS(t *testing.T) {
+	service := NewService(Dependencies{DB: openSettingsTestDB(t)})
+
+	settings, err := service.GetEmailLogin(context.Background())
+	if err != nil {
+		t.Fatalf("get email login settings: %v", err)
+	}
+	if settings.SMTPPort != 465 || settings.SMTPSecurity != SMTPSecurityTLS {
+		t.Fatalf("default email login settings = %#v", settings)
+	}
+
+	updated, err := service.UpdateEmailLogin(context.Background(), UpdateEmailLoginCommand{})
+	if err != nil {
+		t.Fatalf("update email login settings with defaults: %v", err)
+	}
+	if updated.SMTPPort != 465 || updated.SMTPSecurity != SMTPSecurityTLS {
+		t.Fatalf("updated email login settings = %#v", updated)
 	}
 }
 

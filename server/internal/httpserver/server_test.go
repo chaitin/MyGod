@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"app/internal/application/account"
 	messageapp "app/internal/application/message"
 	"app/internal/appregistry"
 	"app/internal/auth"
@@ -42,7 +43,9 @@ func newTestRouter(t *testing.T) (*httptest.Server, *gorm.DB) {
 func newTestRouterWithRealtimeOptions(t *testing.T, options realtime.Options) (*httptest.Server, *gorm.DB) {
 	t.Helper()
 
-	db, err := gorm.Open(sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"), &gorm.Config{
+		Logger: newTestDatabaseLogger(t),
+	})
 	if err != nil {
 		t.Fatalf("open sqlite db: %v", err)
 	}
@@ -62,6 +65,26 @@ func newTestRouterWithRealtimeOptions(t *testing.T, options realtime.Options) (*
 	}, options)
 
 	return httptest.NewServer(router), db
+}
+
+type testDatabaseLogWriter struct {
+	t *testing.T
+}
+
+func (writer testDatabaseLogWriter) Printf(format string, args ...any) {
+	writer.t.Helper()
+	writer.t.Logf(strings.TrimSpace(format), args...)
+}
+
+func newTestDatabaseLogger(t *testing.T) gormlogger.Interface {
+	t.Helper()
+
+	return gormlogger.New(testDatabaseLogWriter{t: t}, gormlogger.Config{
+		SlowThreshold:             200 * time.Millisecond,
+		LogLevel:                  gormlogger.Warn,
+		IgnoreRecordNotFoundError: true,
+		Colorful:                  false,
+	})
 }
 
 func migrateTestSchema(db *gorm.DB) error {
@@ -6387,8 +6410,8 @@ func TestThirdPartyLoginCreatesUserSessionAndRedirectsToInit(t *testing.T) {
 			if r.Form.Get("client_secret") != "client-secret" {
 				t.Fatalf("client_secret = %q, want client-secret", r.Form.Get("client_secret"))
 			}
-			if r.Form.Get("code_verifier") == "" {
-				t.Fatal("code_verifier is empty")
+			if r.Form.Get("code_verifier") != "" {
+				t.Fatalf("code_verifier = %q, want empty", r.Form.Get("code_verifier"))
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"access_token":"access-token","token_type":"Bearer"}`))
@@ -6461,15 +6484,15 @@ func TestThirdPartyLoginCreatesUserSessionAndRedirectsToInit(t *testing.T) {
 	if query.Get("scope") != "openid email profile" {
 		t.Fatalf("scope = %q, want openid email profile", query.Get("scope"))
 	}
-	if query.Get("code_challenge_method") != "S256" {
-		t.Fatalf("code_challenge_method = %q, want S256", query.Get("code_challenge_method"))
+	if query.Get("code_challenge_method") != "" {
+		t.Fatalf("code_challenge_method = %q, want empty", query.Get("code_challenge_method"))
 	}
 	state := query.Get("state")
 	if state == "" {
 		t.Fatal("state is empty")
 	}
-	if query.Get("code_challenge") == "" {
-		t.Fatal("code_challenge is empty")
+	if query.Get("code_challenge") != "" {
+		t.Fatalf("code_challenge = %q, want empty", query.Get("code_challenge"))
 	}
 	stateCookie := requireThirdPartyStateCookie(t, startResp)
 
@@ -8384,6 +8407,30 @@ func TestAdminAndUserSessionsUseSeparateCookies(t *testing.T) {
 		t.Fatalf("admin list status after user login = %d, want 200", adminListResp.StatusCode)
 	}
 	requireSuccess(t, adminListBody)
+}
+
+func TestUserPasswordLoginCanBeDisabled(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	infoResp, infoBody := getJSON(t, server, "/api/client/info")
+	if infoResp.StatusCode != http.StatusOK {
+		t.Fatalf("client info status = %d, body = %#v", infoResp.StatusCode, infoBody)
+	}
+	if err := db.Model(&store.AppSettings{}).
+		Where("id = ?", store.AppSettingsID).
+		Update("password_login_enabled", false).Error; err != nil {
+		t.Fatalf("disable password login: %v", err)
+	}
+	insertTestUser(t, db, "alice@example.com", "Alice", store.UserStatusActive, time.Now().UTC())
+
+	resp, body := postJSON(t, server, "/api/client/auth/login", map[string]any{
+		"email": "alice@example.com", "password": "test-password",
+	})
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503, body = %#v", resp.StatusCode, body)
+	}
+	requireError(t, body, string(account.CodeLoginUnavailable))
 }
 
 func TestGetCurrentUserRequiresUserSession(t *testing.T) {
