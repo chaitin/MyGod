@@ -5,6 +5,15 @@
 	servers {
 		protocols h1 h2
 	}
+
+	log default {
+		output file /var/log/caddy/caddy.log {
+			mode 0640
+			roll_size 10MiB
+			roll_keep 5
+			roll_keep_for 720h
+		}
+	}
 }
 
 http://{$PUBLIC_HOSTNAME:localhost} {
@@ -15,7 +24,12 @@ https://{$PUBLIC_HOSTNAME:localhost} {
 	encode zstd gzip
 
 	log {
-		output stdout
+		output file /var/log/caddy/client-access.log {
+			mode 0640
+			roll_size 10MiB
+			roll_keep 5
+			roll_keep_for 720h
+		}
 	}
 
 	route {
@@ -43,7 +57,12 @@ https://{$PUBLIC_HOSTNAME:localhost}:1443 {
 	encode zstd gzip
 
 	log {
-		output stdout
+		output file /var/log/caddy/admin-access.log {
+			mode 0640
+			roll_size 10MiB
+			roll_keep 5
+			roll_keep_for 720h
+		}
 	}
 
 	route {

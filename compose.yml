@@ -96,6 +96,7 @@ services:
     volumes:
       - ./data/caddy/data:/data
       - ./data/caddy/config:/config
+      - ./data/caddy/logs:/var/log/caddy
     logging:
       driver: json-file
       options:
