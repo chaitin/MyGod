@@ -15,11 +15,8 @@ func (s *Service) BuildTaskNotificationBody(
 	ctx context.Context,
 	cmd messageapp.TaskNotificationCommand,
 ) (json.RawMessage, string, error) {
-	description := strings.TrimSpace(cmd.Description)
-	if description == "" {
-		description = "暂无描述"
-	}
-	return s.buildTaskCard(ctx, "任务动态", cmd.Title, truncateCardDescription(description), cmd.ProjectID, cmd.ID)
+	description := entitycardapp.TaskDetails(cmd.Status, cmd.AssigneeName, cmd.DueDate)
+	return s.buildTaskCard(ctx, "任务动态", cmd.Title, description, cmd.ProjectID, cmd.ID)
 }
 
 func (s *Service) BuildTaskReminderBody(

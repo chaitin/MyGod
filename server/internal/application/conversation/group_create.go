@@ -38,8 +38,10 @@ func (s *Service) CreateGroup(ctx context.Context, cmd CreateGroupCommand) (Crea
 	conversation, message, candidates, userIDs, err := s.createGroup(ctx, actor, name, members, apps, projects)
 	if err != nil {
 		switch {
+		case errors.Is(err, ErrGroupAppUnavailable):
+			return CreateGroupResult{}, invalidRequest("只有已启用且所有人可见的应用才能加入群聊", err)
 		case errors.Is(err, ErrMemberMissing):
-			return CreateGroupResult{}, invalidRequest("成员或应用不存在或不可用", err)
+			return CreateGroupResult{}, invalidRequest("成员不存在或已禁用", err)
 		case errors.Is(err, ErrMemberCap):
 			return CreateGroupResult{}, invalidRequest("群聊成员不能超过 500 人", err)
 		case errors.Is(err, ErrProjectInvalid):
@@ -82,9 +84,6 @@ func (s *Service) createGroup(ctx context.Context, actor store.User, name string
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		apps, err := loadVisibleGroupApps(tx, appIDs)
 		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrMemberMissing
-			}
 			return err
 		}
 		candidates = make([]memberCandidate, 0, len(members)+len(apps)+1)

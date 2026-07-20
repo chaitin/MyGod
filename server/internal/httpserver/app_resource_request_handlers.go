@@ -185,6 +185,7 @@ func (s *Server) handleAppListOwnConversations(appID string, req appListConversa
 		Joins("JOIN conversation_members parent_cm ON parent_cm.conversation_id = ct.parent_conversation_id").
 		Where("ctp.participant_type = ? AND ctp.participant_id = ?", store.ConversationMemberTypeApp, appID).
 		Where("parent_cm.member_type = ? AND parent_cm.member_id = ? AND parent_cm.left_at IS NULL", store.ConversationMemberTypeApp, appID).
+		Where("ct.archived_at IS NULL").
 		Where("conversations.status = ?", store.ConversationStatusActive)
 	if keyword != "" {
 		topicQuery = topicQuery.Where("LOWER(conversations.name) LIKE ?", "%"+keyword+"%")

@@ -113,9 +113,9 @@ func TestServiceSanitizesForwardBodiesAndPreservesLimits(t *testing.T) {
 func TestServiceBuildsTaskNotificationAndReminderCards(t *testing.T) {
 	service := NewService(Dependencies{})
 	body, summary, err := service.BuildTaskNotificationBody(context.Background(), messageapp.TaskNotificationCommand{
-		ID: "task-id", ProjectID: "project-id", Title: "整理需求",
+		AssigneeName: "张三", ID: "task-id", ProjectID: "project-id", Status: store.TaskStatusTodo, Title: "整理需求",
 	})
-	if err != nil || summary != "[卡片] 任务动态 - 整理需求" || !strings.Contains(string(body), `"description":"暂无描述"`) {
+	if err != nil || summary != "[卡片] 任务动态 - 整理需求" || !strings.Contains(string(body), `"description":"状态: 待办\n负责人: 张三"`) {
 		t.Fatalf("notification body = %s, summary = %q, err = %v", body, summary, err)
 	}
 	occurrence := time.Date(2026, 7, 15, 8, 30, 0, 0, time.UTC)

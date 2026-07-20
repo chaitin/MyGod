@@ -165,10 +165,13 @@ func loadVisibleGroupApps(db *gorm.DB, appIDs []string) ([]store.App, error) {
 	}
 	apps, err := appapp.LockPublicApps(db, appIDs)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrGroupAppUnavailable
+		}
 		return nil, err
 	}
 	if len(apps) != len(appIDs) {
-		return nil, gorm.ErrRecordNotFound
+		return nil, ErrGroupAppUnavailable
 	}
 	byID := make(map[string]store.App, len(apps))
 	for _, app := range apps {
@@ -178,7 +181,7 @@ func loadVisibleGroupApps(db *gorm.DB, appIDs []string) ([]store.App, error) {
 	for _, id := range appIDs {
 		app, ok := byID[id]
 		if !ok {
-			return nil, gorm.ErrRecordNotFound
+			return nil, ErrGroupAppUnavailable
 		}
 		ordered = append(ordered, app)
 	}

@@ -2090,6 +2090,9 @@ func mapAppGroupConversationError(err error) error {
 	if errors.Is(err, conversationapp.ErrMemberCap) {
 		return newAppRequestFailure("invalid_request", "群聊成员不能超过 500 人")
 	}
+	if errors.Is(err, conversationapp.ErrGroupAppUnavailable) {
+		return newAppRequestFailure("invalid_request", "只有已启用且所有人可见的应用才能加入群聊")
+	}
 	if errors.Is(err, conversationapp.ErrMemberMissing) {
 		return newAppRequestFailure("invalid_request", "成员不存在或已禁用")
 	}

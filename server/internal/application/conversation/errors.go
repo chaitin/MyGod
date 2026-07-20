@@ -78,6 +78,7 @@ var (
 	ErrNotGroup                = errors.New("conversation is not group")
 	ErrMemberCap               = errors.New("group conversation member cap exceeded")
 	ErrMemberMissing           = errors.New("group conversation member missing")
+	ErrGroupAppUnavailable     = errors.New("group conversation application is unavailable")
 	ErrAvatarForbidden         = errors.New("group conversation avatar forbidden")
 	ErrOwnerCannotLeave        = errors.New("group conversation owner cannot leave")
 	ErrOwnerCannotRemove       = errors.New("group conversation owner cannot be removed")

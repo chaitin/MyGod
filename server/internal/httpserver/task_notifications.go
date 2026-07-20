@@ -12,12 +12,10 @@ import (
 	"gorm.io/gorm"
 )
 
-const taskNotificationDescriptionFallback = "暂无描述"
-
 func (s *Server) PrepareTaskNotification(ctx context.Context, tx *gorm.DB, task store.Task) (any, error) {
 	return s.messages.PrepareTaskNotification(ctx, tx, messageapp.TaskNotificationCommand{
-		AssigneeUserID: task.AssigneeUserID, Description: task.Description, ID: task.ID,
-		ProjectID: task.ProjectID, Title: task.Title, UpdatedAt: task.UpdatedAt,
+		AssigneeUserID: task.AssigneeUserID, DueDate: task.DueDate, ID: task.ID,
+		ProjectID: task.ProjectID, Status: task.Status, Title: task.Title, UpdatedAt: task.UpdatedAt,
 	})
 }
 
@@ -37,13 +35,22 @@ func buildTaskNotificationBody(ctx context.Context, task store.Task) (json.RawMe
 		ctx,
 		messageapp.TaskNotificationCommand{
 			AssigneeUserID: task.AssigneeUserID,
-			Description:    task.Description,
+			AssigneeName:   taskNotificationAssigneeName(task),
+			DueDate:        task.DueDate,
 			ID:             task.ID,
 			ProjectID:      task.ProjectID,
+			Status:         task.Status,
 			Title:          task.Title,
 			UpdatedAt:      task.UpdatedAt,
 		},
 	)
+}
+
+func taskNotificationAssigneeName(task store.Task) string {
+	if task.AssigneeUser == nil {
+		return ""
+	}
+	return userDisplayName(*task.AssigneeUser)
 }
 
 func taskNotificationClientMessageID(task store.Task, recipientUserID string) string {

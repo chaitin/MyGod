@@ -3874,6 +3874,16 @@ func TestAppWebSocketTopicCreateGetAndCloseLifecycle(t *testing.T) {
 	if getPayload["archived"] != false || getPayload["last_message_seq"] != float64(0) {
 		t.Fatalf("topic get response = %#v", getPayload)
 	}
+	listBeforeClose := sendAppRequest(t, appConn, realtime.Envelope{
+		V: realtime.ProtocolVersion, Kind: realtime.KindRequest,
+		ID: "topic-list-before-close", Method: appMethodConversationsList,
+		Payload: mustMarshalPayloadForTest(t, map[string]any{}),
+	})
+	var listedBeforeClose appListConversationsResponse
+	if err := json.Unmarshal(listBeforeClose.Payload, &listedBeforeClose); err != nil ||
+		!containsAppConversationPayload(listedBeforeClose.Conversations, topicID) {
+		t.Fatalf("conversations.list before topic close = %#v, err = %v", listedBeforeClose, err)
+	}
 
 	staleClose := sendRawAppRequest(t, appConn, realtime.Envelope{
 		V: realtime.ProtocolVersion, Kind: realtime.KindRequest,
@@ -3935,6 +3945,16 @@ func TestAppWebSocketTopicCreateGetAndCloseLifecycle(t *testing.T) {
 	if closeEvent.Cursor <= 0 {
 		t.Fatalf("topic closed cursor = %d, want positive cursor", closeEvent.Cursor)
 	}
+	listAfterClose := sendAppRequest(t, appConn, realtime.Envelope{
+		V: realtime.ProtocolVersion, Kind: realtime.KindRequest,
+		ID: "topic-list-after-close", Method: appMethodConversationsList,
+		Payload: mustMarshalPayloadForTest(t, map[string]any{}),
+	})
+	var listedAfterClose appListConversationsResponse
+	if err := json.Unmarshal(listAfterClose.Payload, &listedAfterClose); err != nil ||
+		containsAppConversationPayload(listedAfterClose.Conversations, topicID) {
+		t.Fatalf("conversations.list after topic close = %#v, err = %v", listedAfterClose, err)
+	}
 	_ = appConn.Close()
 	replayConn := dialAppWebSocket(t, server, app.ID, app.ConnectionSecret)
 	replayed := readRealtimeEvent(t, replayConn)
@@ -3946,6 +3966,15 @@ func TestAppWebSocketTopicCreateGetAndCloseLifecycle(t *testing.T) {
 	afterAckConn := dialAppWebSocket(t, server, app.ID, app.ConnectionSecret)
 	defer afterAckConn.Close()
 	requireNoRealtimeEvent(t, afterAckConn)
+}
+
+func containsAppConversationPayload(items []appConversationSummaryPayload, conversationID string) bool {
+	for _, item := range items {
+		if item.ConversationID == conversationID {
+			return true
+		}
+	}
+	return false
 }
 
 func TestClientWebSocketSendsSystemReadyAfterLogin(t *testing.T) {

@@ -55,6 +55,7 @@ func (s *Service) ListForActor(ctx context.Context, cmd AppListCommand) (AppList
 		Where("ctp.participant_type = ? AND ctp.participant_id = ?", store.ConversationMemberTypeUser, actorID).
 		Where("parent_cm.member_type = ? AND parent_cm.member_id = ? AND parent_cm.left_at IS NULL", store.ConversationMemberTypeUser, actorID).
 		Where("ct.source_message_seq >= CASE WHEN parent_cm.history_visible_from_seq < 1 THEN 1 ELSE parent_cm.history_visible_from_seq END").
+		Where("ct.archived_at IS NULL").
 		Where("conversations.status = ? AND parent_conversations.status = ?", store.ConversationStatusActive, store.ConversationStatusActive)
 	if keyword != "" {
 		topicQuery = topicQuery.Where("LOWER(conversations.name) LIKE ?", "%"+keyword+"%")

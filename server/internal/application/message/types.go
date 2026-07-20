@@ -234,9 +234,11 @@ type ReadForUserResult struct {
 
 type TaskNotificationCommand struct {
 	AssigneeUserID *string
-	Description    string
+	AssigneeName   string
+	DueDate        *time.Time
 	ID             string
 	ProjectID      string
+	Status         string
 	Title          string
 	UpdatedAt      time.Time
 }

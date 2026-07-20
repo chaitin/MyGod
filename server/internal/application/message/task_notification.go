@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	conversationapp "app/internal/application/conversation"
@@ -48,6 +49,7 @@ func (s *Service) PrepareTaskNotification(
 	if s.taskNotificationBodies == nil {
 		return nil, errors.New("task notification body builder is required")
 	}
+	cmd.AssigneeName = taskNotificationUserDisplayName(recipient)
 	body, summary, err := s.taskNotificationBodies.BuildTaskNotificationBody(ctx, cmd)
 	if err != nil {
 		return nil, err
@@ -84,6 +86,13 @@ func (s *Service) PrepareTaskNotification(
 	return &TaskNotificationResult{
 		Created: true, Message: newMessage(message), RecipientUserID: recipient.ID,
 	}, nil
+}
+
+func taskNotificationUserDisplayName(user store.User) string {
+	if nickname := strings.TrimSpace(user.Nickname); nickname != "" {
+		return nickname
+	}
+	return strings.TrimSpace(user.Name)
 }
 
 func (s *Service) PublishTaskNotification(ctx context.Context, notification *TaskNotificationResult) {

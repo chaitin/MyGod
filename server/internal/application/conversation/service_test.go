@@ -184,7 +184,7 @@ func TestServiceOnlyAllowsPublicAppsAsGroupMembers(t *testing.T) {
 	service := NewService(Dependencies{DB: db, Now: func() time.Time { return now }})
 	if _, err := service.CreateGroup(context.Background(), CreateGroupCommand{
 		Actor: actorFromTestUser(owner), Name: "Private app group", AppIDs: []string{privateApp.ID},
-	}); ErrorCodeOf(err) != CodeInvalidRequest {
+	}); ErrorCodeOf(err) != CodeInvalidRequest || ErrorMessage(err) != "只有已启用且所有人可见的应用才能加入群聊" {
 		t.Fatalf("private app group error = %v", err)
 	}
 	if _, err := service.CreateApp(context.Background(), CreateAppCommand{
@@ -194,7 +194,7 @@ func TestServiceOnlyAllowsPublicAppsAsGroupMembers(t *testing.T) {
 	}
 	if _, err := service.CreateGroup(context.Background(), CreateGroupCommand{
 		Actor: actorFromTestUser(owner), Name: "Disabled owner app group", AppIDs: []string{disabledOwnerApp.ID},
-	}); ErrorCodeOf(err) != CodeInvalidRequest {
+	}); ErrorCodeOf(err) != CodeInvalidRequest || ErrorMessage(err) != "只有已启用且所有人可见的应用才能加入群聊" {
 		t.Fatalf("disabled owner app group error = %v", err)
 	}
 	created, err := service.CreateGroup(context.Background(), CreateGroupCommand{
@@ -202,6 +202,21 @@ func TestServiceOnlyAllowsPublicAppsAsGroupMembers(t *testing.T) {
 	})
 	if err != nil || created.Conversation.MemberCount != 2 {
 		t.Fatalf("public app group = %#v, err = %v", created, err)
+	}
+	if _, err := service.AddMembers(context.Background(), AddMembersCommand{
+		Actor: actorFromTestUser(owner), ConversationID: created.Conversation.ID, AppIDs: []string{privateApp.ID},
+	}); ErrorCodeOf(err) != CodeInvalidRequest || ErrorMessage(err) != "只有已启用且所有人可见的应用才能加入群聊" {
+		t.Fatalf("add private app error = %v", err)
+	}
+	if _, err := service.AddMembers(context.Background(), AddMembersCommand{
+		Actor: actorFromTestUser(owner), ConversationID: created.Conversation.ID, MemberIDs: []string{uuid.NewString()},
+	}); ErrorCodeOf(err) != CodeInvalidRequest || ErrorMessage(err) != "成员不存在或已禁用" {
+		t.Fatalf("add missing member error = %v", err)
+	}
+	if _, err := service.CreateGroupAsApplication(context.Background(), CreateGroupAsApplicationCommand{
+		AppID: publicApp.ID, Name: "Application group", MemberIDs: []string{owner.ID}, AppIDs: []string{privateApp.ID},
+	}); ErrorCodeOf(err) != CodeInvalidRequest || ErrorMessage(err) != "只有已启用且所有人可见的应用才能加入群聊" {
+		t.Fatalf("application adds private app error = %v", err)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	appapp "app/internal/application/app"
 	projectapp "app/internal/application/project"
@@ -163,17 +164,9 @@ func (s *Service) resolveTask(ctx context.Context, accountID, entityID string) (
 	if task.AssigneeUser != nil {
 		assignee = displayName(*task.AssigneeUser)
 	}
-	dueDate := ""
-	if task.DueDate != nil {
-		dueDate = task.DueDate.Format("2006-01-02")
-	}
 	return newCard(
 		Title("任务", task.Title),
-		Details(
-			Detail{Label: "状态", Value: taskStatusLabel(task.Status)},
-			Detail{Label: "负责人", Value: assignee},
-			Detail{Label: "截止日期", Value: dueDate},
-		),
+		TaskDetails(task.Status, assignee, task.DueDate),
 		fmt.Sprintf("/projects/%s?taskId=%s", project.ID, task.ID),
 	), nil
 }
@@ -206,6 +199,18 @@ func Details(details ...Detail) string {
 		lines = append(lines, label+": "+value)
 	}
 	return strings.Join(lines, "\n")
+}
+
+func TaskDetails(status, assignee string, dueDate *time.Time) string {
+	dueDateText := ""
+	if dueDate != nil {
+		dueDateText = dueDate.Format("2006-01-02")
+	}
+	return Details(
+		Detail{Label: "状态", Value: taskStatusLabel(status)},
+		Detail{Label: "负责人", Value: assignee},
+		Detail{Label: "截止日期", Value: dueDateText},
+	)
 }
 
 func (s *Service) plainTextExcerpt(source string, limit int) string {

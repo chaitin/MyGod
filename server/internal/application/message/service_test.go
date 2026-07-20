@@ -382,7 +382,7 @@ func TestServiceTaskNotificationCreationIsIdempotent(t *testing.T) {
 	}
 	assigneeID := fixture.user.ID
 	command := TaskNotificationCommand{
-		AssigneeUserID: &assigneeID, Description: "description", ID: uuid.NewString(),
+		AssigneeUserID: &assigneeID, ID: uuid.NewString(),
 		ProjectID: project.ID, Title: "Task", UpdatedAt: now,
 	}
 	service := NewService(Dependencies{DB: db, TaskNotificationBodies: fixedTaskNotificationBodyBuilder{}})

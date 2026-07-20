@@ -60,6 +60,7 @@ type Client struct {
 	cfg            config.Config
 	dialer         *websocket.Dialer
 	assistantAgent replyAgent
+	topicRouter    topicRouter
 	mcpSources     []mcpclient.Source
 	runner         *conversationAgentRunner
 	transport      *webSocketManager
@@ -262,12 +263,16 @@ func New(ctx context.Context, cfg config.Config) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	agentModel := llm.NewAnthropicClient(cfg.LLM)
+	routerModel := llm.NewAnthropicClient(cfg.LLM)
+	routerModel.MaxTokens = topicRouterMaxTokens
 
 	transport := newWebSocketManager(cfg, webSocketManagerOptions{})
 	return &Client{
 		cfg:            cfg,
 		dialer:         websocket.DefaultDialer,
-		assistantAgent: agent.New(llm.NewAnthropicClient(cfg.LLM), agent.WithToolRegistry(registry), agent.WithMaxTurns(cfg.Agent.MaxTurns)),
+		assistantAgent: agent.New(agentModel, agent.WithToolRegistry(registry), agent.WithMaxTurns(cfg.Agent.MaxTurns)),
+		topicRouter:    newModelTopicRouter(routerModel),
 		mcpSources:     sources,
 		runner: newConversationAgentRunner(ctx, conversationAgentRunnerOptions{
 			MaxSessions: cfg.Agent.MaxSessions,
@@ -395,12 +400,13 @@ func (c *Client) drainAppEvents() {
 		c.eventMu.Unlock()
 
 		if !queued.handled {
-			queued.handled = handleParsedServerMessage(
+			queued.handled = handleParsedServerMessageWithTopicRouter(
 				queued.ctx,
 				queued.message,
 				c.cfg.AppID,
 				c.requester,
 				c.assistantAgent,
+				c.topicRouter,
 				c.runner,
 				func(writeCtx context.Context, outgoing envelope) error {
 					_, err := c.requester.RequestEnvelope(writeCtx, outgoing)
@@ -576,6 +582,10 @@ func handleServerMessage(ctx context.Context, messageType int, data []byte, requ
 }
 
 func handleParsedServerMessage(ctx context.Context, message envelope, appID string, requester appRequester, assistantAgent replyAgent, runner agentRunner, writeJSON func(context.Context, envelope) error) bool {
+	return handleParsedServerMessageWithTopicRouter(ctx, message, appID, requester, assistantAgent, nil, runner, writeJSON)
+}
+
+func handleParsedServerMessageWithTopicRouter(ctx context.Context, message envelope, appID string, requester appRequester, assistantAgent replyAgent, router topicRouter, runner agentRunner, writeJSON func(context.Context, envelope) error) bool {
 	if message.Kind == kindResponse {
 		return true
 	}
@@ -650,24 +660,38 @@ func handleParsedServerMessage(ctx context.Context, message envelope, appID stri
 	})
 	replyConversation := payload.Conversation
 	if payload.Conversation.Type != "topic" && strings.TrimSpace(appID) != "" {
-		topic, err := createConversationTopic(ctx, requester, payload.Conversation.ID, payload.Message.ID)
-		if err != nil {
-			log.Printf("create agent topic failed: %v", err)
-			return sendAgentFallback(ctx, prepared.ErrorSink) == nil
+		needsTopic := true
+		if router != nil {
+			decision, routeErr := router.NeedsTopic(ctx, prepared.Request)
+			if routeErr != nil {
+				if ctx.Err() != nil {
+					return false
+				}
+				log.Printf("route agent message failed; defaulting to topic: conversation_id=%s error=%v", payload.Conversation.ID, routeErr)
+			} else {
+				needsTopic = decision
+			}
 		}
-		replyConversation = topic
-		parentConversation := prepared.Request.Conversation
-		prepared.Request.Conversation = agent.Conversation{
-			ID: topic.ID, Name: topic.Name, Type: topic.Type,
-			Parent: &agent.ConversationReference{
-				ID: parentConversation.ID, Name: parentConversation.Name, Type: parentConversation.Type,
-			},
+		if needsTopic {
+			topic, err := createConversationTopic(ctx, requester, payload.Conversation.ID, payload.Message.ID)
+			if err != nil {
+				log.Printf("create agent topic failed: %v", err)
+				return sendAgentFallback(ctx, prepared.ErrorSink) == nil
+			}
+			replyConversation = topic
+			parentConversation := prepared.Request.Conversation
+			prepared.Request.Conversation = agent.Conversation{
+				ID: topic.ID, Name: topic.Name, Type: topic.Type,
+				Parent: &agent.ConversationReference{
+					ID: parentConversation.ID, Name: parentConversation.Name, Type: parentConversation.Type,
+				},
+			}
+			prepared.Scope.ConversationID = topic.ID
+			prepared.Scope.ConversationType = topic.Type
+			prepared.Scope.ParentConversationID = parentConversation.ID
+			prepared.Scope.ParentConversationType = parentConversation.Type
+			prepared.CloseTopicOnSessionFailure = true
 		}
-		prepared.Scope.ConversationID = topic.ID
-		prepared.Scope.ConversationType = topic.Type
-		prepared.Scope.ParentConversationID = parentConversation.ID
-		prepared.Scope.ParentConversationType = parentConversation.Type
-		prepared.CloseTopicOnSessionFailure = true
 	}
 	sink := agent.OutputSinkFunc(func(ctx context.Context, content string) error {
 		return sendMarkdownReply(ctx, writeJSON, replyConversation, content)
@@ -767,7 +791,7 @@ func prepareAgentRun(ctx context.Context, requester appRequester, payload messag
 			},
 			MessageID:      payload.Message.ID,
 			Content:        content,
-			CurrentTime:    time.Now().UTC(),
+			CurrentTime:    time.Now(),
 			History:        history,
 			ProjectContext: buildAgentProjectContext(conversationContext.ProjectContext),
 		},

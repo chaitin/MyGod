@@ -153,7 +153,7 @@ func (s *Service) CreateGroupAsApplication(ctx context.Context, cmd CreateGroupA
 			return err
 		}
 		if len(apps) != len(appIDs) {
-			return ErrMemberMissing
+			return ErrGroupAppUnavailable
 		}
 		now := s.now().UTC()
 		legacyCreatorUserID := users[0].ID
@@ -339,7 +339,7 @@ func (s *Service) AddGroupMembersAsApplication(ctx context.Context, cmd AddGroup
 			return err
 		}
 		if len(apps) != len(addedAppIDs) {
-			return ErrMemberMissing
+			return ErrGroupAppUnavailable
 		}
 		now := s.now().UTC()
 		visibleFromSeq := conversation.LastMessageSeq + 1
@@ -912,8 +912,10 @@ func mapApplicationGroupMutationError(err error) error {
 		return invalidRequest("会话不是群聊", err)
 	case errors.Is(err, ErrMemberCap):
 		return invalidRequest("群聊成员不能超过 500 人", err)
+	case errors.Is(err, ErrGroupAppUnavailable):
+		return invalidRequest("只有已启用且所有人可见的应用才能加入群聊", err)
 	case errors.Is(err, ErrMemberMissing):
-		return invalidRequest("成员或应用不存在、不可用或不可见", err)
+		return invalidRequest("成员不存在或已禁用", err)
 	case errors.Is(err, ErrProjectDissolveConflict):
 		return conflict("项目关联发生变化，请重试", err)
 	default:

@@ -58,6 +58,7 @@ func (s *Service) List(ctx context.Context, cmd ListCommand) (ListResult, error)
 		Where("ctp.participant_type = ? AND ctp.participant_id = ?", store.ConversationMemberTypeUser, accountID).
 		Where("parent_cm.member_type = ? AND parent_cm.member_id = ? AND parent_cm.left_at IS NULL", store.ConversationMemberTypeUser, accountID).
 		Where("ct.source_message_seq >= CASE WHEN parent_cm.history_visible_from_seq < 1 THEN 1 ELSE parent_cm.history_visible_from_seq END").
+		Where("ct.archived_at IS NULL").
 		Where("conversations.status = ? AND parent_conversations.status = ?", store.ConversationStatusActive, store.ConversationStatusActive).
 		Order("CASE WHEN cp.user_id IS NULL THEN 1 ELSE 0 END ASC").
 		Order("COALESCE(conversations.last_message_at, conversations.created_at) DESC").

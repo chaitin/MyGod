@@ -74,6 +74,10 @@ func TestTopicLifecycleKeepsGroupVisibilityParticipantScoped(t *testing.T) {
 	if err != nil || !containsConversation(memberList.Conversations, created.Conversation.ID) {
 		t.Fatalf("participating member list = %#v, err = %v", memberList, err)
 	}
+	actorList, err := service.ListForActor(context.Background(), AppListCommand{ActorID: member.ID, Limit: 100})
+	if err != nil || !containsAppConversation(actorList.Conversations, created.Conversation.ID) {
+		t.Fatalf("participating actor list = %#v, err = %v", actorList, err)
+	}
 
 	archived, err := service.ArchiveTopic(context.Background(), ArchiveTopicCommand{
 		Actor: actorFromTestUser(owner), TopicConversationID: created.Conversation.ID,
@@ -82,8 +86,12 @@ func TestTopicLifecycleKeepsGroupVisibilityParticipantScoped(t *testing.T) {
 		t.Fatalf("archive topic = %#v, err = %v", archived, err)
 	}
 	memberList, err = service.List(context.Background(), ListCommand{AccountID: member.ID})
-	if err != nil || !containsConversation(memberList.Conversations, created.Conversation.ID) {
+	if err != nil || containsConversation(memberList.Conversations, created.Conversation.ID) {
 		t.Fatalf("archived topic list = %#v, err = %v", memberList, err)
+	}
+	actorList, err = service.ListForActor(context.Background(), AppListCommand{ActorID: member.ID, Limit: 100})
+	if err != nil || containsAppConversation(actorList.Conversations, created.Conversation.ID) {
+		t.Fatalf("archived topic actor list = %#v, err = %v", actorList, err)
 	}
 	if _, err := service.ParticipateTopic(context.Background(), ParticipateTopicCommand{
 		Actor: actorFromTestUser(member), TopicConversationID: created.Conversation.ID,
@@ -702,6 +710,15 @@ func insertConversationTopicFixture(t *testing.T, db *gorm.DB, owner, member sto
 func containsConversation(items []Item, conversationID string) bool {
 	for _, item := range items {
 		if item.ID == conversationID {
+			return true
+		}
+	}
+	return false
+}
+
+func containsAppConversation(items []AppSummary, conversationID string) bool {
+	for _, item := range items {
+		if item.ConversationID == conversationID {
 			return true
 		}
 	}

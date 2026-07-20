@@ -45,7 +45,7 @@ func TestHTTPTaskCreateAndUpdateSendAssistantNotifications(t *testing.T) {
 		t,
 		messages[0],
 		"任务动态 - 编写上线方案",
-		"整理上线步骤与回滚方案",
+		"状态: 待办\n负责人: 通知负责人",
 		"/projects/"+project.ID+"?taskId="+taskID,
 	)
 
@@ -65,7 +65,7 @@ func TestHTTPTaskCreateAndUpdateSendAssistantNotifications(t *testing.T) {
 		t,
 		messages[1],
 		"任务动态 - 完成上线方案",
-		taskNotificationDescriptionFallback,
+		"状态: 待办\n负责人: 通知负责人",
 		"/projects/"+project.ID+"?taskId="+taskID,
 	)
 
@@ -242,7 +242,7 @@ func TestAppTaskCreateAndUpdateSendAssistantNotifications(t *testing.T) {
 		t,
 		messages[1],
 		"任务动态 - 应用创建的任务",
-		"更新后的任务描述",
+		"状态: 待办\n负责人: 应用任务负责人",
 		"/projects/"+project.ID+"?taskId="+task.ID,
 	)
 }
@@ -288,12 +288,17 @@ func TestTaskNotificationFailureRollsBackTaskCreation(t *testing.T) {
 	}
 }
 
-func TestTaskNotificationBodyTruncatesLongDescription(t *testing.T) {
+func TestTaskNotificationBodyIncludesKeyTaskFields(t *testing.T) {
+	dueDate := time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC)
 	task := store.Task{
-		ID:          "11111111-1111-4111-8111-111111111111",
-		ProjectID:   "22222222-2222-4222-8222-222222222222",
-		Title:       "长描述任务",
-		Description: strings.Repeat("文", maxCardDescription+20),
+		ID:        "11111111-1111-4111-8111-111111111111",
+		ProjectID: "22222222-2222-4222-8222-222222222222",
+		Title:     "关键字段任务",
+		Status:    store.TaskStatusInProgress,
+		DueDate:   &dueDate,
+		AssigneeUser: &store.User{
+			Name: "张三",
+		},
 	}
 	body, _, err := buildTaskNotificationBody(t.Context(), task)
 	if err != nil {
@@ -303,11 +308,8 @@ func TestTaskNotificationBodyTruncatesLongDescription(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode card: %v", err)
 	}
-	if length := len([]rune(card.Description)); length != maxCardDescription {
-		t.Fatalf("description length = %d, want %d", length, maxCardDescription)
-	}
-	if !strings.HasSuffix(card.Description, "…") {
-		t.Fatalf("description = %q, want ellipsis suffix", card.Description)
+	if card.Description != "状态: 进行中\n负责人: 张三\n截止日期: 2026-07-20" {
+		t.Fatalf("description = %q", card.Description)
 	}
 }
 
