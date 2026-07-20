@@ -615,7 +615,7 @@ function TopicReplyPreview({
           type="button"
         >
           <MessagesSquare className="size-4" />
-          {topic.archived ? "查看已关闭话题" : "查看话题"}
+          查看话题
         </button>
         {latestReplyTime && (
           <span className="shrink-0 text-xs text-muted-foreground">

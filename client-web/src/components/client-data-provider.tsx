@@ -543,14 +543,18 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
       topic: Pick<ClientMessageTopic, "archived" | "conversationId">
     ) => {
       setConversations((currentConversations) =>
-        currentConversations.map((conversation) =>
-          conversation.id === topic.conversationId && conversation.topic
-            ? {
-                ...conversation,
-                topic: { ...conversation.topic, archived: topic.archived },
-              }
-            : conversation
-        )
+        topic.archived
+          ? currentConversations.filter(
+              (conversation) => conversation.id !== topic.conversationId
+            )
+          : currentConversations.map((conversation) =>
+              conversation.id === topic.conversationId && conversation.topic
+                ? {
+                    ...conversation,
+                    topic: { ...conversation.topic, archived: false },
+                  }
+                : conversation
+            )
       )
       setConversationMessageStates((currentStates) => {
         const state = currentStates[parentConversationId]

@@ -14,6 +14,7 @@ import {
   requestBrowserNotificationPermission,
   type BrowserNotificationPermission,
 } from "@/lib/browser-notifications"
+import { playMessageNotificationSound } from "@/lib/message-notification-sound"
 
 type UserSettingsDialogProps = {
   onOpenChange: (open: boolean) => void
@@ -43,6 +44,7 @@ function UserSettingsDialogContent() {
       return
     }
 
+    playMessageNotificationSound()
     setNotificationRequesting(true)
     try {
       setNotificationPermission(await requestBrowserNotificationPermission())

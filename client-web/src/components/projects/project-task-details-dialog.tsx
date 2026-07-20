@@ -255,8 +255,9 @@ export function ProjectTaskDetailsDialog({
       setDescriptionEditing(false)
       setError("")
       setForm(updatedForm)
-      await onUpdated?.()
       toast.success("任务已保存")
+      onOpenChange(false)
+      await onUpdated?.()
     } catch (saveError) {
       toast.error(
         saveError instanceof Error ? saveError.message : "保存任务失败"

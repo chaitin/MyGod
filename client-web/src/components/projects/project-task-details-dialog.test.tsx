@@ -161,10 +161,13 @@ describe("ProjectTaskDetailsDialog card message", () => {
 
   it("configures a recurring reminder in the task form", async () => {
     const user = userEvent.setup()
+    const onOpenChange = vi.fn()
+    const onUpdated = vi.fn().mockResolvedValue(undefined)
     render(
       <MemoryRouter>
         <ProjectTaskDetailsDialog
-          onOpenChange={vi.fn()}
+          onOpenChange={onOpenChange}
+          onUpdated={onUpdated}
           open
           task={createTask()}
         />
@@ -192,6 +195,11 @@ describe("ProjectTaskDetailsDialog card message", () => {
             timezone: "Asia/Shanghai",
           }),
         }
+      )
+      expect(onOpenChange).toHaveBeenCalledWith(false)
+      expect(onUpdated).toHaveBeenCalledOnce()
+      expect(onOpenChange.mock.invocationCallOrder[0]).toBeLessThan(
+        onUpdated.mock.invocationCallOrder[0]
       )
     })
   })

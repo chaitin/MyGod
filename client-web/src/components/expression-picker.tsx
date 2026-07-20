@@ -19,95 +19,107 @@ type StoredExpressionUsage = {
 }
 
 const expressionUsageStorageKey = "client-web:expression-picker:usage"
-const frequentExpressionLimit = 10
+const frequentExpressionLimit = 8
 const expressionUsageMaxAgeMs = 30 * 24 * 60 * 60 * 1000
 
 const allExpressionItems: ExpressionItem[] = [
+  // 开心与大笑
+  expression("😂", "笑哭"),
+  expression("🤣", "笑到打滚"),
+  expression("😄", "大笑"),
+  expression("😅", "流汗笑"),
+  expression("😆", "眯眼笑"),
   expression("😀", "笑脸"),
   expression("😃", "开心"),
   expression("😁", "露齿笑"),
-  expression("😄", "大笑"),
-  expression("😆", "眯眼笑"),
-  expression("😅", "流汗笑"),
-  expression("🤣", "笑到打滚"),
-  expression("😂", "笑哭"),
-  expression("🙂", "浅笑"),
-  expression("🙃", "倒脸"),
-  expression("😉", "眨眼"),
+
+  // 友好与喜爱
   expression("😊", "微笑"),
-  expression("😇", "光环笑脸"),
+  expression("🙂", "浅笑"),
+  expression("😉", "眨眼"),
   expression("🥰", "喜爱"),
   expression("😍", "花痴"),
-  expression("🤩", "星星眼"),
   expression("😘", "飞吻"),
-  expression("😗", "亲亲"),
-  expression("😚", "闭眼亲亲"),
-  expression("😙", "微笑亲亲"),
-  expression("🥲", "含泪微笑"),
-  expression("😋", "好吃"),
-  expression("😛", "吐舌"),
-  expression("😜", "眨眼吐舌"),
-  expression("🤪", "滑稽"),
-  expression("😝", "眯眼吐舌"),
-  expression("🤑", "发财"),
   expression("🤗", "拥抱"),
-  expression("🤭", "偷笑"),
-  expression("🤫", "嘘"),
-  expression("😱", "惊恐"),
-  expression("🤔", "思考"),
-  expression("🤐", "闭嘴"),
-  expression("🤨", "挑眉"),
-  expression("😐", "无语"),
-  expression("😑", "面无表情"),
-  expression("😶", "沉默"),
-  expression("🫥", "虚线脸"),
-  expression("😶‍🌫️", "云里雾里"),
+  expression("🤩", "星星眼"),
+
+  // 调皮与轻松
   expression("😏", "坏笑"),
+  expression("🤭", "偷笑"),
+  expression("😜", "眨眼吐舌"),
+  expression("🙃", "倒脸"),
+  expression("😋", "好吃"),
+  expression("🤪", "滑稽"),
+  expression("😎", "酷"),
+  expression("🤫", "嘘"),
+
+  // 思考与无语
+  expression("🤔", "思考"),
   expression("🙄", "翻白眼"),
+  expression("🤦", "捂脸"),
+  expression("🤷", "摊手"),
+  expression("😑", "面无表情"),
   expression("😬", "尴尬"),
+  expression("🫠", "融化"),
+  expression("🤡", "小丑"),
+
+  // 难过与压力
+  expression("😭", "大哭"),
   expression("🥺", "可怜"),
-  expression("😟", "担心"),
-  expression("😧", "难受"),
-  expression("😔", "沮丧"),
-  expression("😌", "释然"),
-  expression("😞", "失望"),
+  expression("🥹", "忍住眼泪"),
   expression("😢", "哭"),
-  expression("😪", "困倦"),
-  expression("😴", "睡觉"),
-  expression("😷", "口罩"),
-  expression("🤒", "发烧"),
-  expression("🤕", "受伤"),
-  expression("🤢", "恶心"),
-  expression("🤮", "呕吐"),
-  expression("🤧", "打喷嚏"),
-  expression("🥶", "冷"),
-  expression("🥴", "晕"),
-  expression("😵", "晕头转向"),
+  expression("😔", "沮丧"),
+  expression("🥲", "含泪微笑"),
+  expression("😮‍💨", "叹气"),
+  expression("😳", "脸红"),
+
+  // 强烈反应与状态
+  expression("😡", "愤怒"),
+  expression("😤", "生气"),
+  expression("😱", "惊恐"),
   expression("🤯", "爆炸头"),
   expression("🥳", "庆祝"),
-  expression("😎", "酷"),
-  expression("🤓", "书呆子"),
-  expression("🧐", "观察"),
-  expression("😕", "困惑"),
-  expression("😲", "震惊"),
-  expression("😤", "生气"),
-  expression("😡", "愤怒"),
-  expression("😠", "不满"),
-  expression("😭", "大哭"),
-  expression("😰", "冷汗"),
-  expression("😳", "脸红"),
-  expression("🤠", "牛仔"),
-  expression("🥸", "伪装"),
-  expression("🤥", "说谎"),
-  expression("😮‍💨", "叹气"),
+  expression("😴", "睡觉"),
   expression("🥱", "打哈欠"),
-  expression("😈", "恶魔笑"),
-  expression("👿", "生气恶魔"),
+  expression("🫡", "敬礼"),
+
+  // 手势回应
+  expression("👍", "赞"),
+  expression("👏", "鼓掌"),
+  expression("🙏", "拜托"),
+  expression("👌", "好的"),
+  expression("💪", "加油"),
+  expression("✌️", "胜利"),
+  expression("🤝", "握手"),
+  expression("👎", "踩"),
+
+  // 聊天动作与状态符号
+  expression("👋", "挥手"),
+  expression("👀", "关注"),
+  expression("❤️", "爱心"),
+  expression("🫶", "爱心手势"),
+  expression("🔥", "火"),
+  expression("🎉", "庆祝礼花"),
+  expression("✅", "完成"),
+  expression("❌", "错误"),
 ]
 
 const allExpressionsByValue = new Map(
   allExpressionItems.map((item) => [item.value, item])
 )
+const defaultFrequentExpressionItems = [
+  "😂",
+  "😊",
+  "😭",
+  "👍",
+  "❤️",
+  "👏",
+  "🙏",
+  "🎉",
+].flatMap((value) => {
+  const item = allExpressionsByValue.get(value)
+  return item ? [item] : []
+})
 
 export function ExpressionPicker({ onSelect }: ExpressionPickerProps) {
   const [usage, setUsage] = React.useState<StoredExpressionUsage[]>(() =>
@@ -131,7 +143,7 @@ export function ExpressionPicker({ onSelect }: ExpressionPickerProps) {
   }
 
   return (
-    <div className="w-96" data-testid="expression-picker">
+    <div className="w-80" data-testid="expression-picker">
       <div className="space-y-4">
         <ExpressionSection
           items={frequentExpressionItems}
@@ -164,7 +176,7 @@ function ExpressionSection({
       </h3>
       <div
         className="grid gap-1"
-        style={{ gridTemplateColumns: "repeat(10, minmax(0, 1fr))" }}
+        style={{ gridTemplateColumns: "repeat(8, minmax(0, 1fr))" }}
       >
         {items.map((item) => (
           <Button
@@ -202,9 +214,14 @@ function getFrequentExpressionItems(usage: StoredExpressionUsage[]) {
     })
 
   const usedValues = new Set(usedItems.map((item) => item.value))
-  const fallbackItems = allExpressionItems.filter(
-    (item) => !usedValues.has(item.value)
-  )
+  const fallbackItems = Array.from(
+    new Map(
+      [...defaultFrequentExpressionItems, ...allExpressionItems].map((item) => [
+        item.value,
+        item,
+      ])
+    ).values()
+  ).filter((item) => !usedValues.has(item.value))
 
   return [...usedItems, ...fallbackItems].slice(0, frequentExpressionLimit)
 }
@@ -283,7 +300,9 @@ function updateExpressionUsage(
   return Array.from(nextUsageByValue.values())
 }
 
-function isStoredExpressionUsage(value: unknown): value is StoredExpressionUsage {
+function isStoredExpressionUsage(
+  value: unknown
+): value is StoredExpressionUsage {
   if (!value || typeof value !== "object") {
     return false
   }

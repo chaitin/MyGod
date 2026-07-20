@@ -85,7 +85,7 @@ describe("ClientDataProvider", () => {
     expect(conversationRequestCount).toBe(2)
   })
 
-  it("applies topic archive events to the loaded conversation immediately", async () => {
+  it("removes an archived topic from the conversation list immediately", async () => {
     vi.useFakeTimers()
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input)
@@ -120,9 +120,9 @@ describe("ClientDataProvider", () => {
       await vi.advanceTimersByTimeAsync(1_000)
     })
 
-    expect(screen.getByTestId("topic-archived")).toHaveTextContent("false")
+    expect(screen.getByTestId("topic-count")).toHaveTextContent("1")
     act(() => screen.getByRole("button", { name: "archive topic" }).click())
-    expect(screen.getByTestId("topic-archived")).toHaveTextContent("true")
+    expect(screen.getByTestId("topic-count")).toHaveTextContent("0")
   })
 })
 
@@ -134,7 +134,6 @@ function ConversationCount() {
 
 function TopicArchiveProbe() {
   const { conversations, updateMessageTopic } = useClientData()
-  const topic = conversations[0]
 
   return (
     <>
@@ -148,9 +147,7 @@ function TopicArchiveProbe() {
         }
         type="button"
       />
-      <div data-testid="topic-archived">
-        {String(topic?.topic?.archived ?? false)}
-      </div>
+      <div data-testid="topic-count">{conversations.length}</div>
     </>
   )
 }

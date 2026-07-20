@@ -356,7 +356,7 @@ function TopicDrawerContent({
         />
       )}
       <SheetContent
-        className="min-h-0 gap-0 overflow-hidden p-0 data-[side=right]:w-[min(92vw,60rem)] data-[side=right]:sm:max-w-240"
+        className="min-h-0 gap-0 overflow-hidden p-0 data-[side=right]:w-[80vw] data-[side=right]:sm:max-w-400"
         showCloseButton={false}
       >
         <SheetTitle className="sr-only">话题</SheetTitle>
