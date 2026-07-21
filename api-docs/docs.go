@@ -4405,6 +4405,95 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/client/conversations/{conversation_id}/messages/reactions/query": {
+            "post": {
+                "description": "返回当前用户视角下至多 100 条可见消息的完整表情状态，用于客户端断线恢复。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端消息"
+                ],
+                "summary": "批量查询消息表情快照",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "会话 ID",
+                        "name": "conversation_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "消息 ID 列表",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.listMessageReactionSnapshotsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.listMessageReactionSnapshotsResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
         "/api/client/conversations/{conversation_id}/messages/voices": {
             "post": {
                 "description": "普通用户上传最长 60 秒的 WebM/Opus 音频并发送为会话语音消息。音频写入 temporary bucket，消息 body 保存 file_id、时长、文件大小、内容类型和转写文字。",
@@ -4517,6 +4606,187 @@ const docTemplate = `{
                     },
                     "413": {
                         "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/client/conversations/{conversation_id}/messages/{message_id}/reactions": {
+            "put": {
+                "description": "普通用户为可见消息添加或移除一条文本表情。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端消息"
+                ],
+                "summary": "添加或移除消息表情",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "会话 ID",
+                        "name": "conversation_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "消息 ID",
+                        "name": "message_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "表情状态",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.setMessageReactionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.setMessageReactionResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/client/conversations/{conversation_id}/messages/{message_id}/reactions/users": {
+            "get": {
+                "description": "返回当前用户可见消息中指定表情的完整参与者列表。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端消息"
+                ],
+                "summary": "查询消息表情参与者",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "会话 ID",
+                        "name": "conversation_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "消息 ID",
+                        "name": "message_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "表情内容",
+                        "name": "text",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.listMessageReactionUsersResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/client.errorEnvelope"
                         }
@@ -7468,6 +7738,10 @@ const docTemplate = `{
                     "type": "string",
                     "example": "/assets/avatars/builtin/07.webp"
                 },
+                "can_send": {
+                    "type": "boolean",
+                    "example": true
+                },
                 "created_at": {
                     "type": "string",
                     "format": "date-time"
@@ -8165,6 +8439,51 @@ const docTemplate = `{
                 }
             }
         },
+        "client.listMessageReactionSnapshotsRequest": {
+            "type": "object",
+            "properties": {
+                "message_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "client.listMessageReactionSnapshotsResponse": {
+            "type": "object",
+            "properties": {
+                "conversation_id": {
+                    "type": "string"
+                },
+                "snapshots": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.messageReactionSnapshotResponse"
+                    }
+                }
+            }
+        },
+        "client.listMessageReactionUsersResponse": {
+            "type": "object",
+            "properties": {
+                "conversation_id": {
+                    "type": "string"
+                },
+                "message_id": {
+                    "type": "string"
+                },
+                "text": {
+                    "type": "string"
+                },
+                "users": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.messageReactionUserResponse"
+                    }
+                }
+            }
+        },
         "client.listMessagesPageResponse": {
             "type": "object",
             "properties": {
@@ -8246,6 +8565,54 @@ const docTemplate = `{
                 }
             }
         },
+        "client.messageReactionResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "reacted_by_me": {
+                    "type": "boolean"
+                },
+                "text": {
+                    "type": "string"
+                },
+                "users": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.messageReactionUserResponse"
+                    }
+                }
+            }
+        },
+        "client.messageReactionSnapshotResponse": {
+            "type": "object",
+            "properties": {
+                "message_id": {
+                    "type": "string"
+                },
+                "reaction_version": {
+                    "type": "integer"
+                },
+                "reactions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.messageReactionResponse"
+                    }
+                }
+            }
+        },
+        "client.messageReactionUserResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "client.messageReplyToResponse": {
             "type": "object",
             "properties": {
@@ -8307,6 +8674,15 @@ const docTemplate = `{
                 "id": {
                     "type": "string",
                     "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "reaction_version": {
+                    "type": "integer"
+                },
+                "reactions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.messageReactionResponse"
+                    }
                 },
                 "reply_to": {
                     "$ref": "#/definitions/client.messageReplyToResponse"
@@ -8670,6 +9046,37 @@ const docTemplate = `{
                 "pinned": {
                     "type": "boolean",
                     "example": true
+                }
+            }
+        },
+        "client.setMessageReactionRequest": {
+            "type": "object",
+            "properties": {
+                "reacted": {
+                    "type": "boolean"
+                },
+                "text": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.setMessageReactionResponse": {
+            "type": "object",
+            "properties": {
+                "conversation_id": {
+                    "type": "string"
+                },
+                "message_id": {
+                    "type": "string"
+                },
+                "reaction_version": {
+                    "type": "integer"
+                },
+                "reactions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.messageReactionResponse"
+                    }
                 }
             }
         },

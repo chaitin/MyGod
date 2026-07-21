@@ -83,6 +83,7 @@ type conversationProjectResponse struct {
 
 type conversationListItemResponse struct {
 	Avatar             string                             `json:"avatar" example:"/assets/avatars/builtin/07.webp"`
+	CanSend            bool                               `json:"can_send" example:"true"`
 	CreatedAt          time.Time                          `json:"created_at" format:"date-time"`
 	ID                 string                             `json:"id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
 	LastMessageAt      *time.Time                         `json:"last_message_at" format:"date-time"`
@@ -879,7 +880,7 @@ func conversationActor(value account.Account) conversationapp.Actor {
 }
 
 func newConversationItemResponse(value conversationapp.Item) conversationListItemResponse {
-	result := conversationListItemResponse{Avatar: value.Avatar, CreatedAt: value.CreatedAt, ID: value.ID, LastMessageAt: value.LastMessageAt, LastMessageID: value.LastMessageID, LastMessageSeq: value.LastMessageSeq, LastMessageSummary: value.LastMessageSummary, LastMentionedSeq: value.LastMentionedSeq, LastReadSeq: value.LastReadSeq, MemberCount: value.MemberCount, Members: newConversationMembers(value.Members), Name: value.Name, Pinned: value.Pinned, Type: value.Type, UnreadCount: value.UnreadCount, Visibility: value.Visibility}
+	result := conversationListItemResponse{Avatar: value.Avatar, CanSend: value.CanSend, CreatedAt: value.CreatedAt, ID: value.ID, LastMessageAt: value.LastMessageAt, LastMessageID: value.LastMessageID, LastMessageSeq: value.LastMessageSeq, LastMessageSummary: value.LastMessageSummary, LastMentionedSeq: value.LastMentionedSeq, LastReadSeq: value.LastReadSeq, MemberCount: value.MemberCount, Members: newConversationMembers(value.Members), Name: value.Name, Pinned: value.Pinned, Type: value.Type, UnreadCount: value.UnreadCount, Visibility: value.Visibility}
 	if value.Projects != nil {
 		projects := make([]conversationProjectResponse, 0, len(*value.Projects))
 		for _, project := range *value.Projects {

@@ -87,6 +87,72 @@ func TestServiceCreateAndListPreserveIdempotencyOutboxAndReply(t *testing.T) {
 	}
 }
 
+func TestDirectAppMessagesRequireCurrentAccessWhileGroupMessagesUseMembership(t *testing.T) {
+	db := openMessageTestDB(t)
+	fixture := insertMessageTestFixture(t, db)
+	if err := db.Model(&store.App{}).Where("id = ?", fixture.app.ID).
+		Update("visibility", store.AppVisibilityRestricted).Error; err != nil {
+		t.Fatalf("restrict app: %v", err)
+	}
+	service := NewService(Dependencies{DB: db, Bodies: &messageBodyProcessorRecorder{}})
+
+	_, err := service.Create(context.Background(), CreateCommand{
+		AccountID: fixture.user.ID, ConversationID: fixture.conversation.ID,
+		ClientMessageID: "denied-user-direct", Body: json.RawMessage(`{"type":"text","content":"hello"}`),
+	})
+	if ErrorCodeOf(err) != CodeForbidden || ErrorMessage(err) != "你当前无权直接使用此应用" {
+		t.Fatalf("user direct error = %v", err)
+	}
+	_, err = service.CreateAsApp(context.Background(), CreateAsAppCommand{
+		AppID: fixture.app.ID, ConversationID: fixture.conversation.ID,
+		ClientMessageID: "denied-app-direct", Body: json.RawMessage(`{"type":"text","content":"hello"}`),
+		Finalize: func(_ context.Context, body json.RawMessage) (json.RawMessage, string, error) {
+			return body, "hello", nil
+		},
+	})
+	if ErrorCodeOf(err) != CodeForbidden || ErrorMessage(err) != "对方当前无权直接使用此应用" {
+		t.Fatalf("app direct error = %v", err)
+	}
+	if _, err := service.List(context.Background(), ListCommand{
+		AccountID: fixture.user.ID, ConversationID: fixture.conversation.ID, Limit: 20,
+	}); err != nil {
+		t.Fatalf("retained direct history: %v", err)
+	}
+
+	now := time.Date(2026, 7, 15, 14, 0, 0, 0, time.UTC)
+	group := store.Conversation{
+		ID: uuid.NewString(), Kind: store.ConversationKindGroup, Name: "Group",
+		CreatedByUserID: fixture.user.ID, Status: store.ConversationStatusActive,
+		PostingPolicy: store.ConversationPostingPolicyOpen, Visibility: store.ConversationVisibilityPrivate,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Create(&group).Error; err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	groupMembers := []store.ConversationMember{
+		{ConversationID: group.ID, MemberType: store.ConversationMemberTypeUser, MemberID: fixture.user.ID, Role: store.ConversationMemberRoleOwner, JoinedAt: now, HistoryVisibleFromSeq: 1},
+		{ConversationID: group.ID, MemberType: store.ConversationMemberTypeApp, MemberID: fixture.app.ID, Role: store.ConversationMemberRoleMember, JoinedAt: now, HistoryVisibleFromSeq: 1},
+	}
+	if err := db.Create(&groupMembers).Error; err != nil {
+		t.Fatalf("create group members: %v", err)
+	}
+	if _, err := service.Create(context.Background(), CreateCommand{
+		AccountID: fixture.user.ID, ConversationID: group.ID,
+		ClientMessageID: "allowed-user-group", Body: json.RawMessage(`{"type":"text","content":"group hello"}`),
+	}); err != nil {
+		t.Fatalf("user group message: %v", err)
+	}
+	if _, err := service.CreateAsApp(context.Background(), CreateAsAppCommand{
+		AppID: fixture.app.ID, ConversationID: group.ID,
+		ClientMessageID: "allowed-app-group", Body: json.RawMessage(`{"type":"text","content":"group reply"}`),
+		Finalize: func(_ context.Context, body json.RawMessage) (json.RawMessage, string, error) {
+			return body, "group reply", nil
+		},
+	}); err != nil {
+		t.Fatalf("app group message: %v", err)
+	}
+}
+
 func TestServiceListAndRevokeHideMessagesOutsideOnlineWindow(t *testing.T) {
 	db := openMessageTestDB(t)
 	fixture := insertMessageTestFixture(t, db)
@@ -562,8 +628,9 @@ func openMessageTestDB(t *testing.T) *gorm.DB {
 	}
 	if err := db.AutoMigrate(
 		&store.User{}, &store.App{}, &store.Conversation{}, &store.ConversationMember{},
-		&store.Message{}, &store.AppEventOutbox{}, &store.AppConversation{},
+		&store.Message{}, &store.AppEventOutbox{}, &store.AppConversation{}, &store.AppUserGrant{},
 		&store.ConversationTopic{}, &store.ConversationTopicParticipant{},
+		&store.MessageReaction{}, &store.MessageReactionState{},
 		&store.Project{}, &store.ProjectGroup{},
 	); err != nil {
 		t.Fatalf("migrate database: %v", err)
@@ -603,6 +670,11 @@ func insertMessageTestFixture(t *testing.T, db *gorm.DB) messageTestFixture {
 	}
 	if err := db.Create(&members).Error; err != nil {
 		t.Fatalf("create members: %v", err)
+	}
+	if err := db.Create(&store.AppConversation{
+		AppID: app.ID, UserID: user.ID, ConversationID: conversation.ID, CreatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("create app conversation relation: %v", err)
 	}
 	return messageTestFixture{user: user, app: app, conversation: conversation}
 }

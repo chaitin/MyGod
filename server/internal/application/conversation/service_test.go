@@ -157,14 +157,24 @@ func TestServiceAppConversationUsesCurrentAppProfile(t *testing.T) {
 	}
 }
 
-func TestServiceOnlyAllowsPublicAppsAsGroupMembers(t *testing.T) {
+func TestServiceUsesInvitingUsersAppAccessForGroupMembers(t *testing.T) {
 	db := openConversationTestDB(t)
 	now := time.Date(2026, 7, 16, 11, 0, 0, 0, time.UTC)
 	owner := insertConversationTestUser(t, db, "group-owner@example.com", "Owner", now)
+	other := insertConversationTestUser(t, db, "group-other@example.com", "Other", now)
 	ownerID := owner.ID
 	privateApp := store.App{
 		ID: uuid.NewString(), Name: "Private App", CreatorUserID: &ownerID, Enabled: true,
 		Visibility: store.AppVisibilityCreator, ConnectionSecret: "private", CreatedAt: now, UpdatedAt: now,
+	}
+	otherID := other.ID
+	restrictedApp := store.App{
+		ID: uuid.NewString(), Name: "Restricted App", CreatorUserID: &otherID, Enabled: true,
+		Visibility: store.AppVisibilityRestricted, ConnectionSecret: "restricted", CreatedAt: now, UpdatedAt: now,
+	}
+	inaccessibleApp := store.App{
+		ID: uuid.NewString(), Name: "Inaccessible App", CreatorUserID: &otherID, Enabled: true,
+		Visibility: store.AppVisibilityCreator, ConnectionSecret: "inaccessible", CreatedAt: now, UpdatedAt: now,
 	}
 	publicApp := store.App{
 		ID: uuid.NewString(), Name: "Public App", CreatorUserID: &ownerID, Enabled: true,
@@ -178,14 +188,18 @@ func TestServiceOnlyAllowsPublicAppsAsGroupMembers(t *testing.T) {
 		ID: uuid.NewString(), Name: "Disabled Owner App", CreatorUserID: &disabledOwner.ID, Enabled: true,
 		Visibility: store.AppVisibilityPublic, ConnectionSecret: "disabled-owner-public", CreatedAt: now, UpdatedAt: now,
 	}
-	if err := db.Create(&[]store.App{privateApp, publicApp, disabledOwnerApp}).Error; err != nil {
+	if err := db.Create(&[]store.App{privateApp, restrictedApp, inaccessibleApp, publicApp, disabledOwnerApp}).Error; err != nil {
 		t.Fatalf("create apps: %v", err)
 	}
+	if err := db.Create(&store.AppUserGrant{AppID: restrictedApp.ID, UserID: owner.ID, GrantedByUserID: &otherID, CreatedAt: now}).Error; err != nil {
+		t.Fatalf("create app grant: %v", err)
+	}
 	service := NewService(Dependencies{DB: db, Now: func() time.Time { return now }})
-	if _, err := service.CreateGroup(context.Background(), CreateGroupCommand{
+	created, err := service.CreateGroup(context.Background(), CreateGroupCommand{
 		Actor: actorFromTestUser(owner), Name: "Private app group", AppIDs: []string{privateApp.ID},
-	}); ErrorCodeOf(err) != CodeInvalidRequest || ErrorMessage(err) != "只有已启用且所有人可见的应用才能加入群聊" {
-		t.Fatalf("private app group error = %v", err)
+	})
+	if err != nil || created.Conversation.MemberCount != 2 {
+		t.Fatalf("private app group = %#v, err = %v", created, err)
 	}
 	if _, err := service.CreateApp(context.Background(), CreateAppCommand{
 		Actor: actorFromTestUser(owner), AppID: disabledOwnerApp.ID,
@@ -194,22 +208,32 @@ func TestServiceOnlyAllowsPublicAppsAsGroupMembers(t *testing.T) {
 	}
 	if _, err := service.CreateGroup(context.Background(), CreateGroupCommand{
 		Actor: actorFromTestUser(owner), Name: "Disabled owner app group", AppIDs: []string{disabledOwnerApp.ID},
-	}); ErrorCodeOf(err) != CodeInvalidRequest || ErrorMessage(err) != "只有已启用且所有人可见的应用才能加入群聊" {
+	}); ErrorCodeOf(err) != CodeInvalidRequest || ErrorMessage(err) != "所选应用不存在、已停用或你无权访问" {
 		t.Fatalf("disabled owner app group error = %v", err)
 	}
-	created, err := service.CreateGroup(context.Background(), CreateGroupCommand{
+	if _, err := service.CreateGroup(context.Background(), CreateGroupCommand{
+		Actor: actorFromTestUser(owner), Name: "Inaccessible app group", AppIDs: []string{inaccessibleApp.ID},
+	}); ErrorCodeOf(err) != CodeInvalidRequest || ErrorMessage(err) != "所选应用不存在、已停用或你无权访问" {
+		t.Fatalf("inaccessible app group error = %v", err)
+	}
+	publicGroup, err := service.CreateGroup(context.Background(), CreateGroupCommand{
 		Actor: actorFromTestUser(owner), Name: "Public app group", AppIDs: []string{publicApp.ID},
 	})
-	if err != nil || created.Conversation.MemberCount != 2 {
-		t.Fatalf("public app group = %#v, err = %v", created, err)
+	if err != nil || publicGroup.Conversation.MemberCount != 2 {
+		t.Fatalf("public app group = %#v, err = %v", publicGroup, err)
 	}
 	if _, err := service.AddMembers(context.Background(), AddMembersCommand{
-		Actor: actorFromTestUser(owner), ConversationID: created.Conversation.ID, AppIDs: []string{privateApp.ID},
-	}); ErrorCodeOf(err) != CodeInvalidRequest || ErrorMessage(err) != "只有已启用且所有人可见的应用才能加入群聊" {
-		t.Fatalf("add private app error = %v", err)
+		Actor: actorFromTestUser(owner), ConversationID: publicGroup.Conversation.ID, AppIDs: []string{restrictedApp.ID},
+	}); err != nil {
+		t.Fatalf("add granted app: %v", err)
 	}
 	if _, err := service.AddMembers(context.Background(), AddMembersCommand{
-		Actor: actorFromTestUser(owner), ConversationID: created.Conversation.ID, MemberIDs: []string{uuid.NewString()},
+		Actor: actorFromTestUser(owner), ConversationID: publicGroup.Conversation.ID, AppIDs: []string{inaccessibleApp.ID},
+	}); ErrorCodeOf(err) != CodeInvalidRequest || ErrorMessage(err) != "所选应用不存在、已停用或你无权访问" {
+		t.Fatalf("add inaccessible app error = %v", err)
+	}
+	if _, err := service.AddMembers(context.Background(), AddMembersCommand{
+		Actor: actorFromTestUser(owner), ConversationID: publicGroup.Conversation.ID, MemberIDs: []string{uuid.NewString()},
 	}); ErrorCodeOf(err) != CodeInvalidRequest || ErrorMessage(err) != "成员不存在或已禁用" {
 		t.Fatalf("add missing member error = %v", err)
 	}

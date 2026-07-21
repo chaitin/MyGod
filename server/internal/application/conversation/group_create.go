@@ -39,7 +39,7 @@ func (s *Service) CreateGroup(ctx context.Context, cmd CreateGroupCommand) (Crea
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrGroupAppUnavailable):
-			return CreateGroupResult{}, invalidRequest("只有已启用且所有人可见的应用才能加入群聊", err)
+			return CreateGroupResult{}, invalidRequest("所选应用不存在、已停用或你无权访问", err)
 		case errors.Is(err, ErrMemberMissing):
 			return CreateGroupResult{}, invalidRequest("成员不存在或已禁用", err)
 		case errors.Is(err, ErrMemberCap):
@@ -82,7 +82,7 @@ func (s *Service) createGroup(ctx context.Context, actor store.User, name string
 	var message *store.Message
 	var userIDs []string
 	if err := db.Transaction(func(tx *gorm.DB) error {
-		apps, err := loadVisibleGroupApps(tx, appIDs)
+		apps, err := loadUserAccessibleGroupApps(tx, appIDs, actor.ID)
 		if err != nil {
 			return err
 		}

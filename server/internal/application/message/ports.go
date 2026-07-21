@@ -44,6 +44,10 @@ type NotificationPort interface {
 	PublishMembersMentioned(context.Context, []string, string, int64)
 }
 
+type ReactionNotificationPort interface {
+	PublishMessageReactionsUpdated(context.Context, []string, ReactionEvent)
+}
+
 type AppEvent struct {
 	AppID   string
 	Cursor  int64

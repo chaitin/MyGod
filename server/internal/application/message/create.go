@@ -390,6 +390,9 @@ func mapCreateError(err error) error {
 	if errors.Is(err, errConversationNotSendable) {
 		return forbidden("当前会话不能发送消息", err)
 	}
+	if errors.Is(err, errAppDirectAccessDenied) {
+		return forbidden("你当前无权直接使用此应用", err)
+	}
 	if errors.Is(err, errReplyToMessageInvalid) {
 		return InvalidRequestError("引用消息无效", err)
 	}

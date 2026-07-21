@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	appapp "app/internal/application/app"
+	"app/internal/application/conversationaccess"
 	"app/internal/store"
 
 	"github.com/google/uuid"
@@ -188,6 +189,35 @@ func loadVisibleGroupApps(db *gorm.DB, appIDs []string) ([]store.App, error) {
 	return ordered, nil
 }
 
+func loadUserAccessibleGroupApps(db *gorm.DB, appIDs []string, userID string) ([]store.App, error) {
+	if len(appIDs) == 0 {
+		return nil, nil
+	}
+	apps, err := appapp.LockUserAccessibleApps(db, appIDs, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrGroupAppUnavailable
+		}
+		return nil, err
+	}
+	if len(apps) != len(appIDs) {
+		return nil, ErrGroupAppUnavailable
+	}
+	byID := make(map[string]store.App, len(apps))
+	for _, app := range apps {
+		byID[app.ID] = app
+	}
+	ordered := make([]store.App, 0, len(appIDs))
+	for _, id := range appIDs {
+		app, ok := byID[id]
+		if !ok {
+			return nil, ErrGroupAppUnavailable
+		}
+		ordered = append(ordered, app)
+	}
+	return ordered, nil
+}
+
 func (s *Service) loadListMembers(db *gorm.DB, conversationIDs []string) (map[string][]store.ConversationMember, map[string]store.User, map[string]store.App, error) {
 	byConversation := make(map[string][]store.ConversationMember, len(conversationIDs))
 	if len(conversationIDs) == 0 {
@@ -288,12 +318,20 @@ func (s *Service) loadItem(db *gorm.DB, conversation store.Conversation, current
 			return Item{}, gorm.ErrRecordNotFound
 		}
 		item := newTopicItem(conversation, currentUserID, membersByConversation[conversation.ID], users, apps, presentation)
+		item.CanSend, err = loadUserConversationCanSend(db, conversation.ID, currentUserID)
+		if err != nil {
+			return Item{}, err
+		}
 		if err := s.loadItemPinState(db, &item, currentUserID); err != nil {
 			return Item{}, err
 		}
 		return item, nil
 	}
 	item := newItem(conversation, currentUserID, membersByConversation[conversation.ID], users, apps)
+	item.CanSend, err = loadUserConversationCanSend(db, conversation.ID, currentUserID)
+	if err != nil {
+		return Item{}, err
+	}
 	if err := s.loadItemPinState(db, &item, currentUserID); err != nil {
 		return Item{}, err
 	}
@@ -394,7 +432,7 @@ func newTopicItem(conversation store.Conversation, currentUserID string, members
 		lastMentionedSeq = presentation.participant.LastMentionedSeq
 	}
 	return Item{
-		Avatar: parentItem.Avatar, CreatedAt: conversation.CreatedAt, ID: conversation.ID,
+		Avatar: parentItem.Avatar, CanSend: true, CreatedAt: conversation.CreatedAt, ID: conversation.ID,
 		LastMessageAt: conversation.LastMessageAt, LastMessageID: conversation.LastMessageID,
 		LastMessageSeq: conversation.LastMessageSeq, LastMessageSummary: conversation.LastMessageSummary,
 		LastMentionedSeq: lastMentionedSeq, LastReadSeq: lastReadSeq,
@@ -449,7 +487,7 @@ func newItem(conversation store.Conversation, currentUserID string, members []st
 		name = "群聊"
 	}
 	return Item{
-		Avatar: avatar, CreatedAt: conversation.CreatedAt, ID: conversation.ID,
+		Avatar: avatar, CanSend: true, CreatedAt: conversation.CreatedAt, ID: conversation.ID,
 		LastMessageAt: conversation.LastMessageAt, LastMessageID: conversation.LastMessageID,
 		LastMessageSeq: conversation.LastMessageSeq, LastMessageSummary: conversation.LastMessageSummary,
 		LastMentionedSeq: lastMentionedSeq, LastReadSeq: lastReadSeq,
@@ -457,6 +495,71 @@ func newItem(conversation store.Conversation, currentUserID string, members []st
 		Name: name, Type: conversation.Kind, UnreadCount: unreadCount(conversation.LastMessageSeq, lastReadSeq),
 		Visibility: conversation.Visibility,
 	}
+}
+
+func loadUserConversationCanSend(db *gorm.DB, conversationID, userID string) (bool, error) {
+	access, err := conversationaccess.Load(db, conversationID, false)
+	if err != nil {
+		return false, err
+	}
+	if access.Conversation.Status != store.ConversationStatusActive || access.Conversation.PostingPolicy != store.ConversationPostingPolicyOpen {
+		return false, nil
+	}
+	if access.ParentConversation != nil && (access.ParentConversation.Status != store.ConversationStatusActive || access.ParentConversation.PostingPolicy != store.ConversationPostingPolicyOpen) {
+		return false, nil
+	}
+	if err := conversationaccess.RequireUserDirectAppAccess(db, access, userID); err != nil {
+		if errors.Is(err, conversationaccess.ErrDirectAppAccessDenied) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func loadUserAccessibleAppIDSet(db *gorm.DB, userID string, apps map[string]store.App) (map[string]struct{}, error) {
+	result := make(map[string]struct{}, len(apps))
+	if len(apps) == 0 {
+		return result, nil
+	}
+	appIDs := make([]string, 0, len(apps))
+	for appID := range apps {
+		appIDs = append(appIDs, appID)
+	}
+	sort.Strings(appIDs)
+	var accessibleIDs []string
+	if err := appapp.ApplyUserAccessScope(db.Model(&store.App{}), userID).
+		Where("apps.id IN ?", appIDs).Order("apps.id ASC").Pluck("apps.id", &accessibleIDs).Error; err != nil {
+		return nil, err
+	}
+	for _, appID := range accessibleIDs {
+		result[appID] = struct{}{}
+	}
+	return result, nil
+}
+
+func canUserSendConversation(conversation store.Conversation, parent *store.Conversation, members []store.ConversationMember, accessibleAppIDs map[string]struct{}) bool {
+	if conversation.Status != store.ConversationStatusActive || conversation.PostingPolicy != store.ConversationPostingPolicyOpen {
+		return false
+	}
+	effective := conversation
+	if parent != nil {
+		if parent.Status != store.ConversationStatusActive || parent.PostingPolicy != store.ConversationPostingPolicyOpen {
+			return false
+		}
+		effective = *parent
+	}
+	if effective.Kind != store.ConversationKindApp {
+		return true
+	}
+	for _, member := range members {
+		if member.MemberType != store.ConversationMemberTypeApp {
+			continue
+		}
+		_, ok := accessibleAppIDs[member.MemberID]
+		return ok
+	}
+	return false
 }
 
 func newGroup(conversation store.Conversation, candidates []memberCandidate, currentUserID string) Group {

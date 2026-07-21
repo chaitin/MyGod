@@ -55,6 +55,15 @@ func LockUserAccessibleApp(db *gorm.DB, appID string, userID string) (store.App,
 	return lockApp(query)
 }
 
+// LockUserAccessibleApps acquires shared row locks in stable ID order and
+// returns all usable applications the user may discover and use directly.
+func LockUserAccessibleApps(db *gorm.DB, appIDs []string, userID string) ([]store.App, error) {
+	if len(appIDs) == 0 {
+		return nil, nil
+	}
+	return findLockedApps(ApplyUserAccessScope(appLockQuery(db, appIDs), userID))
+}
+
 // LockUsableApps acquires shared row locks in stable ID order and returns all
 // currently usable applications from appIDs.
 func LockUsableApps(db *gorm.DB, appIDs []string) ([]store.App, error) {

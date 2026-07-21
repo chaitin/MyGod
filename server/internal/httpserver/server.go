@@ -187,7 +187,8 @@ func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options,
 		ForwardBodies: server.messageContents, Files: server.files,
 		TaskNotificationBodies: server.messageContents, Apps: cfg.Apps,
 		TaskReminderBodies: server.messageContents,
-		Notifications:      server, AppEvents: server, AppEventLocker: &server.appEventMu,
+		Notifications:      server, ReactionNotifications: server,
+		AppEvents: server, AppEventLocker: &server.appEventMu,
 		BeforeAppEventLock: func(message messageapp.Message) {
 			if server.beforeAppEventLock != nil {
 				server.beforeAppEventLock(legacyStoredMessage(message))

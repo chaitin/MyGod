@@ -311,8 +311,8 @@ func TestAdminUpdateReconcilesAgainstLockedVisibility(t *testing.T) {
 	if err != nil || updated.Visibility != VisibilityRestricted {
 		t.Fatalf("update app = %#v, err = %v", updated, err)
 	}
-	requireOwnedAppRowCount(t, db, &store.AppConversation{}, 0, "app_id = ? AND user_id = ?", stored.ID, other.ID)
-	requireOwnedAppActiveMemberCount(t, db, stored.ID, conversation.ID, 0)
+	requireOwnedAppRowCount(t, db, &store.AppConversation{}, 1, "app_id = ? AND user_id = ?", stored.ID, other.ID)
+	requireOwnedAppActiveMemberCount(t, db, stored.ID, conversation.ID, 1)
 	requireOwnedAppRowCount(t, db, &store.AppEventOutbox{}, 0, "app_id = ?", stored.ID)
 }
 

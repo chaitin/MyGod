@@ -158,7 +158,7 @@ func TestServiceRejectsInvalidOwnedAppManagement(t *testing.T) {
 	}
 }
 
-func TestOwnedAppAuthorizationChangesRevokeExistingConversationAccess(t *testing.T) {
+func TestOwnedAppAuthorizationChangesKeepMembershipsAndRevokeUnauthorizedDirectEvents(t *testing.T) {
 	db := openAppTestDB(t)
 	now := time.Date(2026, 7, 16, 11, 0, 0, 0, time.UTC)
 	owner := insertOwnedAppTestUser(t, db, "lifecycle-owner@example.com", now)
@@ -180,6 +180,12 @@ func TestOwnedAppAuthorizationChangesRevokeExistingConversationAccess(t *testing
 	for _, conversationID := range []string{allowedConversation.ID, deniedConversation.ID, groupConversation.ID} {
 		insertOwnedAppEvent(t, db, created.ID, conversationID, now)
 	}
+	allowedTopicID := uuid.NewString()
+	deniedTopicID := uuid.NewString()
+	insertOwnedAppTopicMessageEvent(t, db, created.ID, allowedConversation.ID, allowedTopicID, now)
+	insertOwnedAppTopicClosedEvent(t, db, created.ID, allowedConversation.ID, allowedTopicID, now)
+	insertOwnedAppTopicMessageEvent(t, db, created.ID, deniedConversation.ID, deniedTopicID, now)
+	insertOwnedAppTopicClosedEvent(t, db, created.ID, deniedConversation.ID, deniedTopicID, now)
 
 	grants := []string{allowed.ID}
 	visibility := VisibilityRestricted
@@ -190,10 +196,10 @@ func TestOwnedAppAuthorizationChangesRevokeExistingConversationAccess(t *testing
 		t.Fatalf("update authorization = %#v, err = %v", updated, err)
 	}
 	requireOwnedAppRowCount(t, db, &store.AppConversation{}, 1, "app_id = ? AND user_id = ?", created.ID, allowed.ID)
-	requireOwnedAppRowCount(t, db, &store.AppConversation{}, 0, "app_id = ? AND user_id = ?", created.ID, denied.ID)
+	requireOwnedAppRowCount(t, db, &store.AppConversation{}, 1, "app_id = ? AND user_id = ?", created.ID, denied.ID)
 	requireOwnedAppActiveMemberCount(t, db, created.ID, allowedConversation.ID, 1)
-	requireOwnedAppActiveMemberCount(t, db, created.ID, deniedConversation.ID, 0)
-	requireOwnedAppActiveMemberCount(t, db, created.ID, groupConversation.ID, 0)
+	requireOwnedAppActiveMemberCount(t, db, created.ID, deniedConversation.ID, 1)
+	requireOwnedAppActiveMemberCount(t, db, created.ID, groupConversation.ID, 1)
 
 	var storedDeniedConversation store.Conversation
 	if err := db.First(&storedDeniedConversation, "id = ?", deniedConversation.ID).Error; err != nil {
@@ -206,8 +212,22 @@ func TestOwnedAppAuthorizationChangesRevokeExistingConversationAccess(t *testing
 	if err := db.Where("app_id = ?", created.ID).Find(&remainingEvents).Error; err != nil {
 		t.Fatalf("load remaining events: %v", err)
 	}
-	if len(remainingEvents) != 1 || eventConversationID(t, remainingEvents[0]) != allowedConversation.ID {
+	if len(remainingEvents) != 4 {
 		t.Fatalf("remaining events = %#v", remainingEvents)
+	}
+	remainingPayloads := ""
+	for _, event := range remainingEvents {
+		remainingPayloads += string(event.Payload)
+	}
+	for _, expectedID := range []string{allowedConversation.ID, groupConversation.ID, allowedTopicID} {
+		if !strings.Contains(remainingPayloads, expectedID) {
+			t.Fatalf("remaining payloads missing %s: %s", expectedID, remainingPayloads)
+		}
+	}
+	for _, deniedID := range []string{deniedConversation.ID, deniedTopicID} {
+		if strings.Contains(remainingPayloads, deniedID) {
+			t.Fatalf("remaining payloads contain denied ID %s: %s", deniedID, remainingPayloads)
+		}
 	}
 
 	publicVisibility := VisibilityPublic
@@ -242,7 +262,7 @@ func TestOwnedAppAuthorizationChangesRevokeExistingConversationAccess(t *testing
 	}
 }
 
-func TestOwnedAppAuthorizationShrinkTransfersOwnedGroupsBeforeLeaving(t *testing.T) {
+func TestOwnedAppAuthorizationShrinkKeepsOwnedGroupMembership(t *testing.T) {
 	db := openAppTestDB(t)
 	if err := db.Exec(`
 		CREATE UNIQUE INDEX app_owned_group_one_owner_test
@@ -289,23 +309,23 @@ func TestOwnedAppAuthorizationShrinkTransfersOwnedGroupsBeforeLeaving(t *testing
 	}); err != nil {
 		t.Fatalf("shrink visibility: %v", err)
 	}
-	var transferred store.ConversationMember
-	if err := db.First(&transferred,
+	var existingAdmin store.ConversationMember
+	if err := db.First(&existingAdmin,
 		"conversation_id = ? AND member_type = ? AND member_id = ?", group.ID, store.ConversationMemberTypeUser, admin.ID,
 	).Error; err != nil {
-		t.Fatalf("load transferred owner: %v", err)
+		t.Fatalf("load existing admin: %v", err)
 	}
-	if transferred.Role != store.ConversationMemberRoleOwner || transferred.LeftAt != nil {
-		t.Fatalf("transferred owner = %#v", transferred)
+	if existingAdmin.Role != store.ConversationMemberRoleAdmin || existingAdmin.LeftAt != nil {
+		t.Fatalf("existing admin = %#v", existingAdmin)
 	}
-	var formerOwner store.ConversationMember
-	if err := db.First(&formerOwner,
+	var appOwner store.ConversationMember
+	if err := db.First(&appOwner,
 		"conversation_id = ? AND member_type = ? AND member_id = ?", group.ID, store.ConversationMemberTypeApp, created.ID,
 	).Error; err != nil {
-		t.Fatalf("load former owner: %v", err)
+		t.Fatalf("load app owner: %v", err)
 	}
-	if formerOwner.Role != store.ConversationMemberRoleMember || formerOwner.LeftAt == nil {
-		t.Fatalf("former owner = %#v", formerOwner)
+	if appOwner.Role != store.ConversationMemberRoleOwner || appOwner.LeftAt != nil {
+		t.Fatalf("app owner = %#v", appOwner)
 	}
 	var storedGroup store.Conversation
 	if err := db.First(&storedGroup, "id = ?", group.ID).Error; err != nil {
@@ -498,17 +518,33 @@ func insertOwnedAppEvent(t *testing.T, db *gorm.DB, appID string, conversationID
 	}
 }
 
-func eventConversationID(t *testing.T, event store.AppEventOutbox) string {
+func insertOwnedAppTopicMessageEvent(t *testing.T, db *gorm.DB, appID, parentConversationID, topicID string, now time.Time) {
 	t.Helper()
-	var payload struct {
-		Conversation struct {
-			ID string `json:"id"`
-		} `json:"conversation"`
+	payload, err := json.Marshal(map[string]any{
+		"conversation": map[string]any{
+			"id":     topicID,
+			"parent": map[string]any{"id": parentConversationID},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal topic message event: %v", err)
 	}
-	if err := json.Unmarshal(event.Payload, &payload); err != nil {
-		t.Fatalf("decode app event: %v", err)
+	if err := db.Create(&store.AppEventOutbox{AppID: appID, Event: "message.created", Payload: payload, CreatedAt: now}).Error; err != nil {
+		t.Fatalf("create topic message event: %v", err)
 	}
-	return payload.Conversation.ID
+}
+
+func insertOwnedAppTopicClosedEvent(t *testing.T, db *gorm.DB, appID, parentConversationID, topicID string, now time.Time) {
+	t.Helper()
+	payload, err := json.Marshal(map[string]any{
+		"conversation_id": topicID, "parent_conversation_id": parentConversationID,
+	})
+	if err != nil {
+		t.Fatalf("marshal topic closed event: %v", err)
+	}
+	if err := db.Create(&store.AppEventOutbox{AppID: appID, Event: "topic.closed", Payload: payload, CreatedAt: now}).Error; err != nil {
+		t.Fatalf("create topic closed event: %v", err)
+	}
 }
 
 func requireOwnedAppActiveMemberCount(t *testing.T, db *gorm.DB, appID string, conversationID string, want int64) {

@@ -37,6 +37,13 @@ func (s *Server) PublishMembersMentioned(_ context.Context, userIDs []string, co
 	s.realtime.SendToUsers(userIDs, realtimeConversationMemberMentionedEvent(conversationID, seq))
 }
 
+func (s *Server) PublishMessageReactionsUpdated(_ context.Context, userIDs []string, event messageapp.ReactionEvent) {
+	if len(userIDs) == 0 {
+		return
+	}
+	s.realtime.SendToUsers(userIDs, realtimeMessageReactionsUpdatedEvent(event))
+}
+
 func (s *Server) DeliverAppEvents(_ context.Context, events []messageapp.AppEvent) {
 	if s.appConnections == nil {
 		return
@@ -47,6 +54,13 @@ func (s *Server) DeliverAppEvents(_ context.Context, events []messageapp.AppEven
 }
 
 func legacyMessageResponse(value messageapp.Message) messageResponse {
+	reactions := make([]messageReactionResponse, len(value.Reactions))
+	for index, reaction := range value.Reactions {
+		reactions[index] = messageReactionResponse{
+			Count: reaction.Count, ReactedByMe: reaction.ReactedByMe, Text: reaction.Text,
+			Users: newLegacyMessageReactionUserResponses(reaction.Users),
+		}
+	}
 	response := messageResponse{
 		ClientMessageID:  value.ClientMessageID,
 		Body:             value.Body,
@@ -54,6 +68,8 @@ func legacyMessageResponse(value messageapp.Message) messageResponse {
 		CreatedAt:        value.CreatedAt,
 		ID:               value.ID,
 		ReplyToMessageID: value.ReplyToMessageID,
+		ReactionVersion:  value.ReactionVersion,
+		Reactions:        reactions,
 		RevokedAt:        value.RevokedAt,
 		RevokedByUserID:  value.RevokedByUserID,
 		Sender:           messageSenderResponse{ID: value.Sender.ID, Type: value.Sender.Type},
@@ -87,6 +103,14 @@ func legacyMessageResponse(value messageapp.Message) messageResponse {
 		}
 	}
 	return response
+}
+
+func newLegacyMessageReactionUserResponses(values []messageapp.ReactionUser) []messageReactionUserResponse {
+	result := make([]messageReactionUserResponse, len(values))
+	for index, value := range values {
+		result[index] = messageReactionUserResponse{ID: value.ID, Name: value.Name}
+	}
+	return result
 }
 
 func legacyStoredMessage(value messageapp.Message) store.Message {

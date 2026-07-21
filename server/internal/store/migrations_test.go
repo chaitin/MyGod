@@ -37,6 +37,7 @@ func TestMigrationDirectoryContainsExpectedMigrations(t *testing.T) {
 		"00022_add_conversation_topics.sql",
 		"00023_add_conversation_pins.sql",
 		"00024_repair_conversation_topic_app_columns.sql",
+		"00025_add_message_reactions.sql",
 	}
 	if len(matches) != len(want) {
 		t.Fatalf("migration file count = %d, want %d: %v", len(matches), len(want), matches)
@@ -63,6 +64,30 @@ func TestConversationTopicAppColumnsRepairMigration(t *testing.T) {
 	} {
 		if !strings.Contains(sql, required) {
 			t.Fatalf("conversation topic app columns repair migration missing %q", required)
+		}
+	}
+}
+
+func TestMessageReactionsMigration(t *testing.T) {
+	rawSQL, err := os.ReadFile("../../migrations/00025_add_message_reactions.sql")
+	if err != nil {
+		t.Fatalf("read message reactions migration: %v", err)
+	}
+	sql := normalizeSQL(string(rawSQL))
+	for _, required := range []string{
+		"create table message_reactions",
+		"message_id uuid not null references message_registry(id) on delete cascade",
+		"user_id uuid not null references users(id) on delete cascade",
+		"text varchar(128) not null",
+		"primary key (message_id, user_id, text)",
+		"create index message_reactions_message_text_index",
+		"create table message_reaction_states",
+		"version bigint not null default 0",
+		"drop table message_reaction_states",
+		"drop table message_reactions",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("message reactions migration missing %q", required)
 		}
 	}
 }

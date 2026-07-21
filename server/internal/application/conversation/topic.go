@@ -130,6 +130,9 @@ func (s *Service) createTopic(db *gorm.DB, creator topicCreator, parentID, sourc
 			if _, err := requireActiveTopicActorMember(tx, topicAccess, creator.memberType, creator.id); err != nil {
 				return err
 			}
+			if err := requireTopicCreatorDirectAppAccess(tx, topicAccess, creator); err != nil {
+				return err
+			}
 			if !topicAccess.IsArchived() {
 				now := s.now().UTC()
 				if err := conversationaccess.EnsureTopicParticipant(
@@ -156,6 +159,9 @@ func (s *Service) createTopic(db *gorm.DB, creator topicCreator, parentID, sourc
 		member, err := requireTopicCreatorMember(tx, parentAccess, creator)
 		if err != nil {
 			return ErrAccessDenied
+		}
+		if err := requireTopicCreatorDirectAppAccess(tx, parentAccess, creator); err != nil {
+			return err
 		}
 		source, err := loadTopicSourceMessage(tx, parent.ID, sourceMessageID)
 		if err != nil {
@@ -233,6 +239,9 @@ func (s *Service) createTopic(db *gorm.DB, creator topicCreator, parentID, sourc
 			access, loadErr := conversationaccess.Load(db, topic.ConversationID, false)
 			if loadErr == nil {
 				if _, accessErr := requireActiveTopicActorMember(db, access, creator.memberType, creator.id); accessErr != nil {
+					return store.Conversation{}, false, nil, accessErr
+				}
+				if accessErr := requireTopicCreatorDirectAppAccess(db, access, creator); accessErr != nil {
 					return store.Conversation{}, false, nil, accessErr
 				}
 				if !access.IsArchived() {
@@ -317,8 +326,8 @@ func (s *Service) GetTopic(ctx context.Context, cmd GetTopicCommand) (TopicDetai
 		return TopicDetail{}, internalError(err)
 	}
 	return TopicDetail{
-		CanArchive:     canArchive && !access.IsArchived(),
-		CanParticipate: !access.IsArchived() && (item.Topic == nil || !item.Topic.Participating),
+		CanArchive:     item.CanSend && canArchive && !access.IsArchived(),
+		CanParticipate: item.CanSend && !access.IsArchived() && (item.Topic == nil || !item.Topic.Participating),
 		Conversation:   item,
 		ParentConversation: Reference{
 			ID: access.ParentConversation.ID, Name: item.Topic.ParentConversationName,
@@ -351,6 +360,12 @@ func (s *Service) ParticipateTopic(ctx context.Context, cmd ParticipateTopicComm
 			return ErrTopicArchived
 		}
 		if _, err := requireActiveTopicUserMember(tx, access, actor.ID); err != nil {
+			return err
+		}
+		if err := conversationaccess.RequireUserDirectAppAccess(tx, access, actor.ID); err != nil {
+			if errors.Is(err, conversationaccess.ErrDirectAppAccessDenied) {
+				return ErrAccessDenied
+			}
 			return err
 		}
 		now := s.now().UTC()
@@ -416,6 +431,12 @@ func (s *Service) ArchiveTopic(ctx context.Context, cmd ArchiveTopicCommand) (It
 		}
 		member, err := requireActiveTopicUserMember(tx, access, actor.ID)
 		if err != nil {
+			return err
+		}
+		if err := conversationaccess.RequireUserDirectAppAccess(tx, access, actor.ID); err != nil {
+			if errors.Is(err, conversationaccess.ErrDirectAppAccessDenied) {
+				return ErrAccessDenied
+			}
 			return err
 		}
 		isSourceSender := access.Topic.SourceSenderType == store.MessageSenderTypeUser &&
@@ -546,6 +567,12 @@ func (s *Service) CloseTopicAsApp(ctx context.Context, cmd AppCloseTopicCommand)
 		if _, err := requireActiveTopicActorMember(tx, access, store.ConversationMemberTypeApp, appID); err != nil {
 			return err
 		}
+		if err := conversationaccess.RequireAppDirectUserAccess(tx, access, appID); err != nil {
+			if errors.Is(err, conversationaccess.ErrDirectAppAccessDenied) {
+				return ErrAccessDenied
+			}
+			return err
+		}
 		if access.Topic.CreatedByAppID == nil || *access.Topic.CreatedByAppID != appID {
 			return ErrAccessDenied
 		}
@@ -672,6 +699,19 @@ func appendUniqueString(values []string, value string) []string {
 		}
 	}
 	return append(values, value)
+}
+
+func requireTopicCreatorDirectAppAccess(db *gorm.DB, access conversationaccess.Context, creator topicCreator) error {
+	var err error
+	if creator.memberType == store.ConversationMemberTypeApp {
+		err = conversationaccess.RequireAppDirectUserAccess(db, access, creator.id)
+	} else {
+		err = conversationaccess.RequireUserDirectAppAccess(db, access, creator.id)
+	}
+	if errors.Is(err, conversationaccess.ErrDirectAppAccessDenied) {
+		return ErrAccessDenied
+	}
+	return err
 }
 
 func loadTopicSourceMessage(db *gorm.DB, conversationID, messageID string) (store.Message, error) {

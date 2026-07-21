@@ -26,6 +26,52 @@ type createMessageRequest struct {
 	Body             json.RawMessage `json:"body" swaggertype:"object"`
 }
 
+type setMessageReactionRequest struct {
+	Reacted bool   `json:"reacted"`
+	Text    string `json:"text"`
+}
+
+type listMessageReactionSnapshotsRequest struct {
+	MessageIDs []string `json:"message_ids"`
+}
+
+type messageReactionUserResponse struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type messageReactionResponse struct {
+	Count       int64                         `json:"count"`
+	ReactedByMe bool                          `json:"reacted_by_me"`
+	Text        string                        `json:"text"`
+	Users       []messageReactionUserResponse `json:"users"`
+}
+
+type setMessageReactionResponse struct {
+	ConversationID  string                    `json:"conversation_id"`
+	MessageID       string                    `json:"message_id"`
+	ReactionVersion int64                     `json:"reaction_version"`
+	Reactions       []messageReactionResponse `json:"reactions"`
+}
+
+type messageReactionSnapshotResponse struct {
+	MessageID       string                    `json:"message_id"`
+	ReactionVersion int64                     `json:"reaction_version"`
+	Reactions       []messageReactionResponse `json:"reactions"`
+}
+
+type listMessageReactionSnapshotsResponse struct {
+	ConversationID string                            `json:"conversation_id"`
+	Snapshots      []messageReactionSnapshotResponse `json:"snapshots"`
+}
+
+type listMessageReactionUsersResponse struct {
+	ConversationID string                        `json:"conversation_id"`
+	MessageID      string                        `json:"message_id"`
+	Text           string                        `json:"text"`
+	Users          []messageReactionUserResponse `json:"users"`
+}
+
 type messageSenderResponse struct {
 	ID   string `json:"id,omitempty" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
 	Type string `json:"type" example:"user"`
@@ -59,6 +105,8 @@ type messageResponse struct {
 	ID               string                      `json:"id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
 	ReplyToMessageID string                      `json:"reply_to_message_id,omitempty" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
 	ReplyTo          *messageReplyToResponse     `json:"reply_to,omitempty"`
+	ReactionVersion  int64                       `json:"reaction_version"`
+	Reactions        []messageReactionResponse   `json:"reactions"`
 	RevokedAt        *time.Time                  `json:"revoked_at,omitempty" format:"date-time"`
 	RevokedByUserID  string                      `json:"revoked_by_user_id,omitempty" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
 	Sender           messageSenderResponse       `json:"sender"`
@@ -107,7 +155,10 @@ func (a *MessageAPI) RegisterRoutes(group *echo.Group) {
 	group.POST("/conversations/:conversation_id/messages/images", a.createImage)
 	group.POST("/conversations/:conversation_id/messages/voices", a.createVoice)
 	group.POST("/conversations/:conversation_id/messages/forward", a.forward)
+	group.POST("/conversations/:conversation_id/messages/reactions/query", a.listReactionSnapshots)
 	group.POST("/conversations/:conversation_id/messages/:message_id/revoke", a.revoke)
+	group.GET("/conversations/:conversation_id/messages/:message_id/reactions/users", a.listReactionUsers)
+	group.PUT("/conversations/:conversation_id/messages/:message_id/reactions", a.setReaction)
 }
 
 // list godoc
@@ -221,9 +272,11 @@ func (a *MessageAPI) create(c echo.Context) error {
 }
 
 func newClientMessageResponse(value messageapp.Message) messageResponse {
+	reactions := newMessageReactionResponses(value.Reactions)
 	result := messageResponse{
 		ClientMessageID: value.ClientMessageID, Body: value.Body, ConversationID: value.ConversationID,
 		CreatedAt: value.CreatedAt, ID: value.ID, ReplyToMessageID: value.ReplyToMessageID,
+		ReactionVersion: value.ReactionVersion, Reactions: reactions,
 		RevokedAt: value.RevokedAt, RevokedByUserID: value.RevokedByUserID,
 		Sender: messageSenderResponse{ID: value.Sender.ID, Type: value.Sender.Type}, Seq: value.Seq,
 	}
@@ -253,6 +306,183 @@ func newClientMessageResponse(value messageapp.Message) messageResponse {
 		}
 	}
 	return result
+}
+
+func newMessageReactionResponses(values []messageapp.ReactionSummary) []messageReactionResponse {
+	result := make([]messageReactionResponse, len(values))
+	for index, value := range values {
+		result[index] = messageReactionResponse{
+			Count: value.Count, ReactedByMe: value.ReactedByMe, Text: value.Text,
+			Users: newMessageReactionUserResponses(value.Users),
+		}
+	}
+	return result
+}
+
+func newMessageReactionUserResponses(values []messageapp.ReactionUser) []messageReactionUserResponse {
+	result := make([]messageReactionUserResponse, len(values))
+	for index, value := range values {
+		result[index] = messageReactionUserResponse{ID: value.ID, Name: value.Name}
+	}
+	return result
+}
+
+// setReaction godoc
+//
+// @Summary 添加或移除消息表情
+// @Description 普通用户为可见消息添加或移除一条文本表情。
+// @Tags 客户端消息
+// @Accept json
+// @Produce json
+// @Param conversation_id path string true "会话 ID"
+// @Param message_id path string true "消息 ID"
+// @Param body body setMessageReactionRequest true "表情状态"
+// @Success 200 {object} successEnvelope{data=setMessageReactionResponse}
+// @Failure 400 {object} errorEnvelope
+// @Failure 401 {object} errorEnvelope
+// @Failure 403 {object} errorEnvelope
+// @Failure 404 {object} errorEnvelope
+// @Failure 409 {object} errorEnvelope
+// @Failure 500 {object} errorEnvelope
+// @Router /api/client/conversations/{conversation_id}/messages/{message_id}/reactions [put]
+func (a *MessageAPI) setReaction(c echo.Context) error {
+	current, ok := CurrentAccount(c)
+	if !ok {
+		return writeFailure(c, http.StatusInternalServerError, string(messageapp.CodeInternal), "服务端错误")
+	}
+	conversationID, err := normalizeMessageConversationID(c.Param("conversation_id"))
+	if err != nil {
+		return writeFailure(c, http.StatusBadRequest, string(messageapp.CodeInvalidRequest), err.Error())
+	}
+	messageID, err := normalizeMessageID(c.Param("message_id"))
+	if err != nil {
+		return writeFailure(c, http.StatusBadRequest, string(messageapp.CodeInvalidRequest), err.Error())
+	}
+	c.Request().Body = http.MaxBytesReader(c.Response().Writer, c.Request().Body, messageapp.MaxSetReactionRequestBody)
+	var request setMessageReactionRequest
+	if err := c.Bind(&request); err != nil {
+		if isRequestBodyTooLarge(err) {
+			return writeFailure(c, http.StatusRequestEntityTooLarge, string(messageapp.CodeRequestTooLarge), "请求内容过大")
+		}
+		return writeFailure(c, http.StatusBadRequest, string(messageapp.CodeInvalidRequest), "请求格式错误")
+	}
+	result, err := a.messages.SetReaction(c.Request().Context(), messageapp.SetReactionCommand{
+		AccountID: current.ID, ConversationID: conversationID, MessageID: messageID,
+		Reacted: request.Reacted, Text: request.Text,
+	})
+	if err != nil {
+		return writeMessageError(c, err)
+	}
+	return writeSuccess(c, http.StatusOK, setMessageReactionResponse{
+		ConversationID: result.ConversationID, MessageID: result.MessageID,
+		ReactionVersion: result.ReactionVersion, Reactions: newMessageReactionResponses(result.Reactions),
+	})
+}
+
+// listReactionSnapshots godoc
+//
+// @Summary 批量查询消息表情快照
+// @Description 返回当前用户视角下至多 100 条可见消息的完整表情状态，用于客户端断线恢复。
+// @Tags 客户端消息
+// @Accept json
+// @Produce json
+// @Param conversation_id path string true "会话 ID"
+// @Param body body listMessageReactionSnapshotsRequest true "消息 ID 列表"
+// @Success 200 {object} successEnvelope{data=listMessageReactionSnapshotsResponse}
+// @Failure 400 {object} errorEnvelope
+// @Failure 401 {object} errorEnvelope
+// @Failure 403 {object} errorEnvelope
+// @Failure 404 {object} errorEnvelope
+// @Failure 413 {object} errorEnvelope
+// @Failure 500 {object} errorEnvelope
+// @Router /api/client/conversations/{conversation_id}/messages/reactions/query [post]
+func (a *MessageAPI) listReactionSnapshots(c echo.Context) error {
+	current, ok := CurrentAccount(c)
+	if !ok {
+		return writeFailure(c, http.StatusInternalServerError, string(messageapp.CodeInternal), "服务端错误")
+	}
+	conversationID, err := normalizeMessageConversationID(c.Param("conversation_id"))
+	if err != nil {
+		return writeFailure(c, http.StatusBadRequest, string(messageapp.CodeInvalidRequest), err.Error())
+	}
+	c.Request().Body = http.MaxBytesReader(c.Response().Writer, c.Request().Body, messageapp.MaxReactionSnapshotBody)
+	var request listMessageReactionSnapshotsRequest
+	if err := c.Bind(&request); err != nil {
+		if isRequestBodyTooLarge(err) {
+			return writeFailure(c, http.StatusRequestEntityTooLarge, string(messageapp.CodeRequestTooLarge), "请求内容过大")
+		}
+		return writeFailure(c, http.StatusBadRequest, string(messageapp.CodeInvalidRequest), "请求格式错误")
+	}
+	result, err := a.messages.ListReactionSnapshots(c.Request().Context(), messageapp.ListReactionSnapshotsCommand{
+		AccountID: current.ID, ConversationID: conversationID, MessageIDs: request.MessageIDs,
+	})
+	if err != nil {
+		return writeMessageError(c, err)
+	}
+	snapshots := make([]messageReactionSnapshotResponse, len(result.Snapshots))
+	for index, snapshot := range result.Snapshots {
+		snapshots[index] = messageReactionSnapshotResponse{
+			MessageID: snapshot.MessageID, ReactionVersion: snapshot.ReactionVersion,
+			Reactions: newMessageReactionResponses(snapshot.Reactions),
+		}
+	}
+	return writeSuccess(c, http.StatusOK, listMessageReactionSnapshotsResponse{
+		ConversationID: result.ConversationID, Snapshots: snapshots,
+	})
+}
+
+// listReactionUsers godoc
+//
+// @Summary 查询消息表情参与者
+// @Description 返回当前用户可见消息中指定表情的完整参与者列表。
+// @Tags 客户端消息
+// @Produce json
+// @Param conversation_id path string true "会话 ID"
+// @Param message_id path string true "消息 ID"
+// @Param text query string true "表情内容"
+// @Success 200 {object} successEnvelope{data=listMessageReactionUsersResponse}
+// @Failure 400 {object} errorEnvelope
+// @Failure 401 {object} errorEnvelope
+// @Failure 403 {object} errorEnvelope
+// @Failure 404 {object} errorEnvelope
+// @Failure 500 {object} errorEnvelope
+// @Router /api/client/conversations/{conversation_id}/messages/{message_id}/reactions/users [get]
+func (a *MessageAPI) listReactionUsers(c echo.Context) error {
+	current, ok := CurrentAccount(c)
+	if !ok {
+		return writeFailure(c, http.StatusInternalServerError, string(messageapp.CodeInternal), "服务端错误")
+	}
+	conversationID, err := normalizeMessageConversationID(c.Param("conversation_id"))
+	if err != nil {
+		return writeFailure(c, http.StatusBadRequest, string(messageapp.CodeInvalidRequest), err.Error())
+	}
+	messageID, err := normalizeMessageID(c.Param("message_id"))
+	if err != nil {
+		return writeFailure(c, http.StatusBadRequest, string(messageapp.CodeInvalidRequest), err.Error())
+	}
+	result, err := a.messages.ListReactionUsers(c.Request().Context(), messageapp.ListReactionUsersCommand{
+		AccountID: current.ID, ConversationID: conversationID, MessageID: messageID,
+		Text: c.QueryParam("text"),
+	})
+	if err != nil {
+		return writeMessageError(c, err)
+	}
+	return writeSuccess(c, http.StatusOK, listMessageReactionUsersResponse{
+		ConversationID: result.ConversationID, MessageID: result.MessageID, Text: result.Text,
+		Users: newMessageReactionUserResponses(result.Users),
+	})
+}
+
+func normalizeMessageID(raw string) (string, error) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return "", errors.New("消息 ID 不能为空")
+	}
+	parsed, err := uuid.Parse(value)
+	if err != nil {
+		return "", errors.New("消息 ID 格式错误")
+	}
+	return parsed.String(), nil
 }
 
 func normalizeMessageConversationID(raw string) (string, error) {

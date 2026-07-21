@@ -602,6 +602,9 @@ func newForwardTargetFailure(conversationID string, err error) ForwardTargetResu
 	case errors.Is(err, errConversationNotSendable):
 		code = "conversation_not_sendable"
 		message = "当前会话不能发送消息"
+	case errors.Is(err, errAppDirectAccessDenied):
+		code = "forbidden"
+		message = "你当前无权直接使用此应用"
 	}
 	return ForwardTargetResult{
 		ConversationID: conversationID, Error: &ForwardTargetError{Code: code, Message: message}, Status: "failed",

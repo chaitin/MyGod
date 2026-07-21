@@ -79,6 +79,7 @@ type Project struct {
 
 type Item struct {
 	Avatar             string
+	CanSend            bool
 	CreatedAt          time.Time
 	ID                 string
 	LastMessageAt      *time.Time

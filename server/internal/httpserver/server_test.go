@@ -96,6 +96,8 @@ func migrateTestSchema(db *gorm.DB) error {
 		&store.ConversationMember{},
 		&store.ConversationPin{},
 		&store.Message{},
+		&store.MessageReaction{},
+		&store.MessageReactionState{},
 		&store.DirectConversation{},
 		&store.Project{},
 		&store.ProjectGroup{},

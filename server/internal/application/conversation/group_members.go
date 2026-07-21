@@ -41,7 +41,7 @@ func (s *Service) AddMembers(ctx context.Context, cmd AddMembersCommand) (Conver
 		case errors.Is(err, ErrMemberCap):
 			return ConversationMutationResult{}, invalidRequest("群聊成员不能超过 500 人", err)
 		case errors.Is(err, ErrGroupAppUnavailable):
-			return ConversationMutationResult{}, invalidRequest("只有已启用且所有人可见的应用才能加入群聊", err)
+			return ConversationMutationResult{}, invalidRequest("所选应用不存在、已停用或你无权访问", err)
 		case errors.Is(err, ErrMemberMissing):
 			return ConversationMutationResult{}, invalidRequest("成员不存在或已禁用", err)
 		default:
@@ -107,7 +107,7 @@ func (s *Service) addMembers(db *gorm.DB, actor store.User, conversationID strin
 			}
 			return err
 		}
-		addedApps, err := loadVisibleGroupApps(tx, addedAppIDs)
+		addedApps, err := loadUserAccessibleGroupApps(tx, addedAppIDs, actor.ID)
 		if err != nil {
 			return err
 		}

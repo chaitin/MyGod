@@ -79,6 +79,7 @@ func internalError(cause error) error {
 var (
 	errConversationAccessDenied  = errors.New("conversation access denied")
 	errConversationNotSendable   = errors.New("conversation not sendable")
+	errAppDirectAccessDenied     = errors.New("app direct access denied")
 	errReplyToMessageInvalid     = errors.New("reply_to_message_id invalid")
 	ErrForwardUnsupportedMessage = errors.New("forward unsupported message")
 )

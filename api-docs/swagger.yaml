@@ -545,6 +545,9 @@ definitions:
       avatar:
         example: /assets/avatars/builtin/07.webp
         type: string
+      can_send:
+        example: true
+        type: boolean
       created_at:
         format: date-time
         type: string
@@ -1025,6 +1028,35 @@ definitions:
       page:
         $ref: '#/definitions/client.listMessagesPageResponse'
     type: object
+  client.listMessageReactionSnapshotsRequest:
+    properties:
+      message_ids:
+        items:
+          type: string
+        type: array
+    type: object
+  client.listMessageReactionSnapshotsResponse:
+    properties:
+      conversation_id:
+        type: string
+      snapshots:
+        items:
+          $ref: '#/definitions/client.messageReactionSnapshotResponse'
+        type: array
+    type: object
+  client.listMessageReactionUsersResponse:
+    properties:
+      conversation_id:
+        type: string
+      message_id:
+        type: string
+      text:
+        type: string
+      users:
+        items:
+          $ref: '#/definitions/client.messageReactionUserResponse'
+        type: array
+    type: object
   client.listMessagesPageResponse:
     properties:
       has_more_after:
@@ -1082,6 +1114,37 @@ definitions:
         example: app
         type: string
     type: object
+  client.messageReactionResponse:
+    properties:
+      count:
+        type: integer
+      reacted_by_me:
+        type: boolean
+      text:
+        type: string
+      users:
+        items:
+          $ref: '#/definitions/client.messageReactionUserResponse'
+        type: array
+    type: object
+  client.messageReactionSnapshotResponse:
+    properties:
+      message_id:
+        type: string
+      reaction_version:
+        type: integer
+      reactions:
+        items:
+          $ref: '#/definitions/client.messageReactionResponse'
+        type: array
+    type: object
+  client.messageReactionUserResponse:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+    type: object
   client.messageReplyToResponse:
     properties:
       id:
@@ -1126,6 +1189,12 @@ definitions:
       id:
         example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
         type: string
+      reaction_version:
+        type: integer
+      reactions:
+        items:
+          $ref: '#/definitions/client.messageReactionResponse'
+        type: array
       reply_to:
         $ref: '#/definitions/client.messageReplyToResponse'
       reply_to_message_id:
@@ -1367,6 +1436,26 @@ definitions:
       pinned:
         example: true
         type: boolean
+    type: object
+  client.setMessageReactionRequest:
+    properties:
+      reacted:
+        type: boolean
+      text:
+        type: string
+    type: object
+  client.setMessageReactionResponse:
+    properties:
+      conversation_id:
+        type: string
+      message_id:
+        type: string
+      reaction_version:
+        type: integer
+      reactions:
+        items:
+          $ref: '#/definitions/client.messageReactionResponse'
+        type: array
     type: object
   client.successEnvelope:
     properties:
@@ -3609,6 +3698,121 @@ paths:
       summary: 发送消息
       tags:
       - 客户端消息
+  /api/client/conversations/{conversation_id}/messages/{message_id}/reactions:
+    put:
+      consumes:
+      - application/json
+      description: 普通用户为可见消息添加或移除一条文本表情。
+      parameters:
+      - description: 会话 ID
+        in: path
+        name: conversation_id
+        required: true
+        type: string
+      - description: 消息 ID
+        in: path
+        name: message_id
+        required: true
+        type: string
+      - description: 表情状态
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/client.setMessageReactionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.setMessageReactionResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      summary: 添加或移除消息表情
+      tags:
+      - 客户端消息
+  /api/client/conversations/{conversation_id}/messages/{message_id}/reactions/users:
+    get:
+      description: 返回当前用户可见消息中指定表情的完整参与者列表。
+      parameters:
+      - description: 会话 ID
+        in: path
+        name: conversation_id
+        required: true
+        type: string
+      - description: 消息 ID
+        in: path
+        name: message_id
+        required: true
+        type: string
+      - description: 表情内容
+        in: query
+        name: text
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.listMessageReactionUsersResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      summary: 查询消息表情参与者
+      tags:
+      - 客户端消息
   /api/client/conversations/{conversation_id}/messages/{message_id}/revoke:
     post:
       description: 普通用户可以撤回自己的消息；群主和管理员可以撤回群内任意非系统消息。撤回后原消息只返回元信息，并创建一条系统消息。
@@ -3856,6 +4060,62 @@ paths:
           schema:
             $ref: '#/definitions/client.errorEnvelope'
       summary: 发送图片消息
+      tags:
+      - 客户端消息
+  /api/client/conversations/{conversation_id}/messages/reactions/query:
+    post:
+      consumes:
+      - application/json
+      description: 返回当前用户视角下至多 100 条可见消息的完整表情状态，用于客户端断线恢复。
+      parameters:
+      - description: 会话 ID
+        in: path
+        name: conversation_id
+        required: true
+        type: string
+      - description: 消息 ID 列表
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/client.listMessageReactionSnapshotsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.listMessageReactionSnapshotsResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      summary: 批量查询消息表情快照
       tags:
       - 客户端消息
   /api/client/conversations/{conversation_id}/messages/voices:

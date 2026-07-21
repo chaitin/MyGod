@@ -99,6 +99,10 @@ func (s *Service) List(ctx context.Context, cmd ListCommand) (ListResult, error)
 	if err != nil {
 		return ListResult{}, internalError(err)
 	}
+	accessibleAppIDs, err := loadUserAccessibleAppIDSet(db, accountID, apps)
+	if err != nil {
+		return ListResult{}, internalError(err)
+	}
 	topicPresentations, err := loadTopicPresentations(db, conversations, accountID)
 	if err != nil {
 		return ListResult{}, internalError(err)
@@ -130,9 +134,12 @@ func (s *Service) List(ctx context.Context, cmd ListCommand) (ListResult, error)
 	result := ListResult{Conversations: make([]Item, 0, len(conversations)+1)}
 	appendItem := func(conversation store.Conversation) {
 		item := newItem(conversation, accountID, membersByConversation[conversation.ID], users, apps)
+		var parent *store.Conversation
 		if presentation, ok := topicPresentations[conversation.ID]; ok {
 			item = newTopicItem(conversation, accountID, membersByConversation[conversation.ID], users, apps, presentation)
+			parent = &presentation.parent
 		}
+		item.CanSend = canUserSendConversation(conversation, parent, membersByConversation[conversation.ID], accessibleAppIDs)
 		conversationProjects := projects[conversation.ID]
 		if conversationProjects == nil {
 			conversationProjects = []Project{}

@@ -88,6 +88,34 @@ func validateUserConversationSendable(db *gorm.DB, value userConversationAccess)
 			return err
 		}
 	}
+	return validateUserDirectAppAccess(db, value)
+}
+
+func validateUserDirectAppAccess(db *gorm.DB, value userConversationAccess) error {
+	if err := conversationaccess.RequireUserDirectAppAccess(db, value.Context, value.Member.MemberID); err != nil {
+		if errors.Is(err, conversationaccess.ErrDirectAppAccessDenied) {
+			return errAppDirectAccessDenied
+		}
+		return err
+	}
+	return nil
+}
+
+func validateAppConversationSendable(db *gorm.DB, value conversationaccess.Context, appID string) error {
+	if err := ensureConversationSendable(db, value.Conversation); err != nil {
+		return err
+	}
+	if value.ParentConversation != nil {
+		if err := ensureConversationSendable(db, *value.ParentConversation); err != nil {
+			return err
+		}
+	}
+	if err := conversationaccess.RequireAppDirectUserAccess(db, value, appID); err != nil {
+		if errors.Is(err, conversationaccess.ErrDirectAppAccessDenied) {
+			return errAppDirectAccessDenied
+		}
+		return err
+	}
 	return nil
 }
 

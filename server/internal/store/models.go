@@ -239,6 +239,19 @@ func (MessageRegistry) TableName() string {
 	return "message_registry"
 }
 
+type MessageReaction struct {
+	MessageID string    `gorm:"type:uuid;primaryKey"`
+	UserID    string    `gorm:"type:uuid;primaryKey;index:message_reactions_user_message_index,priority:1"`
+	Text      string    `gorm:"size:128;primaryKey"`
+	CreatedAt time.Time `gorm:"not null"`
+}
+
+type MessageReactionState struct {
+	MessageID string    `gorm:"type:uuid;primaryKey"`
+	Version   int64     `gorm:"not null;default:0"`
+	UpdatedAt time.Time `gorm:"not null"`
+}
+
 type DirectConversation struct {
 	ConversationID string       `gorm:"type:uuid;primaryKey"`
 	Conversation   Conversation `gorm:"constraint:OnDelete:CASCADE;"`

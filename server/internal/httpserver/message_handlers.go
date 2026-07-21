@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	messageapp "app/internal/application/message"
 	messagecontentapp "app/internal/application/messagecontent"
 	"app/internal/realtime"
 	"app/internal/store"
@@ -88,11 +89,25 @@ type messageResponse struct {
 	ID               string                      `json:"id" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
 	ReplyToMessageID string                      `json:"reply_to_message_id,omitempty" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
 	ReplyTo          *messageReplyToResponse     `json:"reply_to,omitempty"`
+	ReactionVersion  int64                       `json:"reaction_version"`
+	Reactions        []messageReactionResponse   `json:"reactions"`
 	RevokedAt        *time.Time                  `json:"revoked_at,omitempty" format:"date-time"`
 	RevokedByUserID  string                      `json:"revoked_by_user_id,omitempty" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
 	Sender           messageSenderResponse       `json:"sender"`
 	Seq              int64                       `json:"seq" example:"13"`
 	Topic            *messageTopicResponse       `json:"topic,omitempty"`
+}
+
+type messageReactionResponse struct {
+	Count       int64                         `json:"count"`
+	ReactedByMe bool                          `json:"reacted_by_me"`
+	Text        string                        `json:"text"`
+	Users       []messageReactionUserResponse `json:"users"`
+}
+
+type messageReactionUserResponse struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 type messageTopicResponse struct {
@@ -561,6 +576,37 @@ func realtimeMessageUpdatedEvent(message messageResponse) realtime.Envelope {
 	return realtime.NewEvent(realtime.EventMessageUpdated, createMessageResponse{
 		Message: message,
 	})
+}
+
+func realtimeMessageReactionsUpdatedEvent(event messageapp.ReactionEvent) realtime.Envelope {
+	reactions := make([]messageReactionCountResponse, len(event.Reactions))
+	for index, reaction := range event.Reactions {
+		reactions[index] = messageReactionCountResponse{
+			Count: reaction.Count, Text: reaction.Text,
+			Users: newLegacyMessageReactionUserResponses(reaction.Users),
+		}
+	}
+	return realtime.NewEvent(realtime.EventMessageReactionsUpdated, messageReactionsUpdatedEventPayload{
+		ActorReacted: event.ActorReacted, ActorText: event.ActorText, ActorUserID: event.ActorUserID,
+		ConversationID: event.ConversationID, MessageID: event.MessageID,
+		ReactionVersion: event.ReactionVersion, Reactions: reactions,
+	})
+}
+
+type messageReactionCountResponse struct {
+	Count int64                         `json:"count"`
+	Text  string                        `json:"text"`
+	Users []messageReactionUserResponse `json:"users"`
+}
+
+type messageReactionsUpdatedEventPayload struct {
+	ActorReacted    bool                           `json:"actor_reacted"`
+	ActorText       string                         `json:"actor_text"`
+	ActorUserID     string                         `json:"actor_user_id"`
+	ConversationID  string                         `json:"conversation_id"`
+	MessageID       string                         `json:"message_id"`
+	ReactionVersion int64                          `json:"reaction_version"`
+	Reactions       []messageReactionCountResponse `json:"reactions"`
 }
 
 type conversationRemovedEventPayload struct {

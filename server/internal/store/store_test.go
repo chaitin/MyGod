@@ -245,6 +245,8 @@ func migrateTestSchema(db *gorm.DB) error {
 		&Conversation{},
 		&ConversationMember{},
 		&Message{},
+		&MessageReaction{},
+		&MessageReactionState{},
 		&DirectConversation{},
 		&TemporaryFile{},
 		&App{},

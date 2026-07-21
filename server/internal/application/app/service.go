@@ -203,7 +203,7 @@ func (s *Service) Update(ctx context.Context, cmd UpdateCommand) (App, error) {
 			}
 			grantedUserIDs = grants[storedApp.ID]
 		}
-		return revokeUnauthorizedAppMemberships(tx, storedApp.ID, *storedApp.CreatorUserID, visibility, grantedUserIDs, now)
+		return revokeUnauthorizedDirectAppEvents(tx, storedApp.ID, *storedApp.CreatorUserID, visibility, grantedUserIDs)
 	}); err != nil {
 		if ErrorCodeOf(err) != CodeInternal {
 			return App{}, err

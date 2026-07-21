@@ -7,14 +7,17 @@ import (
 )
 
 const (
-	DefaultHistoryLimit  = 20
-	MaxHistoryLimit      = 20
-	MaxClientMessageID   = 128
-	MaxCreateRequestBody = 64*1024 + 1024
-	ForwardModeMerged    = "merged"
-	ForwardModeSeparate  = "separate"
-	MaxForwardCount      = 50
-	MaxForwardTargets    = 20
+	DefaultHistoryLimit       = 20
+	MaxHistoryLimit           = 20
+	MaxClientMessageID        = 128
+	MaxCreateRequestBody      = 64*1024 + 1024
+	MaxSetReactionRequestBody = 1024
+	MaxReactionSnapshotIDs    = 100
+	MaxReactionSnapshotBody   = 8 * 1024
+	ForwardModeMerged         = "merged"
+	ForwardModeSeparate       = "separate"
+	MaxForwardCount           = 50
+	MaxForwardTargets         = 20
 )
 
 type Identity struct {
@@ -41,12 +44,89 @@ type Message struct {
 	ID               string
 	ReplyTo          *Reply
 	ReplyToMessageID string
+	ReactionVersion  int64
+	Reactions        []ReactionSummary
 	RevokedAt        *time.Time
 	RevokedByUserID  string
 	Sender           Identity
 	Seq              int64
 	Summary          string
 	Topic            *MessageTopic
+}
+
+type ReactionSummary struct {
+	Count       int64
+	ReactedByMe bool
+	Text        string
+	Users       []ReactionUser
+}
+
+type ReactionCount struct {
+	Count int64
+	Text  string
+	Users []ReactionUser
+}
+
+type ReactionUser struct {
+	ID   string
+	Name string
+}
+
+type SetReactionCommand struct {
+	AccountID      string
+	ConversationID string
+	MessageID      string
+	Reacted        bool
+	Text           string
+}
+
+type SetReactionResult struct {
+	Changed         bool
+	ConversationID  string
+	MessageID       string
+	ReactionVersion int64
+	Reactions       []ReactionSummary
+}
+
+type ReactionEvent struct {
+	ActorReacted    bool
+	ActorText       string
+	ActorUserID     string
+	ConversationID  string
+	MessageID       string
+	ReactionVersion int64
+	Reactions       []ReactionCount
+}
+
+type ListReactionSnapshotsCommand struct {
+	AccountID      string
+	ConversationID string
+	MessageIDs     []string
+}
+
+type ReactionSnapshot struct {
+	MessageID       string
+	ReactionVersion int64
+	Reactions       []ReactionSummary
+}
+
+type ListReactionSnapshotsResult struct {
+	ConversationID string
+	Snapshots      []ReactionSnapshot
+}
+
+type ListReactionUsersCommand struct {
+	AccountID      string
+	ConversationID string
+	MessageID      string
+	Text           string
+}
+
+type ListReactionUsersResult struct {
+	ConversationID string
+	MessageID      string
+	Text           string
+	Users          []ReactionUser
 }
 
 type MessageTopic struct {
@@ -271,6 +351,9 @@ type ClientService interface {
 	CreatePrepared(context.Context, CreatePreparedCommand) (CreateResult, error)
 	Revoke(context.Context, RevokeCommand) (RevokeResult, error)
 	Forward(context.Context, ForwardCommand) (ForwardResult, error)
+	SetReaction(context.Context, SetReactionCommand) (SetReactionResult, error)
+	ListReactionSnapshots(context.Context, ListReactionSnapshotsCommand) (ListReactionSnapshotsResult, error)
+	ListReactionUsers(context.Context, ListReactionUsersCommand) (ListReactionUsersResult, error)
 }
 
 type AppService interface {

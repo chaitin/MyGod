@@ -191,7 +191,7 @@ func (s *Service) UpdateOwned(ctx context.Context, cmd UpdateOwnedCommand) (App,
 				}
 				grantedUserIDs = grants[appID]
 			}
-			return revokeUnauthorizedAppMemberships(tx, appID, accountID, visibility, grantedUserIDs, now)
+			return revokeUnauthorizedDirectAppEvents(tx, appID, accountID, visibility, grantedUserIDs)
 		}
 		return nil
 	}); err != nil {

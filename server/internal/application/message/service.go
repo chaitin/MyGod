@@ -15,6 +15,7 @@ type Dependencies struct {
 	TaskReminderBodies     TaskReminderBodyBuilder
 	Apps                   config.AppsConfig
 	Notifications          NotificationPort
+	ReactionNotifications  ReactionNotificationPort
 	AppEvents              AppEventPort
 	AppEventLocker         AppEventLocker
 	BeforeAppEventLock     func(Message)
@@ -30,6 +31,7 @@ type Service struct {
 	taskReminderBodies     TaskReminderBodyBuilder
 	apps                   config.AppsConfig
 	notifications          NotificationPort
+	reactionNotifications  ReactionNotificationPort
 	appEvents              AppEventPort
 	appEventLocker         AppEventLocker
 	beforeAppEventLock     func(Message)
@@ -41,6 +43,7 @@ func NewService(deps Dependencies) *Service {
 		db: deps.DB, bodies: deps.Bodies, forwardBodies: deps.ForwardBodies, files: deps.Files,
 		taskNotificationBodies: deps.TaskNotificationBodies, taskReminderBodies: deps.TaskReminderBodies,
 		apps: deps.Apps, notifications: deps.Notifications,
+		reactionNotifications: deps.ReactionNotifications,
 		appEvents: deps.AppEvents, appEventLocker: deps.AppEventLocker,
 		beforeAppEventLock:     deps.BeforeAppEventLock,
 		afterUserMessageCommit: deps.AfterUserMessageCommit,

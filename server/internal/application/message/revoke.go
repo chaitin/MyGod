@@ -40,7 +40,7 @@ func (s *Service) Revoke(ctx context.Context, cmd RevokeCommand) (RevokeResult, 
 		return RevokeResult{}, InvalidRequestError(err.Error(), err)
 	}
 
-	message, systemMessage, memberUserIDs, err := s.revokeForUser(ctx, cmd.AccountID, conversationID, messageID)
+	message, systemMessage, memberUserIDs, reactionVersion, err := s.revokeForUser(ctx, cmd.AccountID, conversationID, messageID)
 	if err != nil {
 		return RevokeResult{}, mapRevokeError(err)
 	}
@@ -49,6 +49,8 @@ func (s *Service) Revoke(ctx context.Context, cmd RevokeCommand) (RevokeResult, 
 	if err != nil {
 		return RevokeResult{}, internalError(err)
 	}
+	response.ReactionVersion = reactionVersion
+	response.Reactions = []ReactionSummary{}
 	systemResponse, err := newMessageForUser(db, systemMessage, cmd.AccountID)
 	if err != nil {
 		return RevokeResult{}, internalError(err)
@@ -67,6 +69,8 @@ func (s *Service) Revoke(ctx context.Context, cmd RevokeCommand) (RevokeResult, 
 			if viewErr != nil {
 				updatedMessage = newMessage(message)
 			}
+			updatedMessage.ReactionVersion = reactionVersion
+			updatedMessage.Reactions = []ReactionSummary{}
 			updatedWithTopic := []Message{updatedMessage}
 			if topicErr := attachMessageTopics(db, updatedWithTopic); topicErr == nil {
 				updatedMessage = updatedWithTopic[0]
@@ -85,10 +89,11 @@ func (s *Service) Revoke(ctx context.Context, cmd RevokeCommand) (RevokeResult, 
 	return RevokeResult{Message: response, SystemMessage: systemResponse}, nil
 }
 
-func (s *Service) revokeForUser(ctx context.Context, userID, conversationID, messageID string) (store.Message, store.Message, []string, error) {
+func (s *Service) revokeForUser(ctx context.Context, userID, conversationID, messageID string) (store.Message, store.Message, []string, int64, error) {
 	var message store.Message
 	var systemMessage store.Message
 	memberUserIDs := []string{}
+	var reactionVersion int64
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		access, err := loadUserConversationAccess(tx, conversationID, userID, true)
@@ -96,13 +101,8 @@ func (s *Service) revokeForUser(ctx context.Context, userID, conversationID, mes
 			return err
 		}
 		conversation := access.Context.Conversation
-		if err := ensureConversationSendable(tx, conversation); err != nil {
+		if err := validateUserConversationSendable(tx, access); err != nil {
 			return err
-		}
-		if access.Context.ParentConversation != nil {
-			if err := ensureConversationSendable(tx, *access.Context.ParentConversation); err != nil {
-				return err
-			}
 		}
 
 		messagePartitionYear := 0
@@ -158,6 +158,17 @@ func (s *Service) revokeForUser(ctx context.Context, userID, conversationID, mes
 		message.RevokedAt = &now
 		message.RevokedByUserID = &revokedByUserID
 		message.UpdatedAt = now
+		reactionState, err := lockMessageReactionState(tx, message.ID, now)
+		if err != nil {
+			return err
+		}
+		if err := tx.Where("message_id = ?", message.ID).Delete(&store.MessageReaction{}).Error; err != nil {
+			return err
+		}
+		if err := incrementMessageReactionVersion(tx, &reactionState, now); err != nil {
+			return err
+		}
+		reactionVersion = reactionState.Version
 
 		createdSystemMessage, err := createMessageRevokedSystemMessage(tx, &conversation, actor, now)
 		if err != nil {
@@ -172,7 +183,7 @@ func (s *Service) revokeForUser(ctx context.Context, userID, conversationID, mes
 		memberUserIDs, err = loadConversationDeliveryUserIDs(tx, access.Context)
 		return err
 	})
-	return message, systemMessage, memberUserIDs, err
+	return message, systemMessage, memberUserIDs, reactionVersion, err
 }
 
 func canRevokeMessage(userID string, member store.ConversationMember, conversation store.Conversation, message store.Message) bool {
@@ -228,6 +239,8 @@ func mapRevokeError(err error) error {
 		return forbidden("无权撤回消息", err)
 	case errors.Is(err, errConversationNotSendable):
 		return forbidden("当前会话不能撤回消息", err)
+	case errors.Is(err, errAppDirectAccessDenied):
+		return forbidden("你当前无权直接使用此应用", err)
 	case errors.Is(err, errMessageRevokeUnsupported):
 		return InvalidRequestError("不能撤回该消息", err)
 	case errors.Is(err, errMessageAlreadyRevoked):

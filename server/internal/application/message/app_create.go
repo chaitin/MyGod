@@ -34,13 +34,8 @@ func (s *Service) CreateAsApp(ctx context.Context, cmd CreateAsAppCommand) (Crea
 			return err
 		}
 		conversation := access.Conversation
-		if err := ensureConversationSendable(tx, conversation); err != nil {
+		if err := validateAppConversationSendable(tx, access, cmd.AppID); err != nil {
 			return err
-		}
-		if access.ParentConversation != nil {
-			if err := ensureConversationSendable(tx, *access.ParentConversation); err != nil {
-				return err
-			}
 		}
 		if err := conversationaccess.EnsureTopicParticipant(
 			tx, access, store.ConversationMemberTypeApp, cmd.AppID,
@@ -190,6 +185,8 @@ func mapAppCreateError(err error) error {
 		return forbidden("无权访问会话", err)
 	case errors.Is(err, errConversationNotSendable):
 		return forbidden("当前会话不能发送消息", err)
+	case errors.Is(err, errAppDirectAccessDenied):
+		return forbidden("对方当前无权直接使用此应用", err)
 	default:
 		return err
 	}

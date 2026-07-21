@@ -46,13 +46,11 @@ func (s *Service) AuthorizeAppConversationSend(ctx context.Context, cmd AppConve
 		}
 		return internalError(err)
 	}
-	if err := ensureConversationSendable(db, access.Conversation); err != nil {
-		return forbidden("当前会话不能发送消息", err)
-	}
-	if access.ParentConversation != nil {
-		if err := ensureConversationSendable(db, *access.ParentConversation); err != nil {
-			return forbidden("当前会话不能发送消息", err)
+	if err := validateAppConversationSendable(db, access, cmd.AppID); err != nil {
+		if errors.Is(err, errAppDirectAccessDenied) {
+			return forbidden("对方当前无权直接使用此应用", err)
 		}
+		return forbidden("当前会话不能发送消息", err)
 	}
 	return nil
 }

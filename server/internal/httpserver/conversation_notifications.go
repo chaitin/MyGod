@@ -64,6 +64,7 @@ func newConversationApplicationMessageResponse(message conversationapp.Message) 
 		ConversationID:  message.ConversationID,
 		CreatedAt:       message.CreatedAt,
 		ID:              message.ID,
+		Reactions:       []messageReactionResponse{},
 		Sender:          messageSenderResponse{ID: message.Sender.ID, Type: message.Sender.Type},
 		Seq:             message.Seq,
 	}

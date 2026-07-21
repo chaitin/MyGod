@@ -673,6 +673,118 @@ func TestAppCreatedTopicDoesNotGrantLegacyCreatorUserPermission(t *testing.T) {
 	}
 }
 
+func TestAppDirectTopicWritesRequireCurrentUserAccess(t *testing.T) {
+	db := openConversationTestDB(t)
+	now := time.Date(2026, 7, 20, 9, 0, 0, 0, time.UTC)
+	creator := insertConversationTestUser(t, db, "direct-topic-app-owner@example.com", "App Owner", now)
+	user := insertConversationTestUser(t, db, "direct-topic-user@example.com", "User", now)
+	app := store.App{
+		ID: uuid.NewString(), Name: "Direct Topic App", CreatorUserID: &creator.ID,
+		Enabled: true, Visibility: store.AppVisibilityPublic, ConnectionSecret: "direct-topic-secret",
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Create(&app).Error; err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	service := NewService(Dependencies{
+		DB: db, Apps: config.AppsConfig{AIAssistantSecret: "secret"}, Now: func() time.Time { return now },
+	})
+	opened, err := service.CreateApp(context.Background(), CreateAppCommand{
+		Actor: actorFromTestUser(user), AppID: app.ID,
+	})
+	if err != nil {
+		t.Fatalf("open app conversation: %v", err)
+	}
+	conversationID := opened.Conversation.ID
+	userID := user.ID
+	appID := app.ID
+	sources := []store.Message{
+		{ID: uuid.NewString(), ConversationID: conversationID, Seq: 1, SenderType: store.MessageSenderTypeUser, SenderID: &userID, Body: json.RawMessage(`{"type":"text","content":"user topic"}`), Summary: "user topic", CreatedAt: now, UpdatedAt: now},
+		{ID: uuid.NewString(), ConversationID: conversationID, Seq: 2, SenderType: store.MessageSenderTypeUser, SenderID: &userID, Body: json.RawMessage(`{"type":"text","content":"denied topic"}`), Summary: "denied topic", CreatedAt: now.Add(time.Minute), UpdatedAt: now.Add(time.Minute)},
+		{ID: uuid.NewString(), ConversationID: conversationID, Seq: 3, SenderType: store.MessageSenderTypeApp, SenderID: &appID, Body: json.RawMessage(`{"type":"text","content":"app topic"}`), Summary: "app topic", CreatedAt: now.Add(2 * time.Minute), UpdatedAt: now.Add(2 * time.Minute)},
+	}
+	if err := db.Create(&sources).Error; err != nil {
+		t.Fatalf("create source messages: %v", err)
+	}
+	if err := db.Model(&store.Conversation{}).Where("id = ?", conversationID).Updates(map[string]any{
+		"last_message_seq": int64(3), "last_message_id": sources[2].ID,
+		"last_message_at": sources[2].CreatedAt, "last_message_summary": sources[2].Summary,
+	}).Error; err != nil {
+		t.Fatalf("update app conversation: %v", err)
+	}
+	userTopic, err := service.CreateTopic(context.Background(), CreateTopicCommand{
+		Actor: actorFromTestUser(user), ParentConversationID: conversationID, SourceMessageID: sources[0].ID,
+	})
+	if err != nil {
+		t.Fatalf("create user topic: %v", err)
+	}
+	appTopic, err := service.CreateTopicAsApp(context.Background(), AppCreateTopicCommand{
+		AppID: app.ID, ParentConversationID: conversationID, SourceMessageID: sources[2].ID,
+	})
+	if err != nil {
+		t.Fatalf("create app topic: %v", err)
+	}
+	if err := db.Model(&store.App{}).Where("id = ?", app.ID).
+		Update("visibility", store.AppVisibilityCreator).Error; err != nil {
+		t.Fatalf("restrict app visibility: %v", err)
+	}
+
+	detail, err := service.GetTopic(context.Background(), GetTopicCommand{
+		Actor: actorFromTestUser(user), TopicConversationID: userTopic.Conversation.ID,
+	})
+	if err != nil {
+		t.Fatalf("read retained topic history: %v", err)
+	}
+	if detail.Conversation.CanSend || detail.CanArchive || detail.CanParticipate {
+		t.Fatalf("restricted topic detail = %#v", detail)
+	}
+	listed, err := service.List(context.Background(), ListCommand{AccountID: user.ID})
+	if err != nil {
+		t.Fatalf("list retained app conversations: %v", err)
+	}
+	for _, item := range listed.Conversations {
+		if (item.ID == conversationID || item.ID == userTopic.Conversation.ID) && item.CanSend {
+			t.Fatalf("restricted conversation remains sendable: %#v", item)
+		}
+	}
+	if _, err := service.CreateTopic(context.Background(), CreateTopicCommand{
+		Actor: actorFromTestUser(user), ParentConversationID: conversationID, SourceMessageID: sources[1].ID,
+	}); ErrorCodeOf(err) != CodeForbidden {
+		t.Fatalf("user create topic error = %v, want forbidden", err)
+	}
+	if _, err := service.CreateTopic(context.Background(), CreateTopicCommand{
+		Actor: actorFromTestUser(user), ParentConversationID: conversationID, SourceMessageID: sources[0].ID,
+	}); ErrorCodeOf(err) != CodeForbidden {
+		t.Fatalf("user reopen topic error = %v, want forbidden", err)
+	}
+	if _, err := service.CreateTopicAsApp(context.Background(), AppCreateTopicCommand{
+		AppID: app.ID, ParentConversationID: conversationID, SourceMessageID: sources[1].ID,
+	}); ErrorCodeOf(err) != CodeForbidden {
+		t.Fatalf("app create topic error = %v, want forbidden", err)
+	}
+	if _, err := service.CreateTopicAsApp(context.Background(), AppCreateTopicCommand{
+		AppID: app.ID, ParentConversationID: conversationID, SourceMessageID: sources[2].ID,
+	}); ErrorCodeOf(err) != CodeForbidden {
+		t.Fatalf("app reopen topic error = %v, want forbidden", err)
+	}
+	if _, err := service.ParticipateTopic(context.Background(), ParticipateTopicCommand{
+		Actor: actorFromTestUser(user), TopicConversationID: userTopic.Conversation.ID,
+	}); ErrorCodeOf(err) != CodeForbidden {
+		t.Fatalf("participate topic error = %v, want forbidden", err)
+	}
+	if _, err := service.ArchiveTopic(context.Background(), ArchiveTopicCommand{
+		Actor: actorFromTestUser(user), TopicConversationID: userTopic.Conversation.ID,
+	}); ErrorCodeOf(err) != CodeForbidden {
+		t.Fatalf("archive topic error = %v, want forbidden", err)
+	}
+	if _, err := service.CloseTopicAsApp(context.Background(), AppCloseTopicCommand{
+		AppID: app.ID, TopicConversationID: appTopic.ConversationID,
+		ExpectedLastMessageSeq: appTopic.LastMessageSeq,
+	}); ErrorCodeOf(err) != CodeForbidden {
+		t.Fatalf("app close topic error = %v, want forbidden", err)
+	}
+}
+
 func insertConversationTopicFixture(t *testing.T, db *gorm.DB, owner, member store.User, now time.Time) (store.Conversation, store.Message) {
 	t.Helper()
 	parent := store.Conversation{
