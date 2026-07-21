@@ -421,7 +421,7 @@ export type MessageResponse = {
   reply_to?: MessageReplyToResponse | null
   reply_to_message_id?: string
   reaction_version?: number
-  reactions?: MessageReactionResponse[]
+  reactions?: MessageReactionResponse[] | null
   revoked_at?: string
   revoked_by_user_id?: string
   sender?: MessageSenderResponse

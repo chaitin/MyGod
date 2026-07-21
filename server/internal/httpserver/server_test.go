@@ -9486,6 +9486,9 @@ func TestLeaveGroupConversationCreatesSystemMessage(t *testing.T) {
 	if createdMessage["seq"] != float64(1) {
 		t.Fatalf("message.seq = %v, want 1", createdMessage["seq"])
 	}
+	if reactions, ok := createdMessage["reactions"].([]any); !ok || len(reactions) != 0 {
+		t.Fatalf("message.reactions = %#v, want empty array", createdMessage["reactions"])
+	}
 
 	var member store.ConversationMember
 	if err := db.First(&member, "conversation_id = ? AND member_type = ? AND member_id = ?", conversation.ID, store.ConversationMemberTypeUser, bob.ID).Error; err != nil {
@@ -9790,6 +9793,10 @@ func TestClientJoinPublicGroupCreatesMemberAndSystemMessage(t *testing.T) {
 	}
 	if data["message"] == nil {
 		t.Fatal("message = nil, want join system message")
+	}
+	joinedMessage := data["message"].(map[string]any)
+	if reactions, ok := joinedMessage["reactions"].([]any); !ok || len(reactions) != 0 {
+		t.Fatalf("message.reactions = %#v, want empty array", joinedMessage["reactions"])
 	}
 
 	var member store.ConversationMember

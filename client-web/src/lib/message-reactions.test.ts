@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest"
 import {
   listConversationMessageReactionSnapshots,
   listConversationMessageReactionUsers,
+  normalizeMessageReactions,
   normalizeMessageReactionsUpdatedEventPayload,
   setConversationMessageReaction,
   type ClientMessage,
@@ -14,6 +15,10 @@ import {
 } from "@/lib/client-data-state"
 
 describe("message reactions", () => {
+  it("treats a legacy null reaction list as empty", () => {
+    expect(normalizeMessageReactions(null)).toEqual([])
+  })
+
   it("sends a reaction update and normalizes the exact response snapshot", async () => {
     const fetcher = vi.fn().mockResolvedValue(
       new Response(

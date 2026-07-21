@@ -137,7 +137,7 @@ export function normalizeMessage(
 export function normalizeMessageReactions(
   reactions: MessageResponse["reactions"]
 ): ClientMessageReaction[] {
-  if (reactions === undefined) {
+  if (reactions == null) {
     return []
   }
   if (!Array.isArray(reactions)) {

@@ -938,7 +938,7 @@ func newMutationResponse(value conversationapp.ConversationMutationResult) addGr
 }
 
 func newConversationMessageResponse(message conversationapp.Message) messageResponse {
-	response := messageResponse{ClientMessageID: message.ClientMessageID, ConversationID: message.ConversationID, CreatedAt: message.CreatedAt, ID: message.ID, Sender: messageSenderResponse{ID: message.Sender.ID, Type: message.Sender.Type}, Seq: message.Seq}
+	response := messageResponse{ClientMessageID: message.ClientMessageID, ConversationID: message.ConversationID, CreatedAt: message.CreatedAt, ID: message.ID, Reactions: []messageReactionResponse{}, Sender: messageSenderResponse{ID: message.Sender.ID, Type: message.Sender.Type}, Seq: message.Seq}
 	if message.RevokedAt == nil {
 		response.Body = message.Body
 	} else {
