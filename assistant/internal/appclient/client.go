@@ -51,6 +51,7 @@ const (
 	methodEventsAck                = "events.ack"
 
 	defaultConversationContextLimit = 30
+	complexTaskTopicNotice          = "这个工作比较复杂，我准备创建一个独立的讨论主题来跟进。"
 )
 
 var appMentionTokenPattern = regexp.MustCompile(`\{\(@app/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\)\}`)
@@ -673,6 +674,10 @@ func handleParsedServerMessageWithTopicRouter(ctx context.Context, message envel
 			}
 		}
 		if needsTopic {
+			if err := sendMarkdownReply(ctx, writeJSON, payload.Conversation, complexTaskTopicNotice); err != nil {
+				log.Printf("send agent topic notice failed: %v", err)
+				return sendAgentFallback(ctx, prepared.ErrorSink) == nil
+			}
 			topic, err := createConversationTopic(ctx, requester, payload.Conversation.ID, payload.Message.ID)
 			if err != nil {
 				log.Printf("create agent topic failed: %v", err)
@@ -696,6 +701,7 @@ func handleParsedServerMessageWithTopicRouter(ctx context.Context, message envel
 	sink := agent.OutputSinkFunc(func(ctx context.Context, content string) error {
 		return sendMarkdownReply(ctx, writeJSON, replyConversation, content)
 	})
+	prepared.ErrorSink = sink
 	prepared.Scope.CurrentAppID = strings.TrimSpace(appID)
 	return runner.Start(ctx, replyConversation.ID, sink, assistantAgent, prepared)
 }

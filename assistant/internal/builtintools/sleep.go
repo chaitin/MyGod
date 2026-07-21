@@ -84,6 +84,10 @@ func (f AuthorizationResolverFunc) ResolveAuthorization(ref string) (Authorizati
 	return f(ref)
 }
 
+type ScopeProvider interface {
+	CurrentScope() Scope
+}
+
 type ConversationWaitRegistration interface {
 	Close()
 }
@@ -331,6 +335,10 @@ type readFileURLError struct {
 
 func WithScope(ctx context.Context, scope Scope) context.Context {
 	return context.WithValue(ctx, scopeContextKey{}, scope)
+}
+
+func WithScopeProvider(ctx context.Context, provider ScopeProvider) context.Context {
+	return context.WithValue(ctx, scopeContextKey{}, provider)
 }
 
 func NewSource() *Source {
@@ -1169,8 +1177,16 @@ func normalizeToolMemberIDs(rawMemberIDs []string) ([]string, error) {
 }
 
 func requireScope(ctx context.Context) (Scope, error) {
-	scope, ok := ctx.Value(scopeContextKey{}).(Scope)
-	if !ok || scope.Requester == nil {
+	var scope Scope
+	switch value := ctx.Value(scopeContextKey{}).(type) {
+	case Scope:
+		scope = value
+	case ScopeProvider:
+		if value != nil {
+			scope = value.CurrentScope()
+		}
+	}
+	if scope.Requester == nil {
 		return Scope{}, fmt.Errorf("builtin tool scope is not configured")
 	}
 	return scope, nil

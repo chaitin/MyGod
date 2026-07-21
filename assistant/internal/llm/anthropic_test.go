@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -155,6 +156,82 @@ func TestAnthropicClientDoesNotDuplicateV1Path(t *testing.T) {
 	}
 }
 
+func TestAnthropicClientCountsCompleteRequestTokens(t *testing.T) {
+	var gotPath string
+	var gotSystem string
+	var gotToolName string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		var request struct {
+			System []struct {
+				Text string `json:"text"`
+			} `json:"system"`
+			Tools []struct {
+				Name string `json:"name"`
+			} `json:"tools"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if len(request.System) == 1 {
+			gotSystem = request.System[0].Text
+		}
+		if len(request.Tools) == 1 {
+			gotToolName = request.Tools[0].Name
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"input_tokens":81234}`))
+	}))
+	defer server.Close()
+
+	client := NewAnthropicClient(config.LLMConfig{
+		BaseURL: server.URL, APIKey: "test-api-key", ModelName: "claude-sonnet",
+	})
+	client.HTTPClient = server.Client()
+	count, err := client.CountTokens(context.Background(), Request{
+		System:   "系统提示词",
+		Messages: []Message{{Role: RoleUser, Content: "你好"}},
+		Tools: []Tool{{
+			Name: "main__search", Description: "Search documents",
+			InputSchema: map[string]any{"type": "object"},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CountTokens() error = %v", err)
+	}
+	if gotPath != "/v1/messages/count_tokens" || gotSystem != "系统提示词" || gotToolName != "main__search" {
+		t.Fatalf("count request path/system/tool = %q/%q/%q", gotPath, gotSystem, gotToolName)
+	}
+	if count != 81_234 {
+		t.Fatalf("count = %d, want 81234", count)
+	}
+}
+
+func TestAnthropicClientCachesUnsupportedTokenCountingEndpoint(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"type":"error","error":{"type":"not_found_error","message":"not found"}}`))
+	}))
+	defer server.Close()
+
+	client := NewAnthropicClient(config.LLMConfig{
+		BaseURL: server.URL, APIKey: "test-api-key", ModelName: "claude-sonnet",
+	})
+	client.HTTPClient = server.Client()
+	request := Request{Messages: []Message{{Role: RoleUser, Content: "你好"}}}
+	for attempt := 0; attempt < 2; attempt++ {
+		if _, err := client.CountTokens(context.Background(), request); !errors.Is(err, ErrTokenCountUnsupported) {
+			t.Fatalf("CountTokens() error = %v", err)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("count endpoint calls = %d, want one compatibility probe", calls)
+	}
+}
+
 func TestAnthropicClientCreateMessageSendsToolsAndParsesBlocks(t *testing.T) {
 	var gotToolName string
 	var gotToolDescription string
@@ -238,6 +315,9 @@ func TestAnthropicClientCreateMessageSendsToolsAndParsesBlocks(t *testing.T) {
 	}
 	if len(response.Blocks) != 3 {
 		t.Fatalf("block count = %d, want 3", len(response.Blocks))
+	}
+	if response.StopReason != "tool_use" || response.InputTokens != 10 || response.OutputTokens != 5 {
+		t.Fatalf("response metadata = %#v", response)
 	}
 	if response.Blocks[0].Type != BlockTypeThinking || response.Blocks[0].Thinking != "需要先查资料" || response.Blocks[0].ThinkingSignature != "sig-test" {
 		t.Fatalf("thinking block = %+v, want parsed thinking", response.Blocks[0])

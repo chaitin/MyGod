@@ -343,6 +343,7 @@ func TestHandleParsedServerMessageIgnoresGroupMessageWithoutDirectAppMention(t *
 
 func TestHandleParsedServerMessageRunsGroupMessageWithDirectAppMention(t *testing.T) {
 	appID := "00000000-0000-0000-0000-000000000001"
+	var actions []string
 	var agentRequests []agent.Request
 	var sent []envelope
 	requester := appRequestFunc(func(ctx context.Context, method string, payload any) (json.RawMessage, error) {
@@ -354,6 +355,7 @@ func TestHandleParsedServerMessageRunsGroupMessageWithDirectAppMention(t *testin
 				},
 			})
 		case methodConversationTopicCreate:
+			actions = append(actions, "create-topic")
 			var topicRequest topicMutationRequestPayload
 			raw, err := json.Marshal(payload)
 			if err != nil {
@@ -384,6 +386,15 @@ func TestHandleParsedServerMessageRunsGroupMessageWithDirectAppMention(t *testin
 		replyAgent,
 		directAgentRunner{},
 		func(_ context.Context, message envelope) error {
+			var payload sendMessageRequestPayload
+			if err := json.Unmarshal(message.Payload, &payload); err != nil {
+				t.Fatalf("decode sent message: %v", err)
+			}
+			if payload.Message.Content == complexTaskTopicNotice {
+				actions = append(actions, "send-notice")
+			} else {
+				actions = append(actions, "send-reply")
+			}
 			sent = append(sent, message)
 			return nil
 		},
@@ -397,11 +408,21 @@ func TestHandleParsedServerMessageRunsGroupMessageWithDirectAppMention(t *testin
 		agentRequests[0].Conversation.Parent.Type != "group" {
 		t.Fatalf("conversation = %#v, want topic-1 topic", agentRequests[0].Conversation)
 	}
-	if len(sent) != 1 {
-		t.Fatalf("sent count = %d, want 1", len(sent))
+	if len(sent) != 2 {
+		t.Fatalf("sent count = %d, want 2", len(sent))
+	}
+	if !slices.Equal(actions, []string{"send-notice", "create-topic", "send-reply"}) {
+		t.Fatalf("actions = %v", actions)
+	}
+	var notice sendMessageRequestPayload
+	if err := json.Unmarshal(sent[0].Payload, &notice); err != nil {
+		t.Fatalf("decode topic notice: %v", err)
+	}
+	if notice.Target.Type != "group" || notice.Target.ConversationID != "conversation-group-1" || notice.Message.Content != complexTaskTopicNotice {
+		t.Fatalf("topic notice = %#v", notice)
 	}
 	var reply sendMessageRequestPayload
-	if err := json.Unmarshal(sent[0].Payload, &reply); err != nil {
+	if err := json.Unmarshal(sent[1].Payload, &reply); err != nil {
 		t.Fatalf("decode topic reply: %v", err)
 	}
 	if reply.Target.Type != "topic" || reply.Target.ConversationID != "topic-1" {
@@ -1155,7 +1176,7 @@ func TestConversationAgentRunnerDoesNotRunAppendedMessageWhileSendIsInProgress(t
 
 func TestConversationAgentRunnerAppendsSameConversationMessageToActiveSession(t *testing.T) {
 	model := &recordingLoopModel{
-		thirdRequestSeen: make(chan struct{}),
+		secondRequestSeen: make(chan struct{}),
 	}
 	registry := &blockingToolRegistry{
 		started: make(chan struct{}),
@@ -1221,9 +1242,9 @@ func TestConversationAgentRunnerAppendsSameConversationMessageToActiveSession(t 
 	)
 
 	close(registry.release)
-	waitForSignal(t, model.thirdRequestSeen, "queued trigger model request")
+	waitForSignal(t, model.secondRequestSeen, "intervening trigger model request")
 
-	secondRequest := model.requestAt(t, 2)
+	secondRequest := model.requestAt(t, 1)
 	secondRequestJSON, err := json.Marshal(secondRequest.Messages)
 	if err != nil {
 		t.Fatalf("marshal second request messages: %v", err)
@@ -1235,6 +1256,11 @@ func TestConversationAgentRunnerAppendsSameConversationMessageToActiveSession(t 
 	}
 	if strings.Contains(string(secondRequestJSON), "很早以前的旧背景") {
 		t.Fatalf("second request messages = %s, want old history before previous trigger filtered", secondRequestJSON)
+	}
+	toolResultIndex := strings.Index(string(secondRequestJSON), "waited")
+	interventionIndex := strings.Index(string(secondRequestJSON), "第二条")
+	if toolResultIndex < 0 || interventionIndex < 0 || toolResultIndex > interventionIndex {
+		t.Fatalf("second request messages = %s, want tool result before intervening trigger", secondRequestJSON)
 	}
 }
 
@@ -1301,9 +1327,9 @@ func TestAuthorizationForMessageSupportsUserAndAppActors(t *testing.T) {
 }
 
 type recordingLoopModel struct {
-	mu               sync.Mutex
-	requests         []llm.Request
-	thirdRequestSeen chan struct{}
+	mu                sync.Mutex
+	requests          []llm.Request
+	secondRequestSeen chan struct{}
 }
 
 func (m *recordingLoopModel) CreateMessage(ctx context.Context, request llm.Request) (llm.Response, error) {
@@ -1318,9 +1344,7 @@ func (m *recordingLoopModel) CreateMessage(ctx context.Context, request llm.Requ
 			{Type: llm.BlockTypeToolUse, ToolUseID: "toolu_wait", ToolName: "test__wait", ToolInput: json.RawMessage(`{}`)},
 		}}, nil
 	case 2:
-		return llm.Response{Blocks: []llm.Block{{Type: llm.BlockTypeText, Text: "第一条处理完成"}}}, nil
-	case 3:
-		close(m.thirdRequestSeen)
+		close(m.secondRequestSeen)
 		return llm.Response{Blocks: []llm.Block{{Type: llm.BlockTypeText, Text: "处理第二条"}}}, nil
 	default:
 		return llm.Response{Blocks: []llm.Block{{Type: llm.BlockTypeText, Text: "完成"}}}, nil

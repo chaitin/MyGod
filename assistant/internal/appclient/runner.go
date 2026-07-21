@@ -29,6 +29,7 @@ type preparedAgentRun struct {
 	ErrorSink                  agent.OutputSink
 	EventConversationID        string
 	MessageSeq                 int64
+	ReplySink                  agent.OutputSink
 	Request                    agent.Request
 	Scope                      builtintools.Scope
 }
@@ -75,8 +76,11 @@ type conversationAgentRunner struct {
 }
 
 type conversationAgentJob struct {
+	actorID              string
+	actorType            string
 	cancel               context.CancelFunc
 	ctx                  context.Context
+	errorSink            agent.OutputSink
 	lastActiveAt         time.Time
 	lastScope            builtintools.Scope
 	lastSeenSeq          int64
@@ -88,7 +92,7 @@ type conversationAgentJob struct {
 	running              bool
 	session              *agent.Session
 	sink                 agent.OutputSink
-	started              bool
+	scopeStore           *conversationScopeStore
 	timer                *time.Timer
 }
 
@@ -134,6 +138,7 @@ func (r *conversationAgentRunner) Start(ctx context.Context, key string, sink ag
 	if prepared.ErrorSink == nil {
 		prepared.ErrorSink = sink
 	}
+	prepared.ReplySink = sink
 	prepared.Scope.ConversationWaiter = r.waiters
 	eventKey := strings.TrimSpace(prepared.EventConversationID)
 	if eventKey == "" {
@@ -177,9 +182,29 @@ func (r *conversationAgentRunner) Start(ctx context.Context, key string, sink ag
 		request.History = filterHistoryAfterSeq(request.History, job.lastSeenSeq)
 		request.AuthorizationCandidates = authorizationCandidatesForTrigger(prepared.Authorization)
 		prepared.Request = request
-		job.pending = append(job.pending, prepared)
+		if job.running && (len(job.pending) > 0 || !job.sameActor(prepared.Authorization)) {
+			job.pending = append(job.pending, prepared)
+			job.session.RequestYield()
+			job.lastActiveAt = time.Now().UTC()
+			if eventKey == key && prepared.MessageSeq > job.lastSeenSeq {
+				job.lastSeenSeq = prepared.MessageSeq
+			}
+			r.recordSequenceLocked(eventKey, prepared.MessageSeq)
+			r.mu.Unlock()
+			return true
+		}
+		if err := job.session.AppendWithActivation(request, func() {
+			job.scopeStore.Activate(prepared.Scope, prepared.Authorization)
+		}); err != nil {
+			r.mu.Unlock()
+			log.Printf("append agent instruction failed: %v", err)
+			return sendAgentFallback(ctx, prepared.ErrorSink) == nil
+		}
+		job.actorType, job.actorID = authorizationActor(prepared.Authorization)
+		job.lastScope = prepared.Scope
 		job.lastActiveAt = time.Now().UTC()
 		job.sink = sink
+		job.errorSink = prepared.ErrorSink
 		if eventKey == key && prepared.MessageSeq > job.lastSeenSeq {
 			job.lastSeenSeq = prepared.MessageSeq
 		}
@@ -209,6 +234,7 @@ func (r *conversationAgentRunner) Start(ctx context.Context, key string, sink ag
 	}
 	jobCtx, cancel := context.WithCancel(r.ctx)
 	prepared.Request.AuthorizationCandidates = authorizationCandidatesForTrigger(prepared.Authorization)
+	scopeStore := newConversationScopeStore(prepared.Scope, prepared.Authorization)
 	session, err := sessionAgent.NewSession(prepared.Request)
 	if err != nil {
 		r.mu.Unlock()
@@ -220,13 +246,17 @@ func (r *conversationAgentRunner) Start(ctx context.Context, key string, sink ag
 		return r.rejectPreparedRun(ctx, key, sink, prepared, prepared.CloseTopicOnSessionFailure)
 	}
 	job := &conversationAgentJob{
+		actorID:      strings.TrimSpace(prepared.Authorization.Authorization.ActorID),
+		actorType:    strings.ToLower(strings.TrimSpace(prepared.Authorization.Authorization.ActorType)),
 		cancel:       cancel,
 		ctx:          jobCtx,
+		errorSink:    prepared.ErrorSink,
 		lastActiveAt: time.Now().UTC(),
+		lastScope:    prepared.Scope,
 		running:      true,
-		pending:      []preparedAgentRun{prepared},
 		session:      session,
 		sink:         sink,
+		scopeStore:   scopeStore,
 	}
 	if eventKey == key {
 		job.lastSeenSeq = prepared.MessageSeq
@@ -365,45 +395,29 @@ func (r *conversationAgentRunner) runJob(key string, job *conversationAgentJob) 
 	for {
 		r.mu.Lock()
 		current, ok := r.jobs[key]
-		if !ok || current != job || job.retiring || len(job.pending) == 0 {
+		if !ok || current != job || job.retiring {
 			r.mu.Unlock()
 			return
 		}
-		prepared := job.pending[0]
-		job.pending = job.pending[1:]
-		appendRequest := job.started
-		job.started = true
-		job.lastScope = prepared.Scope
 		replySink := job.sink
+		errorSink := job.errorSink
 		r.mu.Unlock()
 
 		taskSink := &conversationAgentSink{
 			delegate:  replySink,
-			errorSink: prepared.ErrorSink,
+			errorSink: errorSink,
 			job:       job,
 			key:       key,
 			runner:    r,
 		}
-		appendFailed := false
-		if appendRequest {
-			if err := job.session.Append(prepared.Request); err != nil {
-				log.Printf("append agent instruction failed: %v", err)
-				appendFailed = true
+		err := job.session.RunCycle(
+			builtintools.WithScopeProvider(job.ctx, job.scopeStore),
+			taskSink,
+		)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			log.Printf("agent reply failed: %v", err)
+			if !taskSink.taskErrorSent {
 				_ = sendAgentFallback(job.ctx, taskSink)
-			}
-		}
-		if !appendFailed {
-			prepared.Scope.AuthorizationResolver = newTriggerAuthorizationResolver(prepared.Authorization)
-			prepared.Scope.ConversationWaiter = r.waiters
-			err := job.session.RunCycle(
-				builtintools.WithScope(job.ctx, prepared.Scope),
-				taskSink,
-			)
-			if err != nil && !errors.Is(err, context.Canceled) {
-				log.Printf("agent reply failed: %v", err)
-				if !taskSink.taskErrorSent {
-					_ = sendAgentFallback(job.ctx, taskSink)
-				}
 			}
 		}
 
@@ -413,9 +427,45 @@ func (r *conversationAgentRunner) runJob(key string, job *conversationAgentJob) 
 			r.mu.Unlock()
 			return
 		}
-		if job.ctx.Err() == nil && len(job.pending) > 0 {
+		if job.ctx.Err() == nil && job.session.HasPending() {
 			r.mu.Unlock()
 			continue
+		}
+		var failedAppends []preparedAgentRun
+		if job.ctx.Err() == nil && len(job.pending) > 0 {
+			batchEnd := 1
+			for batchEnd < len(job.pending) && sameAuthorizationActor(job.pending[0].Authorization, job.pending[batchEnd].Authorization) {
+				batchEnd++
+			}
+			batch := append([]preparedAgentRun(nil), job.pending[:batchEnd]...)
+			job.pending = job.pending[batchEnd:]
+			job.session.ClearYield()
+			appended := false
+			for _, next := range batch {
+				next := next
+				if err := job.session.AppendWithActivation(next.Request, func() {
+					job.scopeStore.Activate(next.Scope, next.Authorization)
+				}); err != nil {
+					log.Printf("append queued agent instruction failed: %v", err)
+					failedAppends = append(failedAppends, next)
+					continue
+				}
+				appended = true
+				job.actorType, job.actorID = authorizationActor(next.Authorization)
+				job.lastScope = next.Scope
+				job.sink = next.ReplySink
+				job.errorSink = next.ErrorSink
+			}
+			if len(job.pending) > 0 {
+				job.session.RequestYield()
+			}
+			if appended || len(job.pending) > 0 {
+				r.mu.Unlock()
+				for _, failed := range failedAppends {
+					_ = sendAgentFallback(job.ctx, failed.ErrorSink)
+				}
+				continue
+			}
 		}
 		job.running = false
 		job.lastActiveAt = time.Now().UTC()
@@ -423,6 +473,9 @@ func (r *conversationAgentRunner) runJob(key string, job *conversationAgentJob) 
 			r.retireIdleJob(key, job)
 		})
 		r.mu.Unlock()
+		for _, failed := range failedAppends {
+			_ = sendAgentFallback(job.ctx, failed.ErrorSink)
+		}
 		return
 	}
 }
@@ -430,7 +483,7 @@ func (r *conversationAgentRunner) runJob(key string, job *conversationAgentJob) 
 func (r *conversationAgentRunner) retireIdleJob(key string, job *conversationAgentJob) {
 	r.mu.Lock()
 	current, ok := r.jobs[key]
-	if !ok || current != job || job.retiring || job.running || len(job.pending) > 0 {
+	if !ok || current != job || job.retiring || job.running || job.session.HasPending() || len(job.pending) > 0 {
 		r.mu.Unlock()
 		return
 	}
@@ -453,7 +506,7 @@ func (r *conversationAgentRunner) selectOldestIdleJobLocked() (string, *conversa
 	var selectedKey string
 	var selected *conversationAgentJob
 	for key, job := range r.jobs {
-		if job.retiring || job.running || len(job.pending) > 0 {
+		if job.retiring || job.running || job.session.HasPending() || len(job.pending) > 0 {
 			continue
 		}
 		if selected == nil || job.lastActiveAt.Before(selected.lastActiveAt) {
@@ -700,25 +753,53 @@ func isAgentTaskError(content string) bool {
 	return content == agent.ModelErrorFallback || content == agent.LoopLimitFallback
 }
 
-type conversationAuthorizationStore struct {
-	mu      sync.RWMutex
-	entries []conversationAuthorizationEntry
+func (j *conversationAgentJob) sameActor(authorization preparedAuthorization) bool {
+	actorType, actorID := authorizationActor(authorization)
+	return actorType != "" && actorID != "" && actorType == j.actorType && actorID == j.actorID
 }
 
-type triggerAuthorizationResolver struct {
-	authorization builtintools.Authorization
-	ref           string
+func sameAuthorizationActor(left preparedAuthorization, right preparedAuthorization) bool {
+	leftType, leftID := authorizationActor(left)
+	rightType, rightID := authorizationActor(right)
+	return leftType != "" && leftID != "" && leftType == rightType && leftID == rightID
 }
 
-func newTriggerAuthorizationResolver(value preparedAuthorization) builtintools.AuthorizationResolver {
-	return triggerAuthorizationResolver{authorization: value.Authorization, ref: value.Ref}
+func authorizationActor(authorization preparedAuthorization) (string, string) {
+	return strings.ToLower(strings.TrimSpace(authorization.Authorization.ActorType)), strings.TrimSpace(authorization.Authorization.ActorID)
 }
 
-func (r triggerAuthorizationResolver) ResolveAuthorization(ref string) (builtintools.Authorization, bool) {
-	if r.ref == "" || strings.TrimSpace(ref) != r.ref {
+type conversationScopeStore struct {
+	mu            sync.RWMutex
+	authorization preparedAuthorization
+	scope         builtintools.Scope
+}
+
+func newConversationScopeStore(scope builtintools.Scope, authorization preparedAuthorization) *conversationScopeStore {
+	return &conversationScopeStore{authorization: authorization, scope: scope}
+}
+
+func (s *conversationScopeStore) Activate(scope builtintools.Scope, authorization preparedAuthorization) {
+	s.mu.Lock()
+	s.scope = scope
+	s.authorization = authorization
+	s.mu.Unlock()
+}
+
+func (s *conversationScopeStore) CurrentScope() builtintools.Scope {
+	s.mu.RLock()
+	scope := s.scope
+	s.mu.RUnlock()
+	scope.AuthorizationResolver = s
+	return scope
+}
+
+func (s *conversationScopeStore) ResolveAuthorization(ref string) (builtintools.Authorization, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.authorization.Ref == "" || strings.TrimSpace(ref) != s.authorization.Ref {
 		return builtintools.Authorization{}, false
 	}
-	return r.authorization, true
+	return s.authorization.Authorization, true
 }
 
 func authorizationCandidatesForTrigger(value preparedAuthorization) []agent.AuthorizationCandidate {
@@ -726,6 +807,11 @@ func authorizationCandidatesForTrigger(value preparedAuthorization) []agent.Auth
 		return nil
 	}
 	return []agent.AuthorizationCandidate{value.Candidate}
+}
+
+type conversationAuthorizationStore struct {
+	mu      sync.RWMutex
+	entries []conversationAuthorizationEntry
 }
 
 type conversationAuthorizationEntry struct {

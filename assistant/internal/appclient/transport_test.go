@@ -301,6 +301,17 @@ func TestClientRetriesInFlightRequestAcrossReconnect(t *testing.T) {
 			return
 		}
 
+		var noticeRequest envelope
+		if err := conn.ReadJSON(&noticeRequest); err != nil {
+			return
+		}
+		if noticeRequest.Method != methodMessageSend {
+			return
+		}
+		if err := conn.WriteJSON(envelope{V: protocolVersion, Kind: kindResponse, ReplyTo: noticeRequest.ID, OK: &ok, Payload: json.RawMessage(`{}`)}); err != nil {
+			return
+		}
+
 		var topicRequest envelope
 		if err := conn.ReadJSON(&topicRequest); err != nil {
 			return
@@ -487,6 +498,20 @@ func TestClientRecoversFromEventQueueOverflowWithPrioritizedResponses(t *testing
 		}
 		historyRequestIDs <- replayedHistoryRequest.ID
 		if _, err := writeResponse(replayedHistoryRequest); err != nil {
+			reportServerError(err)
+			return
+		}
+
+		var noticeRequest envelope
+		if err := conn.ReadJSON(&noticeRequest); err != nil {
+			reportServerError(fmt.Errorf("read replayed topic notice: %w", err))
+			return
+		}
+		if noticeRequest.Method != methodMessageSend {
+			reportServerError(fmt.Errorf("replayed request method = %q, want %q", noticeRequest.Method, methodMessageSend))
+			return
+		}
+		if _, err := writeResponse(noticeRequest); err != nil {
 			reportServerError(err)
 			return
 		}
@@ -881,8 +906,8 @@ func TestClientReplayRetriesAcknowledgementWithoutReprocessingEvent(t *testing.T
 
 	client.handleTransportMessage(ctx, event)
 	waitForSignal(t, acknowledged, "replayed event acknowledgement")
-	if calls := replyCalls.Load(); calls != 1 {
-		t.Fatalf("agent reply calls = %d, want 1", calls)
+	if calls := replyCalls.Load(); calls != 2 {
+		t.Fatalf("message send calls = %d, want 2", calls)
 	}
 }
 

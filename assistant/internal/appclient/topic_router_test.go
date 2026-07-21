@@ -207,7 +207,7 @@ func TestHandleParsedServerMessageDefaultsToTopicWhenRoutingFails(t *testing.T) 
 		return false, errors.New("invalid model response")
 	})
 	replyAgent := replyAgentFunc(func(ctx context.Context, _ agent.Request, sink agent.OutputSink) error {
-		return sink.SendMarkdown(ctx, "开始处理")
+		return sink.SendMarkdown(ctx, agent.LoopLimitFallback)
 	})
 
 	handled := handleParsedServerMessageWithTopicRouter(
@@ -224,14 +224,24 @@ func TestHandleParsedServerMessageDefaultsToTopicWhenRoutingFails(t *testing.T) 
 		},
 	)
 
-	if !handled || len(sent) != 1 {
+	if !handled || len(sent) != 2 {
 		t.Fatalf("handled = %t, sent = %d", handled, len(sent))
 	}
+	var notice sendMessageRequestPayload
+	if err := json.Unmarshal(sent[0].Payload, &notice); err != nil {
+		t.Fatalf("decode topic notice: %v", err)
+	}
+	if notice.Target.Type != "group" || notice.Target.ConversationID != "conversation-group-1" || notice.Message.Content != complexTaskTopicNotice {
+		t.Fatalf("topic notice = %#v", notice)
+	}
 	var reply sendMessageRequestPayload
-	if err := json.Unmarshal(sent[0].Payload, &reply); err != nil {
+	if err := json.Unmarshal(sent[1].Payload, &reply); err != nil {
 		t.Fatalf("decode reply: %v", err)
 	}
 	if reply.Target.Type != "topic" || reply.Target.ConversationID != "topic-1" {
 		t.Fatalf("reply target = %#v", reply.Target)
+	}
+	if reply.Message.Content != agent.LoopLimitFallback {
+		t.Fatalf("reply content = %q, want loop limit fallback", reply.Message.Content)
 	}
 }

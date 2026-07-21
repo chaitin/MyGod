@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,6 +20,19 @@ func (f modelFunc) CreateMessage(ctx context.Context, request llm.Request) (llm.
 	return f(ctx, request)
 }
 
+type tokenCountingModel struct {
+	create func(context.Context, llm.Request) (llm.Response, error)
+	count  func(context.Context, llm.Request) (int, error)
+}
+
+func (m *tokenCountingModel) CreateMessage(ctx context.Context, request llm.Request) (llm.Response, error) {
+	return m.create(ctx, request)
+}
+
+func (m *tokenCountingModel) CountTokens(ctx context.Context, request llm.Request) (int, error) {
+	return m.count(ctx, request)
+}
+
 type sinkFunc func(context.Context, string) error
 
 func (f sinkFunc) SendMarkdown(ctx context.Context, content string) error {
@@ -29,6 +44,38 @@ type fakeToolRegistry struct {
 	callNames  []string
 	results    map[string]mcpclient.ToolResult
 	tools      []mcpclient.Tool
+}
+
+type interruptibleToolRegistry struct {
+	mu      sync.Mutex
+	calls   []string
+	release chan struct{}
+	started chan struct{}
+}
+
+func (r *interruptibleToolRegistry) Tools() []mcpclient.Tool {
+	return []mcpclient.Tool{{Name: "test__started"}, {Name: "test__skipped"}}
+}
+
+func (r *interruptibleToolRegistry) CallTool(ctx context.Context, name string, _ json.RawMessage) (mcpclient.ToolResult, error) {
+	r.mu.Lock()
+	r.calls = append(r.calls, name)
+	r.mu.Unlock()
+	if name == "test__started" {
+		close(r.started)
+		select {
+		case <-ctx.Done():
+			return mcpclient.ToolResult{}, ctx.Err()
+		case <-r.release:
+		}
+	}
+	return mcpclient.ToolResult{Content: name + " completed"}, nil
+}
+
+func (r *interruptibleToolRegistry) calledTools() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.calls...)
 }
 
 func (r *fakeToolRegistry) Tools() []mcpclient.Tool {
@@ -598,11 +645,12 @@ func TestAgentSessionAppendsNewInstructionBeforeNextTurn(t *testing.T) {
 	}
 	var requests []llm.Request
 	var session *Session
+	activated := false
 	agent := New(modelFunc(func(ctx context.Context, request llm.Request) (llm.Response, error) {
 		requests = append(requests, request)
 		switch len(requests) {
 		case 1:
-			if err := session.Append(Request{
+			if err := session.AppendWithActivation(Request{
 				MessageID:   "message-2",
 				Sender:      Sender{ID: "user-1", Name: "Alice", Type: "user"},
 				Content:     "第二条补充",
@@ -610,13 +658,19 @@ func TestAgentSessionAppendsNewInstructionBeforeNextTurn(t *testing.T) {
 				ProjectContext: &ProjectContext{
 					ConversationProjects: []ProjectContextProject{{ID: "project-second", Name: "第二轮项目"}},
 				},
-			}); err != nil {
+			}, func() { activated = true }); err != nil {
 				t.Fatalf("Append() error = %v", err)
+			}
+			if activated {
+				t.Fatal("appended instruction activated before the next model turn")
 			}
 			return llm.Response{Blocks: []llm.Block{
 				{Type: llm.BlockTypeToolUse, ToolUseID: "toolu_1", ToolName: "main__wait", ToolInput: json.RawMessage(`{}`)},
 			}}, nil
 		default:
+			if !activated {
+				t.Fatal("appended instruction was not activated before the next model turn")
+			}
 			return llm.Response{Blocks: []llm.Block{{Type: llm.BlockTypeText, Text: "处理了补充"}}}, nil
 		}
 	}), WithToolRegistry(registry))
@@ -656,7 +710,62 @@ func TestAgentSessionAppendsNewInstructionBeforeNextTurn(t *testing.T) {
 	}
 }
 
-func TestAgentSessionCompactsConsumedToolResults(t *testing.T) {
+func TestAgentSessionInterventionSkipsToolsThatHaveNotStarted(t *testing.T) {
+	registry := &interruptibleToolRegistry{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	var requests []llm.Request
+	agent := New(modelFunc(func(_ context.Context, request llm.Request) (llm.Response, error) {
+		requests = append(requests, request)
+		if len(requests) == 1 {
+			return llm.Response{Blocks: []llm.Block{
+				{Type: llm.BlockTypeToolUse, ToolUseID: "toolu_started", ToolName: "test__started", ToolInput: json.RawMessage(`{}`)},
+				{Type: llm.BlockTypeToolUse, ToolUseID: "toolu_skipped", ToolName: "test__skipped", ToolInput: json.RawMessage(`{}`)},
+			}}, nil
+		}
+		return llm.Response{Blocks: []llm.Block{{Type: llm.BlockTypeText, Text: "已按补充调整"}}}, nil
+	}), WithToolRegistry(registry))
+	session, err := agent.NewSession(Request{Content: "按原方向处理"})
+	if err != nil {
+		t.Fatalf("NewSession() error = %v", err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- session.RunCycle(context.Background(), sinkFunc(func(context.Context, string) error { return nil }))
+	}()
+
+	select {
+	case <-registry.started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for first tool")
+	}
+	if err := session.Append(Request{MessageID: "message-2", Content: "方向不对，改一下"}); err != nil {
+		t.Fatalf("Append() error = %v", err)
+	}
+	close(registry.release)
+	if err := <-errCh; err != nil {
+		t.Fatalf("RunCycle() error = %v", err)
+	}
+
+	if calls := registry.calledTools(); len(calls) != 1 || calls[0] != "test__started" {
+		t.Fatalf("called tools = %v, want only already-started tool", calls)
+	}
+	if len(requests) != 2 {
+		t.Fatalf("model request count = %d, want 2", len(requests))
+	}
+	secondJSON, err := json.Marshal(requests[1].Messages)
+	if err != nil {
+		t.Fatalf("marshal second request: %v", err)
+	}
+	for _, snippet := range []string{"toolu_started", "toolu_skipped", "用户发送了新的消息，本工具尚未执行。", "方向不对，改一下"} {
+		if !strings.Contains(string(secondJSON), snippet) {
+			t.Fatalf("second request = %s, want %q", secondJSON, snippet)
+		}
+	}
+}
+
+func TestAgentSessionKeepsConsumedToolResultsUntilContextCompaction(t *testing.T) {
 	const largeToolResult = "搜索结果：" + "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz"
 	registry := &fakeToolRegistry{
 		tools:   []mcpclient.Tool{{Name: "main__search"}},
@@ -695,11 +804,157 @@ func TestAgentSessionCompactsConsumedToolResults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal third request messages: %v", err)
 	}
-	if strings.Contains(string(thirdRequestJSON), largeToolResult) {
-		t.Fatalf("third request messages = %s, want consumed full tool result compacted", thirdRequestJSON)
+	if !strings.Contains(string(thirdRequestJSON), largeToolResult) {
+		t.Fatalf("third request messages = %s, want full tool result retained", thirdRequestJSON)
 	}
-	if !strings.Contains(string(thirdRequestJSON), "tool_memory") || !strings.Contains(string(thirdRequestJSON), "main__search") {
-		t.Fatalf("third request messages = %s, want compacted tool memory", thirdRequestJSON)
+	if strings.Contains(string(thirdRequestJSON), "tool_memory") {
+		t.Fatalf("third request messages = %s, want no eager tool-result compaction", thirdRequestJSON)
+	}
+}
+
+func TestAgentSessionCompactsOldContextAtEightyThousandTokens(t *testing.T) {
+	var summaryRequest llm.Request
+	var mainRequest llm.Request
+	summaryCalls := 0
+	forceHighCount := false
+	model := &tokenCountingModel{}
+	model.count = func(_ context.Context, request llm.Request) (int, error) {
+		if forceHighCount {
+			return 80_000, nil
+		}
+		raw, _ := json.Marshal(request.Messages)
+		if strings.Contains(string(raw), `"type":"session_memory"`) {
+			return 40_000, nil
+		}
+		return 80_000, nil
+	}
+	model.create = func(_ context.Context, request llm.Request) (llm.Response, error) {
+		if request.System == contextSummarySystemPrompt {
+			summaryCalls++
+			summaryRequest = request
+			return llm.Response{Blocks: []llm.Block{{Type: llm.BlockTypeText, Text: "用户此前确定项目 ID 为 project-1，查询已经成功。"}}}, nil
+		}
+		mainRequest = request
+		return llm.Response{Blocks: []llm.Block{{Type: llm.BlockTypeText, Text: "继续完成"}}}, nil
+	}
+	agent := New(model)
+	session, err := agent.NewSession(Request{
+		AuthorizationCandidates: []AuthorizationCandidate{{
+			Ref: "auth_current", SenderID: "user-1", SenderName: "Alice", SenderType: "user",
+			MessageSeq: 2, MessageSummary: "继续处理当前问题",
+		}},
+		AuthorizationRef: "auth_current",
+		Content:          "继续处理当前问题",
+		History: []HistoryMessage{{
+			Seq: 1, SenderType: "user", SenderName: "Alice",
+			Summary: "旧背景里包含 project-1 和已经完成的查询结果",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("NewSession() error = %v", err)
+	}
+	if err := session.RunCycle(context.Background(), sinkFunc(func(context.Context, string) error { return nil })); err != nil {
+		t.Fatalf("RunCycle() error = %v", err)
+	}
+
+	summaryJSON, _ := json.Marshal(summaryRequest.Messages)
+	if !strings.Contains(string(summaryJSON), "project-1") {
+		t.Fatalf("summary request = %s, want old context", summaryJSON)
+	}
+	mainJSON, _ := json.Marshal(mainRequest.Messages)
+	for _, value := range []string{"session_memory", "project-1", "继续处理当前问题", "auth_current"} {
+		if !strings.Contains(string(mainJSON), value) {
+			t.Fatalf("main request = %s, want %q", mainJSON, value)
+		}
+	}
+	if strings.Contains(string(mainJSON), "旧背景里包含") {
+		t.Fatalf("main request = %s, want old raw context replaced", mainJSON)
+	}
+	forceHighCount = true
+	if _, compacted := session.prepareModelRequest(context.Background(), false); compacted {
+		t.Fatal("already compacted memory and trusted context should not be summarized repeatedly")
+	}
+	if summaryCalls != 1 {
+		t.Fatalf("summary calls = %d, want one", summaryCalls)
+	}
+}
+
+func TestAgentSessionCompactsAndRetriesContextWindowErrorOnce(t *testing.T) {
+	mainCalls := 0
+	var retriedRequest llm.Request
+	model := &tokenCountingModel{}
+	model.count = func(context.Context, llm.Request) (int, error) { return 1_000, nil }
+	model.create = func(_ context.Context, request llm.Request) (llm.Response, error) {
+		if request.System == contextSummarySystemPrompt {
+			return llm.Response{Blocks: []llm.Block{{Type: llm.BlockTypeText, Text: "压缩后的旧事实"}}}, nil
+		}
+		mainCalls++
+		if mainCalls == 1 {
+			return llm.Response{}, errors.New("context length exceeded")
+		}
+		retriedRequest = request
+		return llm.Response{Blocks: []llm.Block{{Type: llm.BlockTypeText, Text: "恢复完成"}}}, nil
+	}
+	agent := New(model)
+	session, err := agent.NewSession(Request{
+		Content: "最新问题",
+		History: []HistoryMessage{{
+			Seq: 1, SenderType: "user", SenderName: "Alice", Summary: "需要保留的旧事实",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("NewSession() error = %v", err)
+	}
+	if err := session.RunCycle(context.Background(), sinkFunc(func(context.Context, string) error { return nil })); err != nil {
+		t.Fatalf("RunCycle() error = %v", err)
+	}
+	if mainCalls != 2 {
+		t.Fatalf("main calls = %d, want one retry", mainCalls)
+	}
+	retriedJSON, _ := json.Marshal(retriedRequest.Messages)
+	if !strings.Contains(string(retriedJSON), "session_memory") || !strings.Contains(string(retriedJSON), "最新问题") {
+		t.Fatalf("retried request = %s", retriedJSON)
+	}
+}
+
+func TestAgentSessionUsesConservativeLocalTokenEstimateWithoutCounter(t *testing.T) {
+	const largeHistory = "OLD_CONTEXT_MARKER_"
+	var mainRequest llm.Request
+	summaryCalls := 0
+	model := modelFunc(func(_ context.Context, request llm.Request) (llm.Response, error) {
+		if request.System == contextSummarySystemPrompt {
+			summaryCalls++
+			return llm.Response{Blocks: []llm.Block{{Type: llm.BlockTypeText, Text: fmt.Sprintf("本地估算触发后的摘要 %d", summaryCalls)}}}, nil
+		}
+		mainRequest = request
+		return llm.Response{Blocks: []llm.Block{{Type: llm.BlockTypeText, Text: "完成"}}}, nil
+	})
+	agent := New(model)
+	session, err := agent.NewSession(Request{
+		Content: "最新问题",
+		History: []HistoryMessage{
+			{
+				Seq: 1, SenderType: "user", SenderName: "Alice",
+				Summary: largeHistory + "1_" + strings.Repeat("旧", 41_000),
+			},
+			{
+				Seq: 2, SenderType: "user", SenderName: "Bob",
+				Summary: largeHistory + "2_" + strings.Repeat("新", 41_000),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewSession() error = %v", err)
+	}
+	if err := session.RunCycle(context.Background(), sinkFunc(func(context.Context, string) error { return nil })); err != nil {
+		t.Fatalf("RunCycle() error = %v", err)
+	}
+	mainJSON, _ := json.Marshal(mainRequest.Messages)
+	if !strings.Contains(string(mainJSON), "session_memory") || strings.Contains(string(mainJSON), largeHistory) {
+		t.Fatalf("main request did not replace locally estimated large context: %s", mainJSON)
+	}
+	if summaryCalls != 3 {
+		t.Fatalf("summary calls = %d, want two chunks and one consolidation", summaryCalls)
 	}
 }
 

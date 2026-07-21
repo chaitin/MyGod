@@ -3,9 +3,11 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"assistant/internal/config"
@@ -20,8 +22,14 @@ const (
 	DefaultMaxTokens = 4096
 )
 
+var ErrTokenCountUnsupported = errors.New("anthropic token counting is unsupported")
+
 type Model interface {
 	CreateMessage(ctx context.Context, request Request) (Response, error)
+}
+
+type TokenCounter interface {
+	CountTokens(ctx context.Context, request Request) (int, error)
 }
 
 type Request struct {
@@ -54,15 +62,19 @@ type Block struct {
 }
 
 type Response struct {
-	Blocks []Block `json:"blocks"`
+	Blocks       []Block `json:"blocks"`
+	InputTokens  int     `json:"input_tokens,omitempty"`
+	OutputTokens int     `json:"output_tokens,omitempty"`
+	StopReason   string  `json:"stop_reason,omitempty"`
 }
 
 type AnthropicClient struct {
-	BaseURL    string
-	APIKey     string
-	ModelName  string
-	MaxTokens  int
-	HTTPClient *http.Client
+	BaseURL               string
+	APIKey                string
+	ModelName             string
+	MaxTokens             int
+	HTTPClient            *http.Client
+	tokenCountingDisabled atomic.Bool
 }
 
 const (
@@ -138,6 +150,48 @@ func (c *AnthropicClient) CreateMessage(ctx context.Context, request Request) (R
 	}
 
 	return parseAnthropicResponse(response), nil
+}
+
+func (c *AnthropicClient) CountTokens(ctx context.Context, request Request) (int, error) {
+	if c.tokenCountingDisabled.Load() {
+		return 0, ErrTokenCountUnsupported
+	}
+	if strings.TrimSpace(c.BaseURL) == "" || strings.TrimSpace(c.APIKey) == "" || strings.TrimSpace(c.ModelName) == "" {
+		return 0, fmt.Errorf("llm.base_url, llm.api_key, and llm.model_name are required")
+	}
+	if len(request.Messages) == 0 {
+		return 0, fmt.Errorf("llm request messages are required")
+	}
+
+	params := anthropic.MessageCountTokensParams{
+		Messages: make([]anthropic.MessageParam, 0, len(request.Messages)),
+		Model:    anthropic.Model(c.ModelName),
+		Tools:    makeAnthropicCountTokensTools(request.Tools),
+	}
+	if system := strings.TrimSpace(request.System); system != "" {
+		params.System = anthropic.MessageCountTokensParamsSystemUnion{
+			OfTextBlockArray: []anthropic.TextBlockParam{{Text: system}},
+		}
+	}
+	for _, message := range request.Messages {
+		paramMessage, err := makeAnthropicMessage(message)
+		if err != nil {
+			return 0, err
+		}
+		params.Messages = append(params.Messages, paramMessage)
+	}
+
+	client := c.sdkClient()
+	count, err := client.Messages.CountTokens(ctx, params)
+	if err != nil {
+		var apiErr *anthropic.Error
+		if errors.As(err, &apiErr) && (apiErr.StatusCode == http.StatusNotFound || apiErr.StatusCode == http.StatusMethodNotAllowed || apiErr.StatusCode == http.StatusNotImplemented) {
+			c.tokenCountingDisabled.Store(true)
+			return 0, ErrTokenCountUnsupported
+		}
+		return 0, err
+	}
+	return int(count.InputTokens), nil
 }
 
 func makeAnthropicMessage(message Message) (anthropic.MessageParam, error) {
@@ -219,6 +273,23 @@ func makeAnthropicTools(tools []Tool) []anthropic.ToolUnionParam {
 	return result
 }
 
+func makeAnthropicCountTokensTools(tools []Tool) []anthropic.MessageCountTokensToolUnionParam {
+	if len(tools) == 0 {
+		return nil
+	}
+
+	result := make([]anthropic.MessageCountTokensToolUnionParam, 0, len(tools))
+	for _, tool := range tools {
+		inputSchema := makeAnthropicInputSchema(tool.InputSchema)
+		paramTool := anthropic.MessageCountTokensToolParamOfTool(inputSchema, tool.Name)
+		if strings.TrimSpace(tool.Description) != "" {
+			paramTool.OfTool.Description = param.NewOpt(tool.Description)
+		}
+		result = append(result, paramTool)
+	}
+	return result
+}
+
 func makeAnthropicInputSchema(schema any) anthropic.ToolInputSchemaParam {
 	if schema == nil {
 		return anthropic.ToolInputSchemaParam{Properties: map[string]any{}}
@@ -261,7 +332,12 @@ func parseAnthropicResponse(response *anthropic.Message) Response {
 		}
 	}
 
-	return Response{Blocks: blocks}
+	return Response{
+		Blocks:       blocks,
+		InputTokens:  int(response.Usage.InputTokens),
+		OutputTokens: int(response.Usage.OutputTokens),
+		StopReason:   string(response.StopReason),
+	}
 }
 
 func cloneRawMessage(value json.RawMessage) json.RawMessage {

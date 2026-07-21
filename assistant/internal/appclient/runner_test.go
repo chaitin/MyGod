@@ -550,6 +550,155 @@ func TestConversationAgentRunnerIsolatesAuthorizationPerTopicTrigger(t *testing.
 	}
 }
 
+func TestConversationAgentRunnerActivatesInterveningTriggerAtNextModelTurn(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	requester := newRunnerTopicRequester()
+	runner := newConversationAgentRunner(ctx)
+	defer runner.CancelAll()
+	source := builtintools.NewSource()
+	registry := &blockingToolRegistry{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	checks := make(chan error, 3)
+	var modelCalls int
+	var modelMu sync.Mutex
+	assistantAgent := agent.New(llmModelFunc(func(ctx context.Context, _ llm.Request) (llm.Response, error) {
+		modelMu.Lock()
+		modelCalls++
+		call := modelCalls
+		modelMu.Unlock()
+		if call == 1 {
+			_, err := source.CallTool(ctx, "projects", json.RawMessage(`{"operation":"search_projects","runas":{"type":"user","id":"user-a","authorization_ref":"auth_a"},"arguments":{}}`))
+			checks <- err
+			return llm.Response{Blocks: []llm.Block{{
+				Type:      llm.BlockTypeToolUse,
+				ToolUseID: "toolu_wait",
+				ToolName:  "test__wait",
+				ToolInput: json.RawMessage(`{}`),
+			}}}, nil
+		}
+		_, oldErr := source.CallTool(ctx, "projects", json.RawMessage(`{"operation":"search_projects","runas":{"type":"user","id":"user-a","authorization_ref":"auth_a"},"arguments":{}}`))
+		if oldErr == nil {
+			checks <- errors.New("previous trigger authorization still resolves")
+		} else {
+			checks <- nil
+		}
+		_, currentErr := source.CallTool(ctx, "projects", json.RawMessage(`{"operation":"search_projects","runas":{"type":"user","id":"user-b","authorization_ref":"auth_b"},"arguments":{}}`))
+		checks <- currentErr
+		return llm.Response{Blocks: []llm.Block{{Type: llm.BlockTypeText, Text: "已按补充继续"}}}, nil
+	}), agent.WithToolRegistry(registry))
+	outputs := make(chan struct{}, 1)
+	sink := agent.OutputSinkFunc(func(context.Context, string) error {
+		outputs <- struct{}{}
+		return nil
+	})
+
+	first := preparedTopicRun("topic-1", "parent-message", 42, "第一条", "user-a", "auth_a", requester)
+	first.EventConversationID = "parent-group"
+	first.Scope.AuthorizationConversationID = "parent-group"
+	runner.Start(ctx, "topic-1", sink, assistantAgent, first)
+	waitForSignal(t, registry.started, "first tool call to start")
+
+	second := preparedTopicRun("topic-1", "topic-message-1", 1, "方向不对，按第二条处理", "user-b", "auth_b", requester)
+	runner.Start(ctx, "topic-1", sink, assistantAgent, second)
+	runner.mu.Lock()
+	job := runner.jobs["topic-1"]
+	runner.mu.Unlock()
+	if _, ok := job.scopeStore.ResolveAuthorization("auth_a"); !ok {
+		t.Fatal("current tool-chain authorization changed before the next model turn")
+	}
+	if _, ok := job.scopeStore.ResolveAuthorization("auth_b"); ok {
+		t.Fatal("intervening trigger authorization activated before the next model turn")
+	}
+
+	close(registry.release)
+	waitForSignal(t, outputs, "intervening trigger response")
+	for index := 0; index < 3; index++ {
+		if err := <-checks; err != nil {
+			t.Fatalf("authorization check %d: %v", index+1, err)
+		}
+	}
+
+	projectCalls := requester.projectCalls()
+	if len(projectCalls) != 2 {
+		t.Fatalf("project requester calls = %d, want 2", len(projectCalls))
+	}
+	if projectCalls[0].AuthorizationConversationID != "parent-group" || projectCalls[0].ID != "user-a" {
+		t.Fatalf("first trigger runas = %#v", projectCalls[0])
+	}
+	if projectCalls[1].AuthorizationConversationID != "topic-1" || projectCalls[1].ID != "user-b" {
+		t.Fatalf("intervening trigger runas = %#v", projectCalls[1])
+	}
+}
+
+func TestConversationAgentRunnerPreservesSenderOrderAcrossInterventions(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runner := newConversationAgentRunner(ctx)
+	defer runner.CancelAll()
+	registry := &blockingToolRegistry{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	secondTurn := make(chan struct{})
+	thirdTurn := make(chan struct{})
+	var requests []llm.Request
+	var requestsMu sync.Mutex
+	assistantAgent := agent.New(llmModelFunc(func(_ context.Context, request llm.Request) (llm.Response, error) {
+		requestsMu.Lock()
+		requests = append(requests, request)
+		call := len(requests)
+		requestsMu.Unlock()
+		switch call {
+		case 1:
+			return llm.Response{Blocks: []llm.Block{
+				{Type: llm.BlockTypeToolUse, ToolUseID: "toolu_wait", ToolName: "test__wait", ToolInput: json.RawMessage(`{}`)},
+				{Type: llm.BlockTypeToolUse, ToolUseID: "toolu_must_skip", ToolName: "test__must_skip", ToolInput: json.RawMessage(`{}`)},
+			}}, nil
+		case 2:
+			close(secondTurn)
+			return llm.Response{Blocks: []llm.Block{{Type: llm.BlockTypeText, Text: "处理 Bob 的消息"}}}, nil
+		default:
+			close(thirdTurn)
+			return llm.Response{Blocks: []llm.Block{{Type: llm.BlockTypeText, Text: "处理 Alice 的后续消息"}}}, nil
+		}
+	}), agent.WithToolRegistry(registry))
+	sink := agent.OutputSinkFunc(func(context.Context, string) error { return nil })
+	requester := newRunnerTopicRequester()
+
+	runner.Start(ctx, "topic-1", sink, assistantAgent,
+		preparedTopicRun("topic-1", "message-a1", 1, "Alice 第一条", "user-a", "auth_a1", requester))
+	waitForSignal(t, registry.started, "first sender tool call")
+	runner.Start(ctx, "topic-1", sink, assistantAgent,
+		preparedTopicRun("topic-1", "message-b1", 2, "Bob 插话", "user-b", "auth_b1", requester))
+	runner.Start(ctx, "topic-1", sink, assistantAgent,
+		preparedTopicRun("topic-1", "message-a2", 3, "Alice 再补充", "user-a", "auth_a2", requester))
+	close(registry.release)
+	waitForSignal(t, secondTurn, "second sender turn")
+	waitForSignal(t, thirdTurn, "third sender turn")
+
+	requestsMu.Lock()
+	defer requestsMu.Unlock()
+	if len(requests) != 3 {
+		t.Fatalf("model request count = %d, want 3", len(requests))
+	}
+	secondJSON, _ := json.Marshal(requests[1].Messages)
+	if !strings.Contains(string(secondJSON), "Bob 插话") || strings.Contains(string(secondJSON), "Alice 再补充") {
+		t.Fatalf("second sender request = %s, want Bob only", secondJSON)
+	}
+	for _, snippet := range []string{"toolu_must_skip", "用户发送了新的消息，本工具尚未执行。"} {
+		if !strings.Contains(string(secondJSON), snippet) {
+			t.Fatalf("second sender request = %s, want interrupted tool result %q", secondJSON, snippet)
+		}
+	}
+	thirdJSON, _ := json.Marshal(requests[2].Messages)
+	if !strings.Contains(string(thirdJSON), "Alice 再补充") {
+		t.Fatalf("third sender request = %s, want Alice follow-up", thirdJSON)
+	}
+}
+
 func TestConversationAgentRunnerTopicClosedEventCancelsSession(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -710,7 +859,7 @@ func waitForRunnerJobIdle(t *testing.T, runner *conversationAgentRunner, key str
 	for {
 		runner.mu.Lock()
 		job := runner.jobs[key]
-		idle := job != nil && !job.running && len(job.pending) == 0
+		idle := job != nil && !job.running && !job.session.HasPending() && len(job.pending) == 0
 		runner.mu.Unlock()
 		if idle {
 			return
