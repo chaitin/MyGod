@@ -8,7 +8,7 @@
     "scheme": "magicchat",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "bundleIdentifier": "cloud.baizhi.magicchat",
+      "bundleIdentifier": "cloud.baizhi.chat",
       "buildNumber": "1",
       "icon": "./assets/images/icon.png",
       "infoPlist": {
@@ -18,7 +18,7 @@
       }
     },
     "android": {
-      "package": "cloud.baizhi.magicchat",
+      "package": "cloud.baizhi.chat",
       "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#04C9BD",
