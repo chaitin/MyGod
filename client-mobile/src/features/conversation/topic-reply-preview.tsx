@@ -25,7 +25,7 @@ export function TopicReplyPreview({
       onPress={onOpen}
     >
       {({ pressed }) => (
-        <YStack minW={240} mt="$3" opacity={pressed ? 0.72 : 1}>
+        <YStack mt="$3" opacity={pressed ? 0.72 : 1} width="100%">
           <Separator borderColor="$borderColor" mb="$2" />
 
           {topic.recentReplies.length > 0 ? (

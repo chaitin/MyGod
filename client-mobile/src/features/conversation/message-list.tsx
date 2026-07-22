@@ -1,5 +1,5 @@
 import { ArrowDown } from "lucide-react-native"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
   FlatList,
   RefreshControl,
@@ -7,7 +7,14 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from "react-native"
-import { Button, Spinner, useTheme, XStack, YStack } from "tamagui"
+import {
+  Button,
+  SizableText,
+  Spinner,
+  useTheme,
+  XStack,
+  YStack,
+} from "tamagui"
 
 import { ContentState } from "@/components/feedback/content-state"
 import { AppButton } from "@/components/forms/app-button"
@@ -17,6 +24,10 @@ import type { EntityReference } from "@/domain/entities/entity-profile"
 import type {
   MessageMentionLabelResolver,
   PresentedMessage,
+} from "@/domain/messages/message-presenter"
+import {
+  formatMessageTimeMarker,
+  shouldShowMessageTimeMarker,
 } from "@/domain/messages/message-presenter"
 import type { ServerTarget } from "@/data/query"
 import type { ResourceLoadState } from "@/data/resources"
@@ -77,7 +88,8 @@ export function MessageList({
   server: ServerTarget
 }) {
   const theme = useTheme()
-  const listRef = useRef<FlatList<PresentedMessage>>(null)
+  const listItems = useMemo(() => buildMessageListItems(messages), [messages])
+  const listRef = useRef<FlatList<MessageListItem>>(null)
   const nearBottomRef = useRef(true)
   const initializedMessagesRef = useRef(false)
   const previousConversationIdRef = useRef("")
@@ -186,12 +198,12 @@ export function MessageList({
       <FlatList
         ref={listRef}
         contentContainerStyle={styles.content}
-        data={messages}
+        data={listItems}
         inverted
         ItemSeparatorComponent={() => <YStack height="$4" />}
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item.key}
         ListFooterComponent={
           hasOlder || isFetchingOlder ? (
             <YStack items="center" pb="$3">
@@ -224,25 +236,29 @@ export function MessageList({
             tintColor={String(theme.color10.val)}
           />
         }
-        renderItem={({ item }) => (
-          <MessageBubble
-            canAddReaction={canAddReaction}
-            currentUserId={currentUserId}
-            message={item}
-            onAvatarLongPress={onAvatarLongPress}
-            onAvatarPress={onAvatarPress}
-            onImagePress={onImagePress}
-            onMentionPress={onMentionPress}
-            onOpenTopic={onOpenTopic}
-            onResourceError={onResourceError}
-            onResourcePress={onResourcePress}
-            onSetReaction={onSetReaction}
-            onVoiceResourcePress={onVoiceResourcePress}
-            resolveMentionLabel={resolveMentionLabel}
-            resourceStates={resourceStates}
-            server={server}
-          />
-        )}
+        renderItem={({ item }) =>
+          item.type === "time" ? (
+            <MessageTimeMarker createdAt={item.createdAt} />
+          ) : (
+            <MessageBubble
+              canAddReaction={canAddReaction}
+              currentUserId={currentUserId}
+              message={item.message}
+              onAvatarLongPress={onAvatarLongPress}
+              onAvatarPress={onAvatarPress}
+              onImagePress={onImagePress}
+              onMentionPress={onMentionPress}
+              onOpenTopic={onOpenTopic}
+              onResourceError={onResourceError}
+              onResourcePress={onResourcePress}
+              onSetReaction={onSetReaction}
+              onVoiceResourcePress={onVoiceResourcePress}
+              resolveMentionLabel={resolveMentionLabel}
+              resourceStates={resourceStates}
+              server={server}
+            />
+          )
+        }
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
         style={styles.list}
@@ -268,8 +284,58 @@ type PendingScroll = {
   animated: boolean
 }
 
+type MessageListItem =
+  | {
+      key: string
+      message: PresentedMessage
+      type: "message"
+    }
+  | {
+      createdAt: string
+      key: string
+      type: "time"
+    }
+
+function buildMessageListItems(messages: PresentedMessage[]): MessageListItem[] {
+  const items: MessageListItem[] = []
+
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index]
+    if (!message) continue
+
+    items.push({ key: `message:${message.id}`, message, type: "message" })
+
+    const olderMessage = messages[index + 1]
+    if (
+      olderMessage &&
+      shouldShowMessageTimeMarker(olderMessage.createdAt, message.createdAt)
+    ) {
+      items.push({
+        createdAt: message.createdAt,
+        key: `time:${olderMessage.id}:${message.id}`,
+        type: "time",
+      })
+    }
+  }
+
+  return items
+}
+
+function MessageTimeMarker({ createdAt }: { createdAt: string }) {
+  const label = formatMessageTimeMarker(createdAt)
+  if (!label) return null
+
+  return (
+    <XStack justify="center">
+      <SizableText color="$color10" size="$2">
+        {label}
+      </SizableText>
+    </XStack>
+  )
+}
+
 function scheduleScrollToLatest(
-  listRef: React.RefObject<FlatList<PresentedMessage> | null>,
+  listRef: React.RefObject<FlatList<MessageListItem> | null>,
   pendingScrollRef: React.MutableRefObject<PendingScroll | null>,
   animated: boolean
 ) {
@@ -278,7 +344,7 @@ function scheduleScrollToLatest(
 }
 
 function performPendingScroll(
-  listRef: React.RefObject<FlatList<PresentedMessage> | null>,
+  listRef: React.RefObject<FlatList<MessageListItem> | null>,
   pendingScrollRef: React.MutableRefObject<PendingScroll | null>
 ) {
   const list = listRef.current

@@ -1,4 +1,3 @@
-import { AudioLines } from "lucide-react-native"
 import {
   Dialog,
   SizableText,
@@ -9,9 +8,9 @@ import {
 } from "tamagui"
 
 import { AppButton } from "@/components/forms/app-button"
-import { ThemedIcon } from "@/components/icons/themed-icon"
 import type { PreparedClientVoiceMessage } from "@/data/message-upload"
 import { formatVoiceDuration } from "@/domain/messages/message-presenter"
+import { VoiceRecordingPreviewButton } from "@/features/conversation/voice-recording-preview-button"
 
 export function MessageVoiceDialog({
   onCancel,
@@ -54,7 +53,10 @@ export function MessageVoiceDialog({
             minH={120}
             rounded="$4"
           >
-            <ThemedIcon icon={AudioLines} size={30} />
+            <VoiceRecordingPreviewButton
+              disabled={sending}
+              uri={recording.upload.uri}
+            />
             <SizableText color="$color10" size="$3">
               语音 {formatVoiceDuration(recording.durationMS)}
             </SizableText>

@@ -267,7 +267,14 @@ async function sendConversationUploadMessage(
   for (const [name, value] of Object.entries(input.extraFields ?? {})) {
     formData.set(name, value)
   }
-  formData.set(input.fieldName, file, input.upload.name)
+  if (input.fieldName === "voice") {
+    formData.set(
+      input.fieldName,
+      createTypedFilePart(file, input.upload)
+    )
+  } else {
+    formData.set(input.fieldName, file, input.upload.name)
+  }
 
   const data = await createApiClient(serverUrl, options.fetcher).request<{
     message?: unknown
@@ -287,6 +294,19 @@ async function sendConversationUploadMessage(
   }
 
   return normalizeClientMessage(data.message)
+}
+
+function createTypedFilePart(
+  file: File,
+  upload: ClientMessageUpload
+): Blob {
+  // Expo Fetch accepts file-like values with bytes(), name and type. Android
+  // otherwise classifies .webm as video/webm instead of the required audio MIME.
+  return {
+    bytes: () => file.bytes(),
+    name: upload.name,
+    type: upload.mimeType,
+  } as unknown as Blob
 }
 
 function normalizeReactionSnapshot(

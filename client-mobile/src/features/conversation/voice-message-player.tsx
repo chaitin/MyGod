@@ -43,6 +43,7 @@ export function VoiceMessagePlayer({
   const resourceUri = state?.resource?.uri ?? ""
   const player = useAudioPlayer(resourceUri || null, { updateInterval: 100 })
   const playerStatus = useAudioPlayerStatus(player)
+  const playerId = player.id
   const playWhenReadyRef = useRef(false)
   const retriedResourceRef = useRef(false)
   const shownPlaybackErrorRef = useRef("")
@@ -65,7 +66,7 @@ export function VoiceMessagePlayer({
       ) {
         await player.seekTo(0)
       }
-      activateVoicePlayer({ id: player.id, pause: () => player.pause() })
+      activateVoicePlayer({ id: playerId, pause: () => player.pause() })
       player.play()
     } catch (error: unknown) {
       deactivateVoicePlayer(player.id)
@@ -75,7 +76,7 @@ export function VoiceMessagePlayer({
         message: error instanceof Error ? error.message : "请稍后重试",
       })
     }
-  }, [player, playerStatus.didJustFinish, toast])
+  }, [player, playerId, playerStatus.didJustFinish, toast])
 
   useEffect(() => {
     if (!resourceUri || !playWhenReadyRef.current) return
@@ -84,8 +85,8 @@ export function VoiceMessagePlayer({
   }, [resourceUri, startPlayback])
 
   useEffect(() => {
-    if (playerStatus.didJustFinish) deactivateVoicePlayer(player.id)
-  }, [player.id, playerStatus.didJustFinish])
+    if (playerStatus.didJustFinish) deactivateVoicePlayer(playerId)
+  }, [playerId, playerStatus.didJustFinish])
 
   useEffect(() => {
     const playbackError = playerStatus.error?.trim() ?? ""
@@ -111,16 +112,15 @@ export function VoiceMessagePlayer({
 
   useEffect(
     () => () => {
-      player.pause()
-      deactivateVoicePlayer(player.id)
+      deactivateVoicePlayer(playerId)
     },
-    [player, player.id]
+    [playerId]
   )
 
   function handlePress() {
     if (playerStatus.playing) {
       player.pause()
-      deactivateVoicePlayer(player.id)
+      deactivateVoicePlayer(playerId)
       return
     }
 
@@ -134,7 +134,7 @@ export function VoiceMessagePlayer({
   }
 
   return (
-    <YStack gap="$2" minW={180}>
+    <YStack gap="$2" width="100%">
       <XStack gap="$3" items="center">
         <ThemedIcon icon={AudioLines} size={22} />
         <SizableText flex={1}>

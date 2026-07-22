@@ -23,6 +23,7 @@ export type PresentedMessage = {
   author: string
   avatar: string
   body: ClientMessageBody
+  createdAt: string
   delegatedByName: string
   id: string
   reactions: ClientMessageReaction[]
@@ -32,7 +33,6 @@ export type PresentedMessage = {
   }
   role: "me" | "other" | "system"
   sender: EntityReference | null
-  time: string
   topic?: {
     archived: boolean
     conversationId: string
@@ -100,6 +100,7 @@ export function buildPresentedMessages({
         appsById
       ),
       body: message.body,
+      createdAt: message.createdAt,
       delegatedByName: message.delegatedBy?.name ?? "",
       id: message.id,
       reactions: message.reactions,
@@ -137,7 +138,6 @@ export function buildPresentedMessages({
         message.sender.type === "system"
           ? null
           : { id: message.sender.id, type: message.sender.type },
-      time: formatMessageTime(message.createdAt),
       topic: message.topic
         ? {
             archived: message.topic.archived,
@@ -346,6 +346,46 @@ function collectBodyResources(
 function formatMessageTime(value: string) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? "" : messageTimeFormatter.format(date)
+}
+
+const messageTimeMarkerThresholdMs = 60 * 60 * 1_000
+
+export function shouldShowMessageTimeMarker(
+  olderCreatedAt: string,
+  newerCreatedAt: string
+) {
+  const olderTime = new Date(olderCreatedAt).getTime()
+  const newerTime = new Date(newerCreatedAt).getTime()
+
+  if (Number.isNaN(olderTime) || Number.isNaN(newerTime)) return false
+  return newerTime - olderTime > messageTimeMarkerThresholdMs
+}
+
+export function formatMessageTimeMarker(value: string, now = new Date()) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ""
+
+  const time = `${padMessageTimePart(date.getHours())}:${padMessageTimePart(date.getMinutes())}`
+  if (isSameLocalMessageDay(date, now)) return time
+
+  const monthAndDay = `${padMessageTimePart(date.getMonth() + 1)}/${padMessageTimePart(date.getDate())}`
+  if (date.getFullYear() === now.getFullYear()) {
+    return `${monthAndDay} ${time}`
+  }
+
+  return `${date.getFullYear()}/${monthAndDay} ${time}`
+}
+
+function isSameLocalMessageDay(date: Date, otherDate: Date) {
+  return (
+    date.getFullYear() === otherDate.getFullYear() &&
+    date.getMonth() === otherDate.getMonth() &&
+    date.getDate() === otherDate.getDate()
+  )
+}
+
+function padMessageTimePart(value: number) {
+  return String(value).padStart(2, "0")
 }
 
 function getMessageAuthor(

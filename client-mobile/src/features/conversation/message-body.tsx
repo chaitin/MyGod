@@ -110,7 +110,7 @@ export function MessageBody({
 
   if (body.type === "chart") {
     return (
-      <YStack gap="$2" minW={220}>
+      <YStack gap="$2" width="100%">
         <XStack gap="$2" items="center">
           <ThemedIcon icon={BarChart3} size={18} />
           <SizableText fontWeight="600">{body.title}</SizableText>
@@ -132,7 +132,7 @@ export function MessageBody({
     const state = resourceStates.get(body.fileId)
     const isLoading = state?.status === "loading"
     return (
-      <XStack gap="$3" items="center" minW={220}>
+      <XStack gap="$3" items="center" width="100%">
         <ThemedIcon icon={FileText} size={24} />
         <YStack flex={1}>
           <SizableText fontWeight="600" numberOfLines={1}>
@@ -263,7 +263,14 @@ function MessageLinkCard({
   title: string
 }) {
   return (
-    <Card gap="$2" maxW={280} onPress={onPress} p="$3">
+    <Card
+      bg="transparent"
+      borderWidth={0}
+      gap="$2"
+      onPress={onPress}
+      p={0}
+      width="100%"
+    >
       <XStack gap="$2" items="center">
         <ThemedIcon icon={icon} size={18} />
         <SizableText flex={1} fontWeight="600" numberOfLines={1}>
@@ -293,7 +300,7 @@ function ForwardBundleBody({
   const visibleItems = expanded ? body.items : body.items.slice(0, 3)
 
   return (
-    <YStack gap="$2" minW={240}>
+    <YStack gap="$2" width="100%">
       <XStack gap="$2" items="center">
         <ThemedIcon icon={MessagesSquare} size={18} />
         <SizableText fontWeight="600">聊天记录 · {body.itemCount} 条</SizableText>

@@ -83,6 +83,14 @@ export function MessageBubble({
   const sender = message.sender
   const flushImageBubble =
     message.body.type === "image" && !message.replyTo && !message.topic
+  const usesStructuredBubbleWidth =
+    Boolean(message.topic) ||
+    message.body.type === "voice" ||
+    message.body.type === "file" ||
+    message.body.type === "chart" ||
+    message.body.type === "forward_bundle" ||
+    message.body.type === "link" ||
+    message.body.type === "card"
   const avatar = sender ? (
     <Button
       aria-label={`查看${fromMe ? "我的" : message.author}资料`}
@@ -135,16 +143,12 @@ export function MessageBubble({
         gap="$1"
         items={fromMe ? "flex-end" : "flex-start"}
         maxW="82%"
+        width={usesStructuredBubbleWidth ? "66%" : undefined}
       >
         <XStack gap="$2" items="center">
           <SizableText color="$color10" numberOfLines={1} size="$2">
             {message.author}
           </SizableText>
-          {message.time ? (
-            <SizableText color="$color10" size="$1">
-              {message.time}
-            </SizableText>
-          ) : null}
         </XStack>
 
         <View
@@ -163,7 +167,10 @@ export function MessageBubble({
               ? () => setBubblePressed(true)
               : undefined
           }
-          style={{ maxWidth: "100%" }}
+          style={{
+            maxWidth: "100%",
+            width: usesStructuredBubbleWidth ? "100%" : undefined,
+          }}
         >
           <YStack
             bg={
@@ -182,6 +189,7 @@ export function MessageBubble({
             maxW="100%"
             overflow="hidden"
             p={flushImageBubble ? 0 : "$3"}
+            width={usesStructuredBubbleWidth ? "100%" : undefined}
           >
             {message.replyTo ? (
               <YStack
@@ -213,7 +221,7 @@ export function MessageBubble({
             {message.reactions.length > 0 ? (
               <YStack
                 mb={flushImageBubble ? "$2" : undefined}
-                mt="$1"
+                mt="$2"
                 px={flushImageBubble ? "$2" : undefined}
               >
                 <MessageReactionChips

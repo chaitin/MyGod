@@ -362,7 +362,7 @@ export function ConversationScreen() {
     } catch (error: unknown) {
       Alert.alert(
         "语音发送失败",
-        error instanceof ApiRequestError
+        error instanceof Error
           ? error.message
           : "消息发送失败，请重试。"
       )
