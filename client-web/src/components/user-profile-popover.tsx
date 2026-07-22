@@ -5,6 +5,12 @@ import { toast } from "sonner"
 
 import { formatContactPhone } from "@/lib/contact-format"
 import { useClientData } from "@/lib/client-data-context"
+import {
+  type ClientProfileContextValue,
+  useClientCurrentUserId,
+  useClientUserProfile,
+  useOptionalClientProfileContext,
+} from "@/lib/client-profile-context"
 import { cn } from "@/lib/utils"
 import { AvatarPreviewDialog } from "@/components/avatar-preview-dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -56,30 +62,85 @@ export function UserProfilePopoverLink({
   )
 }
 
-export function UserProfilePopover({
-  children,
+export function UserProfilePopover(props: UserProfilePopoverProps) {
+  const profileContext = useOptionalClientProfileContext()
+
+  return profileContext ? (
+    <StoredUserProfilePopover
+      {...props}
+      openDirectConversation={profileContext.openDirectConversation}
+    />
+  ) : (
+    <LegacyUserProfilePopover {...props} />
+  )
+}
+
+function StoredUserProfilePopover({
   fallbackProfile = null,
+  openDirectConversation,
+  userId,
+  ...props
+}: UserProfilePopoverProps & {
+  openDirectConversation: ClientProfileContextValue["openDirectConversation"]
+}) {
+  const currentUserId = useClientCurrentUserId()
+  const storedProfile = useClientUserProfile(userId)
+  const profile =
+    storedProfile ?? (fallbackProfile?.id === userId ? fallbackProfile : null)
+
+  return (
+    <UserProfilePopoverContent
+      {...props}
+      currentUserId={currentUserId}
+      openDirectConversation={openDirectConversation}
+      profile={profile}
+    />
+  )
+}
+
+function LegacyUserProfilePopover(props: UserProfilePopoverProps) {
+  const { contacts, me, openDirectConversation } = useClientData()
+  const profile = resolveUserProfile(
+    props.userId,
+    me,
+    contacts,
+    props.fallbackProfile ?? null
+  )
+
+  return (
+    <UserProfilePopoverContent
+      {...props}
+      currentUserId={me.id}
+      openDirectConversation={openDirectConversation}
+      profile={profile}
+    />
+  )
+}
+
+function UserProfilePopoverContent({
+  children,
+  currentUserId,
+  openDirectConversation,
+  profile,
   triggerAriaLabel,
   triggerClassName,
-  userId,
-}: UserProfilePopoverProps) {
-  const { contacts, me, openDirectConversation } = useClientData()
+}: Omit<UserProfilePopoverProps, "fallbackProfile" | "userId"> & {
+  currentUserId: string
+  openDirectConversation: ClientProfileContextValue["openDirectConversation"]
+  profile: UserProfile | null
+}) {
   const navigate = useNavigate()
   const [open, setOpen] = React.useState(false)
   const [avatarPreviewOpen, setAvatarPreviewOpen] = React.useState(false)
   const [openingConversation, setOpeningConversation] = React.useState(false)
-  const user = React.useMemo(
-    () => resolveUserProfile(userId, me, contacts, fallbackProfile),
-    [contacts, fallbackProfile, me, userId]
-  )
 
-  if (!user) {
+  if (!profile) {
     return <>{children}</>
   }
 
-  const profile = user
-  const displayName = getUserDisplayName(profile)
-  const canStartConversation = profile.id !== me.id
+  const currentProfile = profile
+  const displayName = getUserDisplayName(currentProfile)
+  const canStartConversation = currentProfile.id !== currentUserId
 
   async function handleStartConversation() {
     if (!canStartConversation || openingConversation) {
@@ -89,7 +150,7 @@ export function UserProfilePopover({
     setOpeningConversation(true)
 
     try {
-      const conversation = await openDirectConversation(profile.id)
+      const conversation = await openDirectConversation(currentProfile.id)
       setOpen(false)
       navigate(`/chat/${encodeURIComponent(conversation.id)}`)
     } catch {
@@ -133,11 +194,11 @@ export function UserProfilePopover({
                 type="button"
               >
                 <Avatar className="size-14 rounded-sm bg-muted after:rounded-sm">
-                  {profile.avatar && (
+                  {currentProfile.avatar && (
                     <AvatarImage
                       alt={displayName}
                       className="rounded-sm"
-                      src={profile.avatar}
+                      src={currentProfile.avatar}
                     />
                   )}
                   <AvatarFallback className="rounded-sm text-lg">
@@ -159,22 +220,26 @@ export function UserProfilePopover({
               <UserProfileRow
                 icon={<UserRound className="size-4 text-muted-foreground" />}
                 label="姓名"
-                value={profile.name}
+                value={currentProfile.name}
               />
               <UserProfileRow
                 icon={<UserPen className="size-4 text-muted-foreground" />}
                 label="昵称"
-                value={profile.nickname}
+                value={currentProfile.nickname}
               />
               <UserProfileRow
                 icon={<Mail className="size-4 text-muted-foreground" />}
                 label="邮箱"
-                value={profile.email}
+                value={currentProfile.email}
               />
               <UserProfileRow
                 icon={<Phone className="size-4 text-muted-foreground" />}
                 label="手机"
-                value={profile.phone ? formatContactPhone(profile.phone) : ""}
+                value={
+                  currentProfile.phone
+                    ? formatContactPhone(currentProfile.phone)
+                    : ""
+                }
               />
             </div>
 
@@ -198,11 +263,11 @@ export function UserProfilePopover({
         open={avatarPreviewOpen}
       >
         <Avatar className="size-full rounded-sm bg-muted after:rounded-sm">
-          {profile.avatar && (
+          {currentProfile.avatar && (
             <AvatarImage
               alt={displayName}
               className="rounded-sm"
-              src={profile.avatar}
+              src={currentProfile.avatar}
             />
           )}
           <AvatarFallback className="rounded-sm text-6xl">

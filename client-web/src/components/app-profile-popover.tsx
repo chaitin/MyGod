@@ -4,6 +4,12 @@ import { Bot, Loader2Icon, UserRound } from "lucide-react"
 import { toast } from "sonner"
 
 import { useClientData } from "@/lib/client-data-context"
+import {
+  type ClientProfileContextValue,
+  useClientAppProfile,
+  useClientUserProfile,
+  useOptionalClientProfileContext,
+} from "@/lib/client-profile-context"
 import { cn } from "@/lib/utils"
 import { AvatarPreviewDialog } from "@/components/avatar-preview-dialog"
 import {
@@ -35,29 +41,83 @@ type AppProfile = {
   online: boolean
 }
 
-export function AppProfilePopover({
+export function AppProfilePopover(props: AppProfilePopoverProps) {
+  const profileContext = useOptionalClientProfileContext()
+
+  return profileContext ? (
+    <StoredAppProfilePopover
+      {...props}
+      openAppConversation={profileContext.openAppConversation}
+    />
+  ) : (
+    <LegacyAppProfilePopover {...props} />
+  )
+}
+
+function StoredAppProfilePopover({
   appId,
-  children,
   fallbackProfile = null,
+  openAppConversation,
+  ...props
+}: AppProfilePopoverProps & {
+  openAppConversation: ClientProfileContextValue["openAppConversation"]
+}) {
+  const storedProfile = useClientAppProfile(appId)
+  const profile =
+    storedProfile ?? (fallbackProfile?.id === appId ? fallbackProfile : null)
+  const developer = useClientUserProfile(profile?.creatorUserId)
+
+  return (
+    <AppProfilePopoverContent
+      {...props}
+      developer={developer ?? null}
+      openAppConversation={openAppConversation}
+      profile={profile}
+    />
+  )
+}
+
+function LegacyAppProfilePopover(props: AppProfilePopoverProps) {
+  const { contactApps, contacts, me, openAppConversation } = useClientData()
+  const profile = resolveAppProfile(
+    props.appId,
+    contactApps,
+    props.fallbackProfile ?? null
+  )
+  const developer = resolveDeveloper(profile?.creatorUserId, me, contacts)
+
+  return (
+    <AppProfilePopoverContent
+      {...props}
+      developer={developer}
+      openAppConversation={openAppConversation}
+      profile={profile}
+    />
+  )
+}
+
+function AppProfilePopoverContent({
+  children,
+  developer,
+  openAppConversation,
+  profile,
   triggerAriaLabel,
   triggerClassName,
-}: AppProfilePopoverProps) {
-  const { contactApps, contacts, me, openAppConversation } = useClientData()
+}: Omit<AppProfilePopoverProps, "appId" | "fallbackProfile"> & {
+  developer: UserProfile | null
+  openAppConversation: ClientProfileContextValue["openAppConversation"]
+  profile: AppProfile | null
+}) {
   const navigate = useNavigate()
   const [open, setOpen] = React.useState(false)
   const [avatarPreviewOpen, setAvatarPreviewOpen] = React.useState(false)
   const [openingConversation, setOpeningConversation] = React.useState(false)
-  const app = React.useMemo(
-    () => resolveAppProfile(appId, contactApps, fallbackProfile),
-    [appId, contactApps, fallbackProfile]
-  )
 
-  if (!app) {
+  if (!profile) {
     return <>{children}</>
   }
 
-  const profile = app
-  const developer = resolveDeveloper(profile.creatorUserId, me, contacts)
+  const currentProfile = profile
 
   async function handleStartConversation() {
     if (openingConversation) {
@@ -67,7 +127,7 @@ export function AppProfilePopover({
     setOpeningConversation(true)
 
     try {
-      const conversation = await openAppConversation(profile.id)
+      const conversation = await openAppConversation(currentProfile.id)
       setOpen(false)
       navigate(`/chat/${encodeURIComponent(conversation.id)}`)
     } catch {
@@ -105,17 +165,17 @@ export function AppProfilePopover({
             <div className="flex items-center gap-3">
               <button
                 aria-haspopup="dialog"
-                aria-label={`预览${profile.name}头像`}
+                aria-label={`预览${currentProfile.name}头像`}
                 className="shrink-0 cursor-pointer rounded-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 onClick={handleAvatarPreview}
                 type="button"
               >
                 <Avatar className="size-14 rounded-sm bg-muted after:rounded-sm">
-                  {profile.avatar && (
+                  {currentProfile.avatar && (
                     <AvatarImage
-                      alt={profile.name}
+                      alt={currentProfile.name}
                       className="rounded-sm"
-                      src={profile.avatar}
+                      src={currentProfile.avatar}
                     />
                   )}
                   <AvatarFallback className="rounded-sm">
@@ -125,10 +185,10 @@ export function AppProfilePopover({
               </button>
               <div className="min-w-0">
                 <div className="truncate text-sm font-medium">
-                  {profile.name}
+                  {currentProfile.name}
                 </div>
                 <div className="truncate text-xs text-muted-foreground">
-                  {profile.description || "应用资料"}
+                  {currentProfile.description || "应用资料"}
                 </div>
               </div>
             </div>
@@ -149,7 +209,7 @@ export function AppProfilePopover({
               <AppProfileRow
                 icon={<UserRound className="size-4 text-muted-foreground" />}
                 label="状态"
-                value={profile.online ? "在线" : "离线"}
+                value={currentProfile.online ? "在线" : "离线"}
               />
             </div>
 
@@ -168,16 +228,16 @@ export function AppProfilePopover({
         </PopoverContent>
       </Popover>
       <AvatarPreviewDialog
-        label={`${profile.name}头像预览`}
+        label={`${currentProfile.name}头像预览`}
         onOpenChange={setAvatarPreviewOpen}
         open={avatarPreviewOpen}
       >
         <Avatar className="size-full rounded-sm bg-muted after:rounded-sm">
-          {profile.avatar && (
+          {currentProfile.avatar && (
             <AvatarImage
-              alt={profile.name}
+              alt={currentProfile.name}
               className="rounded-sm"
-              src={profile.avatar}
+              src={currentProfile.avatar}
             />
           )}
           <AvatarFallback className="rounded-sm">

@@ -161,6 +161,30 @@ export function ChatPage() {
   )
 
   const activeConversationId = activeConversation?.id ?? ""
+  const activeConversationType = activeConversation?.type
+  const openTopicDrawer = React.useCallback(
+    (nextConversationId: string) => {
+      setTopicDrawerConversationId(nextConversationId)
+      setForegroundConversationId?.(nextConversationId)
+    },
+    [setForegroundConversationId]
+  )
+  const closeTopicDrawer = React.useCallback(() => {
+    setTopicDrawerConversationId("")
+    setForegroundConversationId?.("")
+  }, [setForegroundConversationId])
+  const requestCreateTopic = React.useCallback(
+    (message: ConversationPanelMessage) => {
+      if (!activeConversationId || activeConversationType === "topic") {
+        return
+      }
+      setCreateTopicOperation({
+        conversationId: activeConversationId,
+        message,
+      })
+    },
+    [activeConversationId, activeConversationType]
+  )
   const messageSelection = useMessageSelection(activeConversationId)
   const {
     maxSelectedMessages,
@@ -241,6 +265,20 @@ export function ChatPage() {
   React.useEffect(() => {
     activeMentionLabelResolverRef.current = activeMentionLabelResolver
   }, [activeMentionLabelResolver])
+  const activeHistoryHeader = React.useMemo(
+    () =>
+      activeConversation?.type === "topic" ? (
+        <TopicSourceBanner
+          conversationId={activeConversation.id}
+          currentUserId={me.id}
+          mentionLabelResolver={activeMentionLabelResolver}
+          reactionConversationId={
+            activeConversation.topic?.parentConversationId
+          }
+        />
+      ) : undefined,
+    [activeConversation, activeMentionLabelResolver, me.id]
+  )
   const activeConversationOnline = activeConversation
     ? getConversationOnlineStatus(
         activeConversation,
@@ -617,16 +655,6 @@ export function ChatPage() {
     navigate(`/chat/${encodeURIComponent(conversation.id)}`)
   }
 
-  function requestCreateTopic(message: ConversationPanelMessage) {
-    if (!activeConversation || activeConversation.type === "topic") {
-      return
-    }
-    setCreateTopicOperation({
-      conversationId: activeConversation.id,
-      message,
-    })
-  }
-
   async function confirmCreateTopic() {
     if (!createTopicOperation || creatingTopic) {
       return
@@ -651,16 +679,6 @@ export function ChatPage() {
     } finally {
       setCreatingTopic(false)
     }
-  }
-
-  function openTopicDrawer(conversationId: string) {
-    setTopicDrawerConversationId(conversationId)
-    setForegroundConversationId?.(conversationId)
-  }
-
-  function closeTopicDrawer() {
-    setTopicDrawerConversationId("")
-    setForegroundConversationId?.("")
   }
 
   return (
@@ -694,18 +712,7 @@ export function ChatPage() {
         historyError={activeMessageState?.error ?? null}
         historyLoading={historyLoading}
         historyLoadingBefore={Boolean(activeMessageState?.loadingBefore)}
-        historyHeader={
-          activeConversation?.type === "topic" ? (
-            <TopicSourceBanner
-              conversationId={activeConversation.id}
-              currentUserId={me.id}
-              mentionLabelResolver={activeMentionLabelResolver}
-              reactionConversationId={
-                activeConversation.topic?.parentConversationId
-              }
-            />
-          ) : undefined
-        }
+        historyHeader={activeHistoryHeader}
         headerActions={
           activeConversation?.type === "topic" &&
           activeConversation.canSend !== false ? (

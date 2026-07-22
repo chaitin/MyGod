@@ -29,6 +29,7 @@ import {
   type ClientConversationMessageState,
   type ClientDataContextValue,
 } from "@/lib/client-data-context"
+import { ClientProfileProvider } from "@/components/client-profile-provider"
 import {
   createConversationMessageState,
   applyMessageReactionSnapshot,
@@ -1238,7 +1239,15 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
 
   return (
     <ClientDataContext.Provider value={value}>
-      {children}
+      <ClientProfileProvider
+        contactApps={contactApps}
+        contacts={contacts}
+        me={me}
+        openAppConversation={openAppConversation}
+        openDirectConversation={openDirectConversation}
+      >
+        {children}
+      </ClientProfileProvider>
     </ClientDataContext.Provider>
   )
 }
