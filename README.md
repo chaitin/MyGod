@@ -42,6 +42,12 @@
 
 - [第三方应用接入开发指南](APPLICATION_DEVELOPMENT.md)
 
+## 产品主页
+
+- 访问地址：<https://duke-yeah.github.io/MagicChat/>
+- GitHub Pages 源码位于 [`website`](website)。
+- 推送到 `main` 分支后，GitHub Actions 会自动构建并部署产品主页。
+
 ## 未来方向
 
 长期来看，即应希望成为企业里的 AI 工作控制层。
