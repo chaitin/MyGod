@@ -200,7 +200,7 @@ export function MessageList({
         contentContainerStyle={styles.content}
         data={listItems}
         inverted
-        ItemSeparatorComponent={() => <YStack height="$4" />}
+        ItemSeparatorComponent={() => <YStack height="$1" />}
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
         keyExtractor={(item) => item.key}

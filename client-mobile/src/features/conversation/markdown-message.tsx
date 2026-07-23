@@ -275,11 +275,16 @@ function renderList(
   return (
     <YStack gap="$2" key={key}>
       {items.map((item, index) => (
-        <XStack gap="$2" items="flex-start" key={`${key}:item:${index}`}>
+        <XStack
+          gap="$2"
+          items="flex-start"
+          key={`${key}:item:${index}`}
+          maxW="100%"
+        >
           <SizableText minW={ordered ? 22 : 10} text="right">
             {ordered ? `${start + index}.` : "•"}
           </SizableText>
-          <YStack flex={1} gap="$2">
+          <YStack gap="$2" minW={0} shrink={1}>
             {renderBlockNodes(item.children, context)}
           </YStack>
         </XStack>
