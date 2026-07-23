@@ -2,9 +2,53 @@ import { describe, expect, it } from "vitest"
 
 import type { ClientConversation, ClientMessage } from "@/lib/client-data-api"
 import {
+  compactConversationMessageState,
+  createConversationMessageState,
   mergeConversationMessages,
   orderConversations,
 } from "@/lib/client-data-state"
+
+describe("compactConversationMessageState", () => {
+  it("keeps the newest messages and preserves the older-page boundary", () => {
+    const messages = Array.from({ length: 305 }, (_, index) =>
+      createMessage(`message-${index + 1}`, index + 1)
+    )
+    const state = {
+      ...createConversationMessageState(),
+      loaded: true,
+      messages,
+      page: {
+        hasMoreAfter: false,
+        hasMoreBefore: false,
+        limit: 20,
+        newestSeq: 305,
+        oldestSeq: 1,
+      },
+    }
+
+    const compacted = compactConversationMessageState(state)
+
+    expect(compacted.messages).toHaveLength(300)
+    expect(compacted.messages[0].seq).toBe(6)
+    expect(compacted.messages.at(-1)?.seq).toBe(305)
+    expect(compacted.page).toEqual({
+      hasMoreAfter: false,
+      hasMoreBefore: true,
+      limit: 20,
+      newestSeq: 305,
+      oldestSeq: 6,
+    })
+  })
+
+  it("keeps the same state when it is already within the limit", () => {
+    const state = {
+      ...createConversationMessageState(),
+      messages: [createMessage("message-1", 1)],
+    }
+
+    expect(compactConversationMessageState(state)).toBe(state)
+  })
+})
 
 describe("mergeConversationMessages", () => {
   it("appends newer messages in sequence order", () => {
@@ -158,6 +202,7 @@ function createConversation(
     lastMessageSeq: 1,
     lastMessageSender: null,
     lastMessageSummary: id,
+    lastChoiceSeq: 0,
     lastMentionedSeq: 0,
     lastReadSeq: 1,
     memberCount: members?.length ?? 2,

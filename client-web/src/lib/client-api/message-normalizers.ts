@@ -38,6 +38,7 @@ import type {
   ClientTopicClosedSystemEventBody,
   ClientMessageBody,
   ClientMessage,
+  ClientMessageChoiceState,
   ClientMessageReaction,
   ClientMessagePage,
   ClientMessageTopicReply,
@@ -100,6 +101,9 @@ export function normalizeMessage(
       type: senderType,
     },
     seq: message.seq,
+  }
+  if (normalized.body.type === "choice") {
+    normalized.choice = normalizeMessageChoiceState(message.choice)
   }
   const delegatedBy = normalizeMessageDelegatedBy(message.delegated_by)
   if (delegatedBy) {
@@ -298,6 +302,34 @@ function normalizeMessageBody(
   }
 
   if (
+    body?.type === "choice" &&
+    (body.content_type === "text" || body.content_type === "markdown") &&
+    typeof body.content === "string" &&
+    body.content.trim() !== "" &&
+    (body.selection === "single" || body.selection === "multiple") &&
+    Array.isArray(body.options) &&
+    body.options.length >= 2 &&
+    body.options.every(
+      (option) =>
+        typeof option?.id === "string" &&
+        option.id !== "" &&
+        typeof option.label === "string" &&
+        option.label !== ""
+    )
+  ) {
+    return {
+      content: body.content,
+      contentType: body.content_type,
+      options: body.options.map((option) => ({
+        id: option.id!,
+        label: option.label!,
+      })),
+      selection: body.selection,
+      type: "choice",
+    }
+  }
+
+  if (
     body?.type === "link" &&
     typeof body.url === "string" &&
     typeof body.title === "string"
@@ -437,6 +469,40 @@ function normalizeMessageBody(
   }
 
   throw new ClientDataRequestError("消息响应格式不正确")
+}
+
+export function normalizeMessageChoiceState(
+  value: import("./types").MessageChoiceStateResponse | null | undefined
+): ClientMessageChoiceState {
+  // Older servers encoded an unanswered choice's empty option list as null.
+  // Treat that representation as an empty array during rolling upgrades.
+  const myOptionIds = value?.my_option_ids === null ? [] : value?.my_option_ids
+  if (
+    !value ||
+    !Number.isSafeInteger(value.response_count) ||
+    (value.response_count ?? -1) < 0 ||
+    !Array.isArray(myOptionIds) ||
+    !myOptionIds.every((id) => typeof id === "string" && id !== "") ||
+    !Array.isArray(value.options)
+  ) {
+    throw new ClientDataRequestError("选择消息状态响应格式不正确")
+  }
+  const options = value.options.map((option) => {
+    if (
+      typeof option?.id !== "string" ||
+      option.id === "" ||
+      !Number.isSafeInteger(option.response_count) ||
+      (option.response_count ?? -1) < 0
+    ) {
+      throw new ClientDataRequestError("选择消息状态响应格式不正确")
+    }
+    return { id: option.id, responseCount: option.response_count! }
+  })
+  return {
+    myOptionIds: [...myOptionIds],
+    options,
+    responseCount: value.response_count!,
+  }
 }
 
 function isForwardableMessageBody(

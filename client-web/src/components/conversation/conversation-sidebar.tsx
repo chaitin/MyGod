@@ -241,11 +241,16 @@ export function ConversationSidebar({
             )
             const hasUnreadMention =
               conversation.lastMentionedSeq > conversation.lastReadSeq
+            const hasUnreadChoice =
+              conversation.lastChoiceSeq > conversation.lastReadSeq
             const preview = getConversationListPreview({
               draftText: conversation.topic?.archived
                 ? undefined
                 : drafts[conversation.id]?.text,
               hasUnreadMention,
+              hasUnreadChoice,
+              lastChoiceSeq: conversation.lastChoiceSeq,
+              lastMentionedSeq: conversation.lastMentionedSeq,
               messageDescription: getConversationListDescription(
                 conversation,
                 mentionLabelResolver,
@@ -411,11 +416,17 @@ function getLastMessageSenderName(
 function getConversationListPreview({
   draftText,
   hasUnreadMention,
+  hasUnreadChoice,
+  lastChoiceSeq,
+  lastMentionedSeq,
   messageDescription,
   selected,
 }: {
   draftText: string | undefined
   hasUnreadMention: boolean
+  hasUnreadChoice: boolean
+  lastChoiceSeq: number
+  lastMentionedSeq: number
   messageDescription: string
   selected: boolean
 }) {
@@ -423,6 +434,13 @@ function getConversationListPreview({
     return {
       alertLabel: null,
       description: messageDescription,
+    }
+  }
+
+  if (hasUnreadChoice && lastChoiceSeq >= lastMentionedSeq) {
+    return {
+      alertLabel: "[选择]",
+      description: messageDescription.replace(/(^|：)\[选择\]\s*/, "$1"),
     }
   }
 

@@ -65,6 +65,9 @@ func (s *Service) List(ctx context.Context, cmd ListCommand) (ListResult, error)
 	if err := attachMessageReactions(db, messages, cmd.AccountID); err != nil {
 		return ListResult{}, internalError(err)
 	}
+	if err := attachMessageChoices(db, messages, cmd.AccountID); err != nil {
+		return ListResult{}, internalError(err)
+	}
 	page := Page{HasMoreAfter: hasMoreAfter, HasMoreBefore: hasMoreBefore, Limit: limit}
 	if len(stored) > 0 {
 		page.OldestSeq = stored[0].Seq
@@ -346,6 +349,7 @@ func newMessage(value store.Message) Message {
 	}
 	if value.RevokedAt == nil {
 		result.Body = value.Body
+		result.Choice = emptyChoiceState(value.Body)
 	}
 	return result
 }

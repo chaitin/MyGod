@@ -99,6 +99,7 @@ type conversationListItemResponse struct {
 	LastMessageSender  *conversationLastMessageSenderResponse `json:"last_message_sender"`
 	LastMessageSummary string                                 `json:"last_message_summary" example:"好的，我看一下"`
 	LastMentionedSeq   int64                                  `json:"last_mentioned_seq" example:"0"`
+	LastChoiceSeq      int64                                  `json:"last_choice_seq" example:"0"`
 	LastReadSeq        int64                                  `json:"last_read_seq" example:"9"`
 	MemberCount        int                                    `json:"member_count" example:"2"`
 	Members            []conversationMemberResponse           `json:"members"`
@@ -170,6 +171,7 @@ type groupConversationResponse struct {
 	LastMessageSender  *conversationLastMessageSenderResponse `json:"last_message_sender"`
 	LastMessageSummary string                                 `json:"last_message_summary" example:"张三 邀请 李四 加入群聊"`
 	LastMentionedSeq   int64                                  `json:"last_mentioned_seq" example:"0"`
+	LastChoiceSeq      int64                                  `json:"last_choice_seq" example:"0"`
 	LastReadSeq        int64                                  `json:"last_read_seq" example:"12"`
 	MemberCount        int                                    `json:"member_count" example:"3"`
 	Members            []conversationMemberResponse           `json:"members"`
@@ -1017,7 +1019,7 @@ func conversationActor(value account.Account) conversationapp.Actor {
 }
 
 func newConversationItemResponse(value conversationapp.Item) conversationListItemResponse {
-	result := conversationListItemResponse{Avatar: value.Avatar, CanSend: value.CanSend, CreatedAt: value.CreatedAt, ID: value.ID, LastMessageAt: value.LastMessageAt, LastMessageID: value.LastMessageID, LastMessageSeq: value.LastMessageSeq, LastMessageSummary: value.LastMessageSummary, LastMentionedSeq: value.LastMentionedSeq, LastReadSeq: value.LastReadSeq, MemberCount: value.MemberCount, Members: newConversationMembers(value.Members), Name: value.Name, NotificationMuted: value.NotificationMuted, Pinned: value.Pinned, Type: value.Type, UnreadCount: value.UnreadCount, Visibility: value.Visibility}
+	result := conversationListItemResponse{Avatar: value.Avatar, CanSend: value.CanSend, CreatedAt: value.CreatedAt, ID: value.ID, LastMessageAt: value.LastMessageAt, LastMessageID: value.LastMessageID, LastMessageSeq: value.LastMessageSeq, LastMessageSummary: value.LastMessageSummary, LastMentionedSeq: value.LastMentionedSeq, LastChoiceSeq: value.LastChoiceSeq, LastReadSeq: value.LastReadSeq, MemberCount: value.MemberCount, Members: newConversationMembers(value.Members), Name: value.Name, NotificationMuted: value.NotificationMuted, Pinned: value.Pinned, Type: value.Type, UnreadCount: value.UnreadCount, Visibility: value.Visibility}
 	if value.LastMessageSender != nil {
 		result.LastMessageSender = &conversationLastMessageSenderResponse{
 			ID: value.LastMessageSender.ID, Name: value.LastMessageSender.Name,
@@ -1060,7 +1062,7 @@ func newTopicDetailResponse(value conversationapp.TopicDetail) topicDetailRespon
 }
 
 func newGroupResponse(value conversationapp.Group) groupConversationResponse {
-	result := groupConversationResponse{Avatar: value.Avatar, CreatedAt: value.CreatedAt, CreatedByUserID: value.CreatedByUserID, ID: value.ID, LastMessageAt: value.LastMessageAt, LastMessageID: value.LastMessageID, LastMessageSeq: value.LastMessageSeq, LastMessageSummary: value.LastMessageSummary, LastMentionedSeq: value.LastMentionedSeq, LastReadSeq: value.LastReadSeq, MemberCount: value.MemberCount, Members: newConversationMembers(value.Members), Name: value.Name, PostingPolicy: value.PostingPolicy, Status: value.Status, Type: value.Type, UnreadCount: value.UnreadCount, Visibility: value.Visibility}
+	result := groupConversationResponse{Avatar: value.Avatar, CreatedAt: value.CreatedAt, CreatedByUserID: value.CreatedByUserID, ID: value.ID, LastMessageAt: value.LastMessageAt, LastMessageID: value.LastMessageID, LastMessageSeq: value.LastMessageSeq, LastMessageSummary: value.LastMessageSummary, LastMentionedSeq: value.LastMentionedSeq, LastChoiceSeq: value.LastChoiceSeq, LastReadSeq: value.LastReadSeq, MemberCount: value.MemberCount, Members: newConversationMembers(value.Members), Name: value.Name, PostingPolicy: value.PostingPolicy, Status: value.Status, Type: value.Type, UnreadCount: value.UnreadCount, Visibility: value.Visibility}
 	if value.LastMessageSender != nil {
 		result.LastMessageSender = &conversationLastMessageSenderResponse{
 			ID: value.LastMessageSender.ID, Name: value.LastMessageSender.Name,

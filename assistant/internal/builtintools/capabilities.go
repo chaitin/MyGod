@@ -92,7 +92,7 @@ func contactsCapabilitySpec() capabilitySpec {
 }
 
 func conversationsCapabilitySpec() capabilitySpec {
-	toolDescription := "统一会话管理能力。支持查询会话、读取历史、回复当前会话、授权用户代发、发送固定格式内部对象卡片和图表消息、等待新回复、创建群聊和添加成员。回复或代发时不要默认使用 text：主要内容是单个内部对象时尽量使用实体卡片，可信数字适合呈现趋势、比较、分布、占比、排名或多维评分时尽量使用图表；具体 operation 和参数通过全局 help 查询。"
+	toolDescription := "统一会话管理能力。支持查询会话、读取历史、回复当前会话、授权用户代发、发送选择、固定格式内部对象卡片和图表消息、等待新回复、创建群聊和添加成员。回复或代发时不要默认使用 text：明确候选项应使用 choice，主要内容是单个内部对象时尽量使用实体卡片，可信数字适合呈现趋势、比较、分布、占比、排名或多维评分时尽量使用图表；具体 operation 和参数通过全局 help 查询。"
 	toolSchema := capabilityToolInputSchema([]string{
 		conversationsOperationSearch,
 		conversationsOperationRead,
@@ -105,7 +105,7 @@ func conversationsCapabilitySpec() capabilitySpec {
 		conversationsOperationAdd,
 	}, conversationPublicRunAsInputSchema())
 	return capabilitySpec{
-		Description: "提供最近会话查询、聊天历史读取、当前会话回复、授权用户代发、内部对象卡片和图表消息发送、等待会话新回复，以及群聊创建和成员添加。回复或代发时不要习惯性选择 text：单个内部对象作为主要内容时尽量发实体卡片，可信数字适合可视化时尽量发图表。操作统一通过 conversations 工具执行；需要授权用户身份的操作在顶层传 runas。",
+		Description: "提供最近会话查询、聊天历史读取、当前会话回复、授权用户代发、选择消息、内部对象卡片和图表消息发送、等待会话新回复，以及群聊创建和成员添加。回复或代发时不要习惯性选择 text：明确候选项应使用 choice，单个内部对象作为主要内容时尽量发实体卡片，可信数字适合可视化时尽量发图表。操作统一通过 conversations 工具执行；需要授权用户身份的操作在顶层传 runas。",
 		Name:        capabilityConversations,
 		Summary:     "管理会话、消息和群聊，并等待新回复。",
 		Operations: []operationSpec{
@@ -126,7 +126,7 @@ func conversationsCapabilitySpec() capabilitySpec {
 				ToolName:        conversationsToolName,
 			},
 			{
-				Description:     "回复当前触发 Assistant 的会话。支持 text、markdown、image、file、自定义 card 和 chart；不要默认使用 text/markdown。主要内容是一个内部联系人及其联系方式、应用、群聊、项目或任务时，尽量改用 reply_entity_card；分析、对比、趋势、分布、占比、排名、统计或多维评分中存在至少两项可信且可比较的数字，并且可视化更直观时，即使用户没有明确要求图表，也优先使用 chart。chart 支持 line、bar、pie、radar，必须提供 16 字以内标题、对应类型的 data 和 128 字以内纯文本 description；数字有金额、人数、百分比、时长等有助于理解的单位时，建议在 description 中自然说明，没有单位时无需机械填写。每条 chart 只包含一个图表，但图表只是分析过程中的普通消息，不代表回复结束；复杂分析可多次调用本操作发送多个互补图表，最后再用 text/markdown 给出综合结论。单个孤立数字、数据不完整、复杂表格、多个对象清单或以解释为主时再使用 text/markdown。text/markdown 的 content 可使用 {(@user/用户UUID)} @ 用户、{(@app/应用UUID)} @ 应用、{(@user/all)} @ 全体用户，指定对象必须是当前会话成员；image 使用可下载 URL，file 使用显式文件名以及 url 或小文本 content；自定义 card 使用 title、纯文本 description 和 url，description 不支持 Markdown，url 仅允许以 / 开头的站内路径或 http://、https:// 外链。返回消息发送结果。",
+				Description:     "回复当前触发 Assistant 的会话。支持 text、markdown、choice、image、file、自定义 card 和 chart；不要默认使用 text/markdown。需要用户从明确候选项中选择、确认或多选时使用 choice：content_type 为 text 或 markdown，selection 为 single 或 multiple，options 为 2 到 20 个纯文本选项；发送成功后本轮直接结束，用户选择会作为新的可信触发继续当前会话，不需要再次 @ Assistant。主要内容是一个内部联系人及其联系方式、应用、群聊、项目或任务时，尽量改用 reply_entity_card；分析、对比、趋势、分布、占比、排名、统计或多维评分中存在至少两项可信且可比较的数字，并且可视化更直观时，即使用户没有明确要求图表，也优先使用 chart。chart 支持 line、bar、pie、radar，必须提供 16 字以内标题、对应类型的 data 和 128 字以内纯文本 description；数字有金额、人数、百分比、时长等有助于理解的单位时，建议在 description 中自然说明，没有单位时无需机械填写。每条 chart 只包含一个图表，但图表只是分析过程中的普通消息，不代表回复结束；复杂分析可多次调用本操作发送多个互补图表，最后再用 text/markdown 给出综合结论。单个孤立数字、数据不完整、复杂表格、多个对象清单或以解释为主时再使用 text/markdown。text/markdown 的 content 可使用 {(@user/用户UUID)} @ 用户、{(@app/应用UUID)} @ 应用、{(@user/all)} @ 全体用户，指定对象必须是当前会话成员；image 使用可下载 URL，file 使用显式文件名以及 url 或小文本 content；自定义 card 使用 title、纯文本 description 和 url，description 不支持 Markdown，url 仅允许以 / 开头的站内路径或 http://、https:// 外链。返回消息发送结果。",
 				Example:         conversationExample(conversationsOperationReply, map[string]any{"type": "text", "content": "收到"}),
 				InputSchema:     conversationOperationInputSchema(conversationsOperationReply, messageArgumentsSchema(false), false, false),
 				Name:            conversationsOperationReply,
@@ -144,7 +144,7 @@ func conversationsCapabilitySpec() capabilitySpec {
 				ToolName:        conversationsToolName,
 			},
 			{
-				Description:     "以授权用户身份向私聊联系人或已有群聊发送消息。target_type=user 时使用 contact_id，target_type=group 时使用 conversation_id；支持 text、markdown、image、file、自定义 card 和 chart，不要默认使用 text/markdown。主要内容是一个内部联系人及其联系方式、应用、群聊、项目或任务时，尽量改用 send_entity_card；分析、对比、趋势、分布、占比、排名、统计或多维评分中存在至少两项可信且可比较的数字，并且可视化更直观时，即使用户没有明确要求图表，也优先使用 chart。chart 支持 line、bar、pie、radar，必须提供 16 字以内标题、对应类型的 data 和 128 字以内纯文本 description；数字有金额、人数、百分比、时长等有助于理解的单位时，建议在 description 中自然说明，没有单位时无需机械填写。每条 chart 只包含一个图表；复杂分析可多次发送多个互补图表，并补充综合结论。单个孤立数字、数据不完整、复杂表格、多个对象清单或以解释为主时再使用 text/markdown。text/markdown 的 content 可使用 {(@user/用户UUID)} @ 用户、{(@app/应用UUID)} @ 应用、{(@user/all)} @ 全体用户，UUID 必须可信且指定对象必须是目标会话成员；自定义 card 使用 title、纯文本 description 和 url，description 不支持 Markdown，url 仅允许以 / 开头的站内路径或 http://、https:// 外链。返回消息发送结果。",
+				Description:     "以授权用户身份向私聊联系人或已有群聊发送消息。target_type=user 时使用 contact_id，target_type=group 时使用 conversation_id；支持 text、markdown、choice、image、file、自定义 card 和 chart，不要默认使用 text/markdown。choice 支持 text/markdown 正文以及 single/multiple 选择，但需要当前用户回答并让 Assistant 继续时，应使用 reply 向当前会话发送 choice。主要内容是一个内部联系人及其联系方式、应用、群聊、项目或任务时，尽量改用 send_entity_card；分析、对比、趋势、分布、占比、排名、统计或多维评分中存在至少两项可信且可比较的数字，并且可视化更直观时，即使用户没有明确要求图表，也优先使用 chart。chart 支持 line、bar、pie、radar，必须提供 16 字以内标题、对应类型的 data 和 128 字以内纯文本 description；数字有金额、人数、百分比、时长等有助于理解的单位时，建议在 description 中自然说明，没有单位时无需机械填写。每条 chart 只包含一个图表；复杂分析可多次发送多个互补图表，并补充综合结论。单个孤立数字、数据不完整、复杂表格、多个对象清单或以解释为主时再使用 text/markdown。text/markdown 的 content 可使用 {(@user/用户UUID)} @ 用户、{(@app/应用UUID)} @ 应用、{(@user/all)} @ 全体用户，UUID 必须可信且指定对象必须是目标会话成员；自定义 card 使用 title、纯文本 description 和 url，description 不支持 Markdown，url 仅允许以 / 开头的站内路径或 http://、https:// 外链。返回消息发送结果。",
 				InputSchema:     conversationUserOperationInputSchema(conversationsOperationSend, messageArgumentsSchema(true), true),
 				Name:            conversationsOperationSend,
 				ToolDescription: toolDescription,
@@ -548,24 +548,52 @@ func readHistoryArgumentsSchema() map[string]any {
 
 func messageArgumentsSchema(withTarget bool) map[string]any {
 	properties := map[string]any{
-		"type": map[string]any{"type": "string", "enum": []string{messageTypeText, messageTypeMarkdown, messageTypeImage, messageTypeFile, messageTypeCard, messageTypeChart}},
+		"type": map[string]any{"type": "string", "enum": []string{messageTypeText, messageTypeMarkdown, messageTypeChoice, messageTypeImage, messageTypeFile, messageTypeCard, messageTypeChart}},
 		"content": map[string]any{
 			"type":        "string",
 			"minLength":   1,
 			"description": "消息内容。text/markdown 中可嵌入精确 @ token：{(@user/用户UUID)}、{(@app/应用UUID)} 或 {(@user/all)}；UUID 必须来自可信上下文，指定对象必须是目标会话成员。image 时为可下载 URL；file 且没有 url 时为小文本文件内容。",
 		},
-		"name":        map[string]any{"type": "string", "minLength": 1, "maxLength": 255},
-		"url":         map[string]any{"type": "string", "minLength": 1, "maxLength": 2048, "description": "文件消息的下载地址，或卡片消息的跳转地址。卡片仅允许以 / 开头的站内路径或明确以 http://、https:// 开头的外链；禁止 javascript:、data:、//host、反斜杠和包含空白的地址。"},
-		"title":       map[string]any{"type": "string", "minLength": 1, "maxLength": 240, "description": "卡片或图表消息标题；chart 的限制以对应分支为准。"},
-		"description": map[string]any{"type": "string", "minLength": 1, "maxLength": 2000, "description": "卡片或图表消息说明；必须使用纯文本，不支持 Markdown。chart 数据中的数字有金额、人数、百分比、时长等有助于理解的单位时，建议在 description 中自然说明；没有单位时无需机械填写。其他限制以对应分支为准。"},
-		"chart_type":  map[string]any{"type": "string", "enum": []string{"line", "bar", "pie", "radar"}, "description": "图表子类型：折线图 line、条形图 bar、饼图 pie、雷达图 radar。"},
-		"data":        map[string]any{"type": "object", "description": "图表数据；结构由 chart_type 决定。"},
+		"name":         map[string]any{"type": "string", "minLength": 1, "maxLength": 255},
+		"url":          map[string]any{"type": "string", "minLength": 1, "maxLength": 2048, "description": "文件消息的下载地址，或卡片消息的跳转地址。卡片仅允许以 / 开头的站内路径或明确以 http://、https:// 开头的外链；禁止 javascript:、data:、//host、反斜杠和包含空白的地址。"},
+		"title":        map[string]any{"type": "string", "minLength": 1, "maxLength": 240, "description": "卡片或图表消息标题；chart 的限制以对应分支为准。"},
+		"description":  map[string]any{"type": "string", "minLength": 1, "maxLength": 2000, "description": "卡片或图表消息说明；必须使用纯文本，不支持 Markdown。chart 数据中的数字有金额、人数、百分比、时长等有助于理解的单位时，建议在 description 中自然说明；没有单位时无需机械填写。其他限制以对应分支为准。"},
+		"chart_type":   map[string]any{"type": "string", "enum": []string{"line", "bar", "pie", "radar"}, "description": "图表子类型：折线图 line、条形图 bar、饼图 pie、雷达图 radar。"},
+		"data":         map[string]any{"type": "object", "description": "图表数据；结构由 chart_type 决定。"},
+		"content_type": map[string]any{"type": "string", "enum": []string{messageTypeText, messageTypeMarkdown}, "description": "choice 正文格式。"},
+		"selection":    map[string]any{"type": "string", "enum": []string{"single", "multiple"}, "description": "choice 选择模式。"},
+		"options": map[string]any{
+			"type": "array", "minItems": 2, "maxItems": maxChoiceMessageOptions,
+			"items": map[string]any{
+				"type": "object", "required": []string{"id", "label"},
+				"properties": map[string]any{
+					"id":    map[string]any{"type": "string", "minLength": 1, "maxLength": maxChoiceMessageOptionIDRunes, "pattern": "^[A-Za-z0-9_-]+$"},
+					"label": map[string]any{"type": "string", "minLength": 1, "maxLength": maxChoiceMessageOptionLabelRunes, "description": "单行纯文本选项。"},
+				},
+				"additionalProperties": false,
+			},
+		},
 	}
 	messageConstraint := map[string]any{
 		"oneOf": []any{
 			map[string]any{
 				"properties": map[string]any{"type": map[string]any{"enum": []string{messageTypeText, messageTypeMarkdown, messageTypeImage}}},
 				"required":   []string{"type", "content"},
+				"not": map[string]any{"anyOf": []any{
+					map[string]any{"required": []string{"name"}},
+					map[string]any{"required": []string{"url"}},
+					map[string]any{"required": []string{"title"}},
+					map[string]any{"required": []string{"description"}},
+					map[string]any{"required": []string{"chart_type"}},
+					map[string]any{"required": []string{"data"}},
+					map[string]any{"required": []string{"content_type"}},
+					map[string]any{"required": []string{"selection"}},
+					map[string]any{"required": []string{"options"}},
+				}},
+			},
+			map[string]any{
+				"properties": map[string]any{"type": map[string]any{"enum": []string{messageTypeChoice}}},
+				"required":   []string{"type", "content_type", "content", "selection", "options"},
 				"not": map[string]any{"anyOf": []any{
 					map[string]any{"required": []string{"name"}},
 					map[string]any{"required": []string{"url"}},
@@ -587,6 +615,9 @@ func messageArgumentsSchema(withTarget bool) map[string]any {
 					map[string]any{"required": []string{"description"}},
 					map[string]any{"required": []string{"chart_type"}},
 					map[string]any{"required": []string{"data"}},
+					map[string]any{"required": []string{"content_type"}},
+					map[string]any{"required": []string{"selection"}},
+					map[string]any{"required": []string{"options"}},
 				}},
 			},
 			map[string]any{
@@ -597,6 +628,9 @@ func messageArgumentsSchema(withTarget bool) map[string]any {
 					map[string]any{"required": []string{"name"}},
 					map[string]any{"required": []string{"chart_type"}},
 					map[string]any{"required": []string{"data"}},
+					map[string]any{"required": []string{"content_type"}},
+					map[string]any{"required": []string{"selection"}},
+					map[string]any{"required": []string{"options"}},
 				}},
 			},
 			map[string]any{
@@ -611,6 +645,9 @@ func messageArgumentsSchema(withTarget bool) map[string]any {
 					map[string]any{"required": []string{"content"}},
 					map[string]any{"required": []string{"name"}},
 					map[string]any{"required": []string{"url"}},
+					map[string]any{"required": []string{"content_type"}},
+					map[string]any{"required": []string{"selection"}},
+					map[string]any{"required": []string{"options"}},
 				}},
 			},
 		},

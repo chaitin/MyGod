@@ -1,26 +1,25 @@
 import * as React from "react"
-import { Bot, Ellipsis, LoaderCircle, MessageSquareOff, X } from "lucide-react"
+import { Ellipsis, LoaderCircle, MessageSquareOff, X } from "lucide-react"
 import { toast } from "sonner"
 
 import {
   archiveConversationTopic,
   getConversationTopic,
+  listConversationMessageChoiceSnapshots,
   listConversationMessageReactionSnapshots,
   normalizeConversationRemovedEventPayload,
+  normalizeMessageChoiceUpdatedEventPayload,
   normalizeMessageReactionsUpdatedEventPayload,
   participateConversationTopic,
-  type ClientMessageReaction,
-  type MessageReactionSnapshot,
   type ClientMessage,
   type ClientTopicDetail,
-  type ClientTopicSourceMessage,
+  type MessageChoiceSnapshot,
+  type MessageReactionSnapshot,
 } from "@/lib/client-data-api"
-import { getAvatarInitial } from "@/lib/avatar"
 import { getClientDataErrorMessage } from "@/lib/client-data-state"
 import { createConversationMentionLabelResolver } from "@/lib/conversation-mention-labels"
 import { useClientData } from "@/lib/client-data-context"
 import { useRealtime } from "@/lib/realtime-context"
-import { type MentionLabelResolver } from "@/lib/message-mentions"
 import type {
   ConversationDraftMention,
   ConversationDraftReplyTarget,
@@ -30,16 +29,11 @@ import {
   toConversationPanelMessage,
 } from "@/lib/conversation-message-presenter"
 import type { VoiceMessageRecording } from "@/lib/voice-message"
-import { cn } from "@/lib/utils"
 import {
   ConversationPanel,
   type ConversationPanelMessage,
 } from "@/components/conversation-panel"
-import { MessageBodyRenderer } from "@/components/conversation/conversation-message"
-import {
-  MessageReactionAddButton,
-  MessageReactionChips,
-} from "@/components/conversation/message-reactions"
+import { TopicSourceBanner } from "@/components/conversation/topic-source-banner"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -50,7 +44,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -67,8 +60,6 @@ import {
 } from "@/components/ui/sheet"
 
 const emptyMessages: ClientMessage[] = []
-const emptyMentionLabelResolver: MentionLabelResolver = () => undefined
-
 type TopicDrawerProps = {
   conversationId: string
   onOpenChange: (open: boolean) => void
@@ -90,6 +81,7 @@ function TopicDrawerContent({
   open,
 }: TopicDrawerProps) {
   const {
+    compactConversationMessages,
     contactApps,
     contacts,
     ensureConversationMessages,
@@ -98,6 +90,8 @@ function TopicDrawerContent({
     loadBeforeConversationMessages,
     markConversationRead,
     me,
+    registerConversationMessageView,
+    respondToChoice,
     refreshConversations,
     revokeConversationMessage,
     sendConversationFile,
@@ -122,6 +116,8 @@ function TopicDrawerContent({
     React.useState<ConversationDraftReplyTarget | null>(null)
   const [sourceReactionSnapshot, setSourceReactionSnapshot] =
     React.useState<MessageReactionSnapshot | null>(null)
+  const [sourceChoiceSnapshot, setSourceChoiceSnapshot] =
+    React.useState<MessageChoiceSnapshot | null>(null)
   const [richTextMode, setRichTextMode] = React.useState(false)
   React.useEffect(() => {
     if (!open || !conversationId) {
@@ -149,6 +145,8 @@ function TopicDrawerContent({
 
   const sourceConversationId = detail?.parentConversation.id ?? ""
   const sourceMessageId = detail?.sourceMessage.id ?? ""
+  const sourceConversationCanSend =
+    getConversation(sourceConversationId)?.canSend !== false
   const refreshSourceReactions = React.useCallback(async () => {
     if (!sourceConversationId || !sourceMessageId) return
     const [snapshot] = await listConversationMessageReactionSnapshots(
@@ -162,6 +160,21 @@ function TopicDrawerContent({
         : snapshot
     )
   }, [sourceConversationId, sourceMessageId])
+
+  const sourceIsChoice = detail?.sourceMessage.body.type === "choice"
+  const refreshSourceChoice = React.useCallback(async () => {
+    if (!sourceIsChoice || !sourceConversationId || !sourceMessageId) {
+      setSourceChoiceSnapshot(null)
+      return
+    }
+    const [snapshot] = await listConversationMessageChoiceSnapshots(
+      sourceConversationId,
+      [sourceMessageId]
+    )
+    if (snapshot) {
+      setSourceChoiceSnapshot(snapshot)
+    }
+  }, [sourceConversationId, sourceIsChoice, sourceMessageId])
 
   React.useEffect(() => {
     if (!open || !sourceConversationId || !sourceMessageId) return
@@ -182,6 +195,25 @@ function TopicDrawerContent({
       active = false
     }
   }, [open, sourceConversationId, sourceMessageId])
+
+  React.useEffect(() => {
+    if (!open || !sourceIsChoice) {
+      return
+    }
+    let active = true
+    void listConversationMessageChoiceSnapshots(sourceConversationId, [
+      sourceMessageId,
+    ])
+      .then(([snapshot]) => {
+        if (active && snapshot) {
+          setSourceChoiceSnapshot(snapshot)
+        }
+      })
+      .catch(() => undefined)
+    return () => {
+      active = false
+    }
+  }, [open, sourceConversationId, sourceIsChoice, sourceMessageId])
 
   const detailConversation = detail?.conversation ?? null
   const listedConversation = detailConversation
@@ -211,6 +243,9 @@ function TopicDrawerContent({
     }
     return baseConversation
   }, [baseConversation, synchronizedArchived])
+  const compactTopicMessages = React.useCallback(() => {
+    compactConversationMessages(conversation?.id ?? "")
+  }, [compactConversationMessages, conversation?.id])
   const messageState = conversation
     ? getConversationMessageState(conversation.id)
     : undefined
@@ -418,11 +453,20 @@ function TopicDrawerContent({
             parentConversationId={detail?.parentConversation.id}
           />
           {sourceConversationId && sourceMessageId && (
-            <TopicSourceReactionSync
-              conversationId={sourceConversationId}
-              messageId={sourceMessageId}
-              onUpdate={refreshSourceReactions}
-            />
+            <>
+              <TopicSourceReactionSync
+                conversationId={sourceConversationId}
+                messageId={sourceMessageId}
+                onUpdate={refreshSourceReactions}
+              />
+              {sourceIsChoice && (
+                <TopicSourceChoiceSync
+                  conversationId={sourceConversationId}
+                  messageId={sourceMessageId}
+                  onUpdate={refreshSourceChoice}
+                />
+              )}
+            </>
           )}
         </>
       )}
@@ -482,13 +526,29 @@ function TopicDrawerContent({
                 onSetReaction={
                   conversation.canSend === false ? undefined : setSourceReaction
                 }
+                onRespondToChoice={
+                  sourceIsChoice && sourceConversationCanSend
+                    ? async (optionIds) => {
+                        await respondToChoice(
+                          sourceConversationId,
+                          sourceMessageId,
+                          optionIds
+                        )
+                        await refreshSourceChoice()
+                      }
+                    : undefined
+                }
                 reactions={sourceReactionSnapshot?.reactions}
+                sourceChoice={sourceChoiceSnapshot?.choice}
+                sourceChoiceStatus={sourceChoiceSnapshot?.status}
                 sourceMessage={detail?.sourceMessage}
               />
             }
             mentionLabelResolver={mentionLabelResolver}
             messages={messages}
             onCancelReply={() => setReplyTarget(null)}
+            onCompactMessages={compactTopicMessages}
+            onRegisterMessageView={registerConversationMessageView}
             onDraftChange={updateDraft}
             onLoadBeforeMessages={() =>
               loadBeforeConversationMessages(conversation.id)
@@ -510,6 +570,9 @@ function TopicDrawerContent({
                 reacted
               )
             }}
+            onRespondToChoice={(message, optionIds) =>
+              respondToChoice(conversation.id, message.id, optionIds)
+            }
             onRichTextModeChange={setRichTextMode}
             onSendFile={sendFile}
             onSendImage={sendImage}
@@ -611,6 +674,38 @@ function TopicSourceReactionSync({
       subscribeRealtimeEvent("message.reactions_updated", (payload) => {
         try {
           const event = normalizeMessageReactionsUpdatedEventPayload(payload)
+          if (
+            event.conversationId === conversationId &&
+            event.messageId === messageId
+          ) {
+            void onUpdate().catch(() => undefined)
+          }
+        } catch {
+          // Ignore malformed realtime events. The websocket remains usable.
+        }
+      }),
+    [conversationId, messageId, onUpdate, subscribeRealtimeEvent]
+  )
+
+  return null
+}
+
+function TopicSourceChoiceSync({
+  conversationId,
+  messageId,
+  onUpdate,
+}: {
+  conversationId: string
+  messageId: string
+  onUpdate: () => Promise<void>
+}) {
+  const { subscribeRealtimeEvent } = useRealtime()
+
+  React.useEffect(
+    () =>
+      subscribeRealtimeEvent("message.choice_updated", (payload) => {
+        try {
+          const event = normalizeMessageChoiceUpdatedEventPayload(payload)
           if (
             event.conversationId === conversationId &&
             event.messageId === messageId
@@ -773,153 +868,6 @@ function TopicArchiveConfirmDialog({
       </AlertDialogContent>
     </AlertDialog>
   )
-}
-
-export function TopicSourceBanner({
-  conversationId,
-  currentUserId,
-  mentionLabelResolver,
-  onSetReaction,
-  reactionConversationId,
-  reactions = [],
-  sourceMessage,
-}: {
-  conversationId?: string
-  currentUserId: string
-  mentionLabelResolver?: MentionLabelResolver
-  onSetReaction?: (text: string, reacted: boolean) => Promise<unknown>
-  reactionConversationId?: string
-  reactions?: ClientMessageReaction[]
-  sourceMessage?: ClientTopicSourceMessage
-}) {
-  const [fetchedSource, setFetchedSource] =
-    React.useState<ClientTopicSourceMessage | null>(null)
-  const loadedSource = sourceMessage ?? fetchedSource
-
-  React.useEffect(() => {
-    if (sourceMessage) return
-    if (!conversationId) return
-    let active = true
-    void getConversationTopic(conversationId)
-      .then((value) => {
-        if (active) setFetchedSource(value.sourceMessage)
-      })
-      .catch(() => undefined)
-    return () => {
-      active = false
-    }
-  }, [conversationId, sourceMessage])
-
-  if (!loadedSource) return null
-
-  const fromCurrentUser =
-    loadedSource.sender.type === "user" &&
-    loadedSource.sender.id === currentUserId
-  const avatar = (
-    <Avatar className="size-8 rounded-sm bg-muted after:rounded-sm">
-      {loadedSource.sender.avatar && (
-        <AvatarImage
-          alt={loadedSource.sender.name}
-          className="rounded-sm"
-          src={loadedSource.sender.avatar}
-        />
-      )}
-      <AvatarFallback
-        className={cn(
-          "rounded-sm",
-          fromCurrentUser && "bg-primary text-primary-foreground"
-        )}
-      >
-        {loadedSource.sender.type === "app" ? (
-          <Bot className="size-4" />
-        ) : fromCurrentUser ? (
-          "我"
-        ) : (
-          getAvatarInitial(loadedSource.sender.name)
-        )}
-      </AvatarFallback>
-    </Avatar>
-  )
-
-  return (
-    <div
-      className={cn(
-        "group/message-row flex gap-3",
-        fromCurrentUser ? "justify-end" : "justify-start"
-      )}
-    >
-      {!fromCurrentUser && avatar}
-      <div
-        className={cn(
-          "flex max-w-[min(70%,64rem)] flex-col gap-1",
-          fromCurrentUser ? "items-end" : "items-start"
-        )}
-      >
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span>{loadedSource.sender.name}</span>
-          <span>{formatTopicSourceTime(loadedSource.createdAt)}</span>
-        </div>
-        <div
-          className={cn(
-            "flex max-w-full items-end gap-1.5",
-            fromCurrentUser && "flex-row-reverse"
-          )}
-          data-slot="message-bubble-line"
-        >
-          <div
-            className={cn(
-              "max-w-full min-w-0 rounded-md p-3 text-sm leading-relaxed shadow-sm",
-              fromCurrentUser
-                ? "bg-teal-100/60 text-foreground dark:bg-teal-950/80"
-                : "bg-zinc-100 text-foreground dark:bg-zinc-800"
-            )}
-            data-testid="topic-source-message-bubble"
-          >
-            <MessageBodyRenderer
-              body={loadedSource.body}
-              currentUserId={currentUserId}
-              mentionLabelResolver={
-                mentionLabelResolver ?? emptyMentionLabelResolver
-              }
-            />
-            {reactions.length > 0 && (
-              <div className="mt-2">
-                <MessageReactionChips
-                  align={fromCurrentUser ? "end" : "start"}
-                  canAdd={loadedSource.body.type !== "revoked"}
-                  conversationId={
-                    reactionConversationId ?? conversationId ?? ""
-                  }
-                  enabled={loadedSource.body.type !== "revoked"}
-                  messageId={loadedSource.id}
-                  onSetReaction={onSetReaction}
-                  reactions={reactions}
-                />
-              </div>
-            )}
-          </div>
-          {onSetReaction && loadedSource.body.type !== "revoked" && (
-            <MessageReactionAddButton
-              align={fromCurrentUser ? "end" : "start"}
-              onSetReaction={onSetReaction}
-            />
-          )}
-        </div>
-      </div>
-      {fromCurrentUser && avatar}
-    </div>
-  )
-}
-
-function formatTopicSourceTime(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ""
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "numeric",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date)
 }
 
 function normalizeSingleLinkMessageURL(content: string) {

@@ -39,11 +39,17 @@ describe("AppCredentialsDialog", () => {
       />
     )
 
-    expect(
-      screen.getByRole("dialog", { name: "应用接入信息" })
-    ).toBeInTheDocument()
+    expect(screen.getByRole("dialog", { name: "开发指南" })).toBeInTheDocument()
     expect(screen.getByLabelText("连接密钥")).toHaveValue("current-secret")
     expect(screen.getByLabelText("应用 ID")).toHaveValue("app-1")
+    expect(screen.getByRole("link", { name: "开发文档" })).toHaveAttribute(
+      "href",
+      "https://github.com/chaitin/MagicChat/blob/main/APPLICATION_DEVELOPMENT.md"
+    )
+    expect(screen.getByRole("link", { name: "开发文档" })).toHaveAttribute(
+      "target",
+      "_blank"
+    )
 
     await user.click(screen.getByRole("button", { name: "重置连接密钥" }))
     const confirmation = screen.getByRole("alertdialog", {

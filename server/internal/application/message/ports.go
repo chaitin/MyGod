@@ -42,6 +42,8 @@ type NotificationPort interface {
 	PublishSharedMessageCreated(context.Context, []string, Message)
 	PublishMessageUpdated(context.Context, []Delivery)
 	PublishMembersMentioned(context.Context, []string, string, int64)
+	PublishMembersChoiceReceived(context.Context, []string, string, int64)
+	PublishMessageChoiceUpdated(context.Context, []string, ChoiceUpdatedEvent)
 }
 
 type ReactionNotificationPort interface {

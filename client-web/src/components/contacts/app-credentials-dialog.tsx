@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Copy, RotateCcw } from "lucide-react"
+import { BookOpen, Copy, RotateCcw } from "lucide-react"
 import { toast } from "sonner"
 
 import {
@@ -84,7 +84,7 @@ export function AppCredentialsDialog({
           onPointerDownOutside={(event) => event.preventDefault()}
         >
           <DialogHeader>
-            <DialogTitle>应用接入信息</DialogTitle>
+            <DialogTitle>开发指南</DialogTitle>
             <DialogDescription className="sr-only">
               查看应用的信息和连接凭据
             </DialogDescription>
@@ -105,15 +105,27 @@ export function AppCredentialsDialog({
           </div>
 
           <DialogFooter className="sm:justify-between">
-            <Button
-              disabled={resetting}
-              onClick={() => setResetOpen(true)}
-              type="button"
-              variant="secondary"
-            >
-              <RotateCcw />
-              重置连接密钥
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                disabled={resetting}
+                onClick={() => setResetOpen(true)}
+                type="button"
+                variant="secondary"
+              >
+                <RotateCcw />
+                重置连接密钥
+              </Button>
+              <Button asChild variant="secondary">
+                <a
+                  href="https://github.com/chaitin/MagicChat/blob/main/APPLICATION_DEVELOPMENT.md"
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  <BookOpen />
+                  开发文档
+                </a>
+              </Button>
+            </div>
             <Button
               disabled={resetting}
               onClick={() => onOpenChange(false)}

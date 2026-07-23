@@ -39,6 +39,7 @@ func TestMigrationDirectoryContainsExpectedMigrations(t *testing.T) {
 		"00024_repair_conversation_topic_app_columns.sql",
 		"00025_add_message_reactions.sql",
 		"00026_add_conversation_user_preferences.sql",
+		"00027_add_message_choices.sql",
 	}
 	if len(matches) != len(want) {
 		t.Fatalf("migration file count = %d, want %d: %v", len(matches), len(want), matches)
@@ -46,6 +47,29 @@ func TestMigrationDirectoryContainsExpectedMigrations(t *testing.T) {
 	for index, match := range matches {
 		if got := filepath.Base(match); got != want[index] {
 			t.Fatalf("migration file %d = %q, want %q", index, got, want[index])
+		}
+	}
+}
+
+func TestMessageChoicesMigration(t *testing.T) {
+	rawSQL, err := os.ReadFile("../../migrations/00027_add_message_choices.sql")
+	if err != nil {
+		t.Fatalf("read message choices migration: %v", err)
+	}
+	sql := normalizeSQL(string(rawSQL))
+	for _, required := range []string{
+		"add column last_choice_seq bigint not null default 0",
+		"create table message_choice_responses",
+		"conversation_id uuid not null references conversations(id) on delete cascade",
+		"message_id uuid not null references message_registry(id) on delete cascade",
+		"user_id uuid not null references users(id) on delete cascade",
+		"option_ids jsonb not null",
+		"unique (message_id, user_id)",
+		"drop table message_choice_responses",
+		"drop column last_choice_seq",
+	} {
+		if !strings.Contains(sql, required) {
+			t.Fatalf("message choices migration missing %q", required)
 		}
 	}
 }

@@ -45,6 +45,14 @@ https://{$PUBLIC_HOSTNAME:localhost} {
 			reverse_proxy server:20080
 		}
 
+		@client_version path /version.json
+		header @client_version Cache-Control "no-store, no-cache, must-revalidate"
+
+		@client_document {
+			not path /assets/* /version.json
+		}
+		header @client_document Cache-Control "no-cache"
+
 		handle {
 			root * /srv/client
 			try_files {path} /index.html

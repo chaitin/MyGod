@@ -39,6 +39,22 @@ vi.mock("@/components/app-profile-popover", () => ({
 }))
 
 describe("MessageBubble reactions", () => {
+  it("uses the translucent background for reactions on current-user messages", () => {
+    renderBubble({
+      messageOverrides: {
+        role: "me",
+        senderUserId: "user-1",
+      },
+      onSetReaction: vi.fn(),
+    })
+
+    expect(
+      screen
+        .getByRole("button", { name: "移除表情 自定义文本" })
+        .closest('[data-slot="message-reaction-chip"]')
+    ).toHaveClass("bg-background/70")
+  })
+
   it("renders arbitrary text, toggles chips, and shares the full expression picker", async () => {
     reactionMocks.listUsers.mockResolvedValue([
       { id: "user-11", name: "完整用户甲" },
@@ -53,6 +69,7 @@ describe("MessageBubble reactions", () => {
     const reactionChip = reactionToggle.closest<HTMLDivElement>(
       '[data-slot="message-reaction-chip"]'
     )
+    expect(reactionChip).toHaveClass("bg-background/70")
     expect(reactionChip).toHaveTextContent(
       "自定义文本李昌志, 朱文磊, 王彪, 赵一, 钱二, 孙三, 周四, 吴五, 郑六, 王七等 16 人"
     )
@@ -78,9 +95,24 @@ describe("MessageBubble reactions", () => {
 
     const addButton = screen.getByRole("button", { name: "添加表情" })
     const bubbleLine = addButton.closest('[data-slot="message-bubble-line"]')
+    const hoverActions = addButton.closest(
+      '[data-slot="message-hover-actions"]'
+    )
     expect(bubbleLine).not.toBeNull()
+    expect(hoverActions).not.toBeNull()
     expect(bubbleLine).toContainElement(screen.getByText("hello"))
     expect(bubbleLine).toContainElement(reactionChip)
+    expect(hoverActions).toContainElement(
+      screen.getByRole("button", { name: "更多操作" })
+    )
+    expect(addButton.className).toBe(
+      screen.getByRole("button", { name: "更多操作" }).className
+    )
+    expect(
+      addButton.compareDocumentPosition(
+        screen.getByRole("button", { name: "更多操作" })
+      ) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).not.toBe(0)
     const messageBubble = screen
       .getByText("hello")
       .closest<HTMLElement>("[data-message-action-trigger]")

@@ -83,13 +83,21 @@ describe("AppDetailPanel", () => {
     )
 
     const accessInfoButton = screen.getByRole("button", {
-      name: "查看接入信息",
+      name: "开发指南",
     })
     const editProfileButton = screen.getByRole("button", { name: "修改资料" })
     const deleteButton = screen.getByRole("button", { name: "删除应用" })
     expect(accessInfoButton).toBeInTheDocument()
     expect(editProfileButton).toBeInTheDocument()
     expect(deleteButton).toBeInTheDocument()
+    expect(
+      editProfileButton.compareDocumentPosition(accessInfoButton) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+    expect(
+      accessInfoButton.compareDocumentPosition(deleteButton) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
     expect(screen.getByText("开发者")).toBeInTheDocument()
     expect(screen.getByText("当前用户")).toBeInTheDocument()
     const developerLink = screen.getByRole("button", { name: "当前用户资料" })
@@ -109,7 +117,7 @@ describe("AppDetailPanel", () => {
     )
 
     expect(
-      screen.queryByRole("button", { name: "查看接入信息" })
+      screen.queryByRole("button", { name: "开发指南" })
     ).not.toBeInTheDocument()
     expect(
       screen.queryByRole("button", { name: "修改资料" })

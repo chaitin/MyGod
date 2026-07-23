@@ -181,4 +181,68 @@ func TestPostgresPartitionedMessageServiceEnforcesOnlineWindowAndPreservesCurren
 	if retainedCount != 1 {
 		t.Fatalf("retained old message count = %d", retainedCount)
 	}
+
+	secondUser := store.User{
+		ID: uuid.NewString(), Email: "choice-concurrent@example.com", Name: "Choice Concurrent",
+		PasswordHash: "hash", Status: store.UserStatusActive, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Create(&secondUser).Error; err != nil {
+		t.Fatalf("create concurrent choice user: %v", err)
+	}
+	group := store.Conversation{
+		ID: uuid.NewString(), Kind: store.ConversationKindGroup, Name: "Concurrent Choice",
+		CreatedByUserID: fixture.user.ID, Status: store.ConversationStatusActive,
+		PostingPolicy: store.ConversationPostingPolicyOpen, Visibility: store.ConversationVisibilityPrivate,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Create(&group).Error; err != nil {
+		t.Fatalf("create concurrent choice group: %v", err)
+	}
+	members := []store.ConversationMember{
+		{ConversationID: group.ID, MemberType: store.ConversationMemberTypeUser, MemberID: fixture.user.ID, Role: store.ConversationMemberRoleOwner, JoinedAt: now, HistoryVisibleFromSeq: 1},
+		{ConversationID: group.ID, MemberType: store.ConversationMemberTypeUser, MemberID: secondUser.ID, Role: store.ConversationMemberRoleMember, JoinedAt: now, HistoryVisibleFromSeq: 1},
+		{ConversationID: group.ID, MemberType: store.ConversationMemberTypeApp, MemberID: fixture.app.ID, Role: store.ConversationMemberRoleMember, JoinedAt: now, HistoryVisibleFromSeq: 1},
+	}
+	if err := db.Create(&members).Error; err != nil {
+		t.Fatalf("create concurrent choice members: %v", err)
+	}
+	choiceBody := json.RawMessage(`{"type":"choice","content_type":"text","content":"请选择","selection":"single","options":[{"id":"a","label":"A"},{"id":"b","label":"B"}]}`)
+	choice, err := service.CreateAsApp(context.Background(), CreateAsAppCommand{
+		AppID: fixture.app.ID, ConversationID: group.ID, ClientMessageID: "postgres-concurrent-choice", Body: choiceBody,
+		Finalize: func(_ context.Context, body json.RawMessage) (json.RawMessage, string, error) {
+			return body, "[选择] 请选择", nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("create concurrent choice: %v", err)
+	}
+	type choiceSubmission struct {
+		result SubmitChoiceResponseResult
+		err    error
+	}
+	submissions := make(chan choiceSubmission, 2)
+	start := make(chan struct{})
+	for index, userID := range []string{fixture.user.ID, secondUser.ID} {
+		index, userID := index, userID
+		go func() {
+			<-start
+			result, submitErr := service.SubmitChoiceResponse(context.Background(), SubmitChoiceResponseCommand{
+				AccountID: userID, ConversationID: group.ID, MessageID: choice.Message.ID,
+				OptionIDs: []string{[]string{"a", "b"}[index]},
+			})
+			submissions <- choiceSubmission{result: result, err: submitErr}
+		}()
+	}
+	close(start)
+	responseCounts := map[int64]int{}
+	for range 2 {
+		submission := <-submissions
+		if submission.err != nil {
+			t.Fatalf("submit concurrent choice response: %v", submission.err)
+		}
+		responseCounts[submission.result.Choice.ResponseCount]++
+	}
+	if responseCounts[1] != 1 || responseCounts[2] != 1 {
+		t.Fatalf("concurrent choice response counts = %v, want one each of 1 and 2", responseCounts)
+	}
 }

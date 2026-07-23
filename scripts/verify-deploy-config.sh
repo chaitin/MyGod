@@ -202,6 +202,8 @@ assert_contains "assistant/internal/config/config.go" "DefaultAgentMaxSessions =
 assert_contains "server/internal/appregistry/ai_assistant.go" 'AIAssistantAppID          = "00000000-0000-0000-0000-000000000001"'
 
 assert_contains "deploy/caddy/Dockerfile" "pnpm build"
+assert_contains "deploy/caddy/Dockerfile" "ARG CLIENT_BUILD_COMMIT=development"
+assert_contains "deploy/caddy/Dockerfile" 'ENV VITE_CLIENT_BUILD_COMMIT=${CLIENT_BUILD_COMMIT}'
 assert_contains "deploy/caddy/Dockerfile" "COPY --from=client-build /src/client-web/dist /srv/client"
 assert_contains "deploy/caddy/Dockerfile" "COPY --from=admin-build /src/admin-web/dist /srv/admin"
 assert_contains "deploy/caddy/Dockerfile" "COPY admin-web/public/assets/avatars/builtin"
@@ -213,5 +215,12 @@ assert_contains ".github/workflows/docker.yml" "image: caddy"
 assert_contains ".github/workflows/docker.yml" "deploy/caddy/Dockerfile"
 assert_not_contains ".github/workflows/docker.yml" "deploy/nginx/Dockerfile"
 assert_contains ".github/workflows/docker.yml" "docker/build-push-action@v7"
+assert_contains ".github/workflows/docker.yml" 'build_args: CLIENT_BUILD_COMMIT=${{ github.sha }}'
+assert_contains ".github/workflows/docker.yml" 'build-args: ${{ matrix.build_args }}'
+
+assert_contains "deploy/caddy/Caddyfile" "@client_version path /version.json"
+assert_contains "deploy/caddy/Caddyfile" 'Cache-Control "no-store, no-cache, must-revalidate"'
+assert_contains "deploy/caddy/Caddyfile" "@client_document"
+assert_contains "deploy/caddy/Caddyfile" 'not path /assets/* /version.json'
 
 echo "deploy config check passed"

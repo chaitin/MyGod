@@ -5,10 +5,12 @@ import {
   normalizeConversationPinUpdatedEventPayload,
   normalizeConversationMuteUpdatedEventPayload,
   normalizeConversationMemberMentionedEventPayload,
+  normalizeConversationMemberChoiceReceivedEventPayload,
   normalizeConversationRemovedEventPayload,
   normalizeMessageCreatedEventPayload,
   normalizeMessageUpdatedEventPayload,
   normalizeMessageReactionsUpdatedEventPayload,
+  normalizeMessageChoiceUpdatedEventPayload,
   normalizeTopicEventPayload,
 } from "@/lib/client-data-api"
 import { useClientData } from "@/lib/client-data-context"
@@ -22,11 +24,13 @@ export function ClientConversationRealtimeSync() {
     foregroundConversationId,
     handleIncomingConversationMessage,
     handleIncomingConversationMessageUpdate,
+    handleIncomingMessageChoiceUpdate,
     handleIncomingMessageReactionsUpdate,
     refreshConversations,
     removeConversation,
     syncLoadedConversationMessages,
     updateConversationLastMentionedSeq,
+    updateConversationLastChoiceSeq,
     updateConversationMuted,
     updateConversationPinned,
     updateMessageTopic,
@@ -74,11 +78,18 @@ export function ClientConversationRealtimeSync() {
       try {
         const message = normalizeMessageUpdatedEventPayload(payload)
         handleIncomingConversationMessageUpdate(message)
+        if (message.body.type === "revoked") {
+          void refreshConversations().catch(() => undefined)
+        }
       } catch {
         // Ignore malformed realtime events. The websocket remains usable.
       }
     })
-  }, [handleIncomingConversationMessageUpdate, subscribeRealtimeEvent])
+  }, [
+    handleIncomingConversationMessageUpdate,
+    refreshConversations,
+    subscribeRealtimeEvent,
+  ])
 
   React.useEffect(() => {
     return subscribeRealtimeEvent("message.reactions_updated", (payload) => {
@@ -91,6 +102,18 @@ export function ClientConversationRealtimeSync() {
       }
     })
   }, [handleIncomingMessageReactionsUpdate, subscribeRealtimeEvent])
+
+  React.useEffect(() => {
+    return subscribeRealtimeEvent("message.choice_updated", (payload) => {
+      try {
+        handleIncomingMessageChoiceUpdate(
+          normalizeMessageChoiceUpdatedEventPayload(payload)
+        )
+      } catch {
+        // Ignore malformed realtime events. The websocket remains usable.
+      }
+    })
+  }, [handleIncomingMessageChoiceUpdate, subscribeRealtimeEvent])
 
   React.useEffect(() => {
     return subscribeRealtimeEvent("conversation.removed", (payload) => {
@@ -161,6 +184,24 @@ export function ClientConversationRealtimeSync() {
       }
     )
   }, [subscribeRealtimeEvent, updateConversationLastMentionedSeq])
+
+  React.useEffect(() => {
+    return subscribeRealtimeEvent(
+      "conversation.member_choice_received",
+      (payload) => {
+        try {
+          const event =
+            normalizeConversationMemberChoiceReceivedEventPayload(payload)
+          updateConversationLastChoiceSeq(
+            event.conversationId,
+            event.lastChoiceSeq
+          )
+        } catch {
+          // Ignore malformed realtime events. The websocket remains usable.
+        }
+      }
+    )
+  }, [subscribeRealtimeEvent, updateConversationLastChoiceSeq])
 
   React.useEffect(() => {
     const handleTopicEvent = (payload: unknown) => {

@@ -35,6 +35,51 @@ type listMessageReactionSnapshotsRequest struct {
 	MessageIDs []string `json:"message_ids"`
 }
 
+type submitChoiceResponseRequest struct {
+	OptionIDs []string `json:"option_ids"`
+}
+
+type listChoiceSnapshotsRequest struct {
+	MessageIDs []string `json:"message_ids"`
+}
+
+type messageChoiceOptionStateResponse struct {
+	ID            string `json:"id"`
+	ResponseCount int64  `json:"response_count"`
+}
+
+type messageChoiceStateResponse struct {
+	MyOptionIDs   []string                           `json:"my_option_ids"`
+	Options       []messageChoiceOptionStateResponse `json:"options"`
+	ResponseCount int64                              `json:"response_count"`
+}
+
+type choiceResponseResponse struct {
+	CreatedAt time.Time `json:"created_at"`
+	ID        string    `json:"id"`
+	OptionIDs []string  `json:"option_ids"`
+	UserID    string    `json:"user_id"`
+}
+
+type submitChoiceResponseResponse struct {
+	Choice         messageChoiceStateResponse `json:"choice"`
+	ConversationID string                     `json:"conversation_id"`
+	Created        bool                       `json:"created"`
+	MessageID      string                     `json:"message_id"`
+	Response       choiceResponseResponse     `json:"response"`
+}
+
+type messageChoiceSnapshotResponse struct {
+	Choice    *messageChoiceStateResponse `json:"choice,omitempty"`
+	MessageID string                      `json:"message_id"`
+	Status    string                      `json:"status"`
+}
+
+type listChoiceSnapshotsResponse struct {
+	ConversationID string                          `json:"conversation_id"`
+	Snapshots      []messageChoiceSnapshotResponse `json:"snapshots"`
+}
+
 type messageReactionUserResponse struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -107,6 +152,7 @@ type messageResponse struct {
 	ReplyTo          *messageReplyToResponse     `json:"reply_to,omitempty"`
 	ReactionVersion  int64                       `json:"reaction_version"`
 	Reactions        []messageReactionResponse   `json:"reactions"`
+	Choice           *messageChoiceStateResponse `json:"choice,omitempty"`
 	RevokedAt        *time.Time                  `json:"revoked_at,omitempty" format:"date-time"`
 	RevokedByUserID  string                      `json:"revoked_by_user_id,omitempty" example:"7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"`
 	Sender           messageSenderResponse       `json:"sender"`
@@ -156,9 +202,11 @@ func (a *MessageAPI) RegisterRoutes(group *echo.Group) {
 	group.POST("/conversations/:conversation_id/messages/voices", a.createVoice)
 	group.POST("/conversations/:conversation_id/messages/forward", a.forward)
 	group.POST("/conversations/:conversation_id/messages/reactions/query", a.listReactionSnapshots)
+	group.POST("/conversations/:conversation_id/messages/choices/query", a.listChoiceSnapshots)
 	group.POST("/conversations/:conversation_id/messages/:message_id/revoke", a.revoke)
 	group.GET("/conversations/:conversation_id/messages/:message_id/reactions/users", a.listReactionUsers)
 	group.PUT("/conversations/:conversation_id/messages/:message_id/reactions", a.setReaction)
+	group.PUT("/conversations/:conversation_id/messages/:message_id/choice-response", a.submitChoiceResponse)
 }
 
 // list godoc
@@ -280,6 +328,10 @@ func newClientMessageResponse(value messageapp.Message) messageResponse {
 		RevokedAt: value.RevokedAt, RevokedByUserID: value.RevokedByUserID,
 		Sender: messageSenderResponse{ID: value.Sender.ID, Type: value.Sender.Type}, Seq: value.Seq,
 	}
+	if value.Choice != nil {
+		choice := newMessageChoiceStateResponse(*value.Choice)
+		result.Choice = &choice
+	}
 	if value.DelegatedBy != nil {
 		result.DelegatedBy = &messageDelegatedByResponse{ID: value.DelegatedBy.ID, Name: value.DelegatedBy.Name, Type: value.DelegatedBy.Type}
 	}
@@ -306,6 +358,18 @@ func newClientMessageResponse(value messageapp.Message) messageResponse {
 		}
 	}
 	return result
+}
+
+func newMessageChoiceStateResponse(value messageapp.ChoiceState) messageChoiceStateResponse {
+	options := make([]messageChoiceOptionStateResponse, len(value.Options))
+	for index, option := range value.Options {
+		options[index] = messageChoiceOptionStateResponse{ID: option.ID, ResponseCount: option.ResponseCount}
+	}
+	myOptionIDs := make([]string, len(value.MyOptionIDs))
+	copy(myOptionIDs, value.MyOptionIDs)
+	return messageChoiceStateResponse{
+		MyOptionIDs: myOptionIDs, Options: options, ResponseCount: value.ResponseCount,
+	}
 }
 
 func newMessageReactionResponses(values []messageapp.ReactionSummary) []messageReactionResponse {
@@ -376,6 +440,114 @@ func (a *MessageAPI) setReaction(c echo.Context) error {
 	return writeSuccess(c, http.StatusOK, setMessageReactionResponse{
 		ConversationID: result.ConversationID, MessageID: result.MessageID,
 		ReactionVersion: result.ReactionVersion, Reactions: newMessageReactionResponses(result.Reactions),
+	})
+}
+
+// submitChoiceResponse godoc
+//
+// @Summary 回复选择消息
+// @Description 当前用户为一条可见且未撤回的 choice 消息提交一次单选或多选答案；重复提交相同答案按幂等请求处理。
+// @Tags 客户端消息
+// @Accept json
+// @Produce json
+// @Param conversation_id path string true "会话 ID"
+// @Param message_id path string true "选择消息 ID"
+// @Param body body submitChoiceResponseRequest true "所选选项"
+// @Success 200 {object} successEnvelope{data=submitChoiceResponseResponse}
+// @Success 201 {object} successEnvelope{data=submitChoiceResponseResponse}
+// @Failure 400 {object} errorEnvelope
+// @Failure 401 {object} errorEnvelope
+// @Failure 403 {object} errorEnvelope
+// @Failure 404 {object} errorEnvelope
+// @Failure 409 {object} errorEnvelope
+// @Router /api/client/conversations/{conversation_id}/messages/{message_id}/choice-response [put]
+func (a *MessageAPI) submitChoiceResponse(c echo.Context) error {
+	current, ok := CurrentAccount(c)
+	if !ok {
+		return writeFailure(c, http.StatusInternalServerError, string(messageapp.CodeInternal), "服务端错误")
+	}
+	conversationID, err := normalizeMessageConversationID(c.Param("conversation_id"))
+	if err != nil {
+		return writeFailure(c, http.StatusBadRequest, string(messageapp.CodeInvalidRequest), err.Error())
+	}
+	messageID, err := normalizeMessageID(c.Param("message_id"))
+	if err != nil {
+		return writeFailure(c, http.StatusBadRequest, string(messageapp.CodeInvalidRequest), err.Error())
+	}
+	c.Request().Body = http.MaxBytesReader(c.Response().Writer, c.Request().Body, messageapp.MaxChoiceResponseBody)
+	var request submitChoiceResponseRequest
+	if err := c.Bind(&request); err != nil {
+		if isRequestBodyTooLarge(err) {
+			return writeFailure(c, http.StatusRequestEntityTooLarge, string(messageapp.CodeRequestTooLarge), "请求内容过大")
+		}
+		return writeFailure(c, http.StatusBadRequest, string(messageapp.CodeInvalidRequest), "请求格式错误")
+	}
+	result, err := a.messages.SubmitChoiceResponse(c.Request().Context(), messageapp.SubmitChoiceResponseCommand{
+		AccountID: current.ID, ConversationID: conversationID, MessageID: messageID, OptionIDs: request.OptionIDs,
+	})
+	if err != nil {
+		return writeMessageError(c, err)
+	}
+	status := http.StatusOK
+	if result.Created {
+		status = http.StatusCreated
+	}
+	return writeSuccess(c, status, submitChoiceResponseResponse{
+		Choice: newMessageChoiceStateResponse(result.Choice), ConversationID: result.ConversationID,
+		Created: result.Created, MessageID: result.MessageID,
+		Response: choiceResponseResponse{
+			CreatedAt: result.Response.CreatedAt, ID: result.Response.ID,
+			OptionIDs: append([]string(nil), result.Response.OptionIDs...), UserID: result.Response.UserID,
+		},
+	})
+}
+
+// listChoiceSnapshots godoc
+//
+// @Summary 批量查询选择消息状态
+// @Description 返回当前用户视角下至多 100 条 choice 消息的聚合结果和本人答案，用于客户端断线恢复。
+// @Tags 客户端消息
+// @Accept json
+// @Produce json
+// @Param conversation_id path string true "会话 ID"
+// @Param body body listChoiceSnapshotsRequest true "选择消息 ID 列表"
+// @Success 200 {object} successEnvelope{data=listChoiceSnapshotsResponse}
+// @Router /api/client/conversations/{conversation_id}/messages/choices/query [post]
+func (a *MessageAPI) listChoiceSnapshots(c echo.Context) error {
+	current, ok := CurrentAccount(c)
+	if !ok {
+		return writeFailure(c, http.StatusInternalServerError, string(messageapp.CodeInternal), "服务端错误")
+	}
+	conversationID, err := normalizeMessageConversationID(c.Param("conversation_id"))
+	if err != nil {
+		return writeFailure(c, http.StatusBadRequest, string(messageapp.CodeInvalidRequest), err.Error())
+	}
+	c.Request().Body = http.MaxBytesReader(c.Response().Writer, c.Request().Body, messageapp.MaxChoiceSnapshotBody)
+	var request listChoiceSnapshotsRequest
+	if err := c.Bind(&request); err != nil {
+		if isRequestBodyTooLarge(err) {
+			return writeFailure(c, http.StatusRequestEntityTooLarge, string(messageapp.CodeRequestTooLarge), "请求内容过大")
+		}
+		return writeFailure(c, http.StatusBadRequest, string(messageapp.CodeInvalidRequest), "请求格式错误")
+	}
+	result, err := a.messages.ListChoiceSnapshots(c.Request().Context(), messageapp.ListChoiceSnapshotsCommand{
+		AccountID: current.ID, ConversationID: conversationID, MessageIDs: request.MessageIDs,
+	})
+	if err != nil {
+		return writeMessageError(c, err)
+	}
+	snapshots := make([]messageChoiceSnapshotResponse, len(result.Snapshots))
+	for index, snapshot := range result.Snapshots {
+		snapshots[index] = messageChoiceSnapshotResponse{
+			MessageID: snapshot.MessageID, Status: snapshot.Status,
+		}
+		if snapshot.Choice != nil {
+			choice := newMessageChoiceStateResponse(*snapshot.Choice)
+			snapshots[index].Choice = &choice
+		}
+	}
+	return writeSuccess(c, http.StatusOK, listChoiceSnapshotsResponse{
+		ConversationID: result.ConversationID, Snapshots: snapshots,
 	})
 }
 

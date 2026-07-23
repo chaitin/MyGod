@@ -2,17 +2,26 @@ import * as React from "react"
 import { ContextMenu as ContextMenuPrimitive } from "radix-ui"
 import {
   Copy,
+  Ellipsis,
   Forward,
   ListChecks,
   MessageSquareText,
   Reply,
+  type LucideIcon,
   Undo2,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { messageHoverActionButtonClassName } from "@/components/conversation/message-hover-action-button"
 
-type MessageActionMenuProps = {
-  children: React.ReactNode
+export type MessageActionOptions = {
   canRevoke?: boolean
   copyDisabled?: boolean
   onCopy?: () => void
@@ -23,12 +32,19 @@ type MessageActionMenuProps = {
   onRevoke?: () => void
 }
 
-const messageActions = [
-  { label: "复制", icon: Copy, type: "copy" },
-  { label: "回复", icon: Reply, type: "reply" },
-  { label: "转发", icon: Forward, type: "forward" },
-  { label: "多选", icon: ListChecks, type: "multi-select" },
-] as const
+type MessageActionItem = {
+  disabled: boolean
+  icon: LucideIcon
+  key: string
+  label: string
+  onSelect?: () => void
+  separatorBefore?: boolean
+  variant?: "default" | "destructive"
+}
+
+type MessageActionMenuProps = MessageActionOptions & {
+  children: React.ReactNode
+}
 
 export function MessageActionMenu({
   canRevoke = false,
@@ -41,6 +57,17 @@ export function MessageActionMenu({
   onReply,
   onRevoke,
 }: MessageActionMenuProps) {
+  const actions = resolveMessageActions({
+    canRevoke,
+    copyDisabled,
+    onCopy,
+    onCreateTopic,
+    onForward,
+    onMultiSelect,
+    onReply,
+    onRevoke,
+  })
+
   return (
     <ContextMenuPrimitive.Root>
       <ContextMenuPrimitive.Trigger asChild>
@@ -57,60 +84,135 @@ export function MessageActionMenu({
           )}
           data-slot="message-action-menu"
         >
-          {messageActions.map((action) => (
-            <MessageActionMenuItem
-              disabled={
-                action.type === "copy"
-                  ? copyDisabled
-                  : action.type === "reply"
-                    ? !onReply
-                    : action.type === "forward"
-                      ? !onForward
-                      : action.type === "multi-select"
-                        ? !onMultiSelect
-                        : false
-              }
-              key={action.label}
-              onSelect={
-                action.type === "copy"
-                  ? onCopy
-                  : action.type === "reply"
-                    ? onReply
-                    : action.type === "forward"
-                      ? onForward
-                      : onMultiSelect
-              }
-            >
-              <action.icon aria-hidden="true" className="size-4" />
-              <span>{action.label}</span>
-            </MessageActionMenuItem>
-          ))}
-          {onCreateTopic && (
-            <MessageActionMenuItem onSelect={onCreateTopic}>
-              <MessageSquareText aria-hidden="true" className="size-4" />
-              <span>创建话题</span>
-            </MessageActionMenuItem>
-          )}
-          {canRevoke && (
-            <>
-              <ContextMenuPrimitive.Separator className="-mx-1 my-1 h-px bg-border" />
-              <MessageActionMenuItem
-                disabled={!onRevoke}
-                onSelect={onRevoke}
-                variant="destructive"
+          {actions.map((action) => (
+            <React.Fragment key={action.key}>
+              {action.separatorBefore && (
+                <ContextMenuPrimitive.Separator className="-mx-1 my-1 h-px bg-border" />
+              )}
+              <MessageContextMenuItem
+                disabled={action.disabled}
+                onSelect={action.onSelect}
+                variant={action.variant}
               >
-                <Undo2 aria-hidden="true" className="size-4" />
-                <span>撤回</span>
-              </MessageActionMenuItem>
-            </>
-          )}
+                <action.icon aria-hidden="true" className="size-4" />
+                <span>{action.label}</span>
+              </MessageContextMenuItem>
+            </React.Fragment>
+          ))}
         </ContextMenuPrimitive.Content>
       </ContextMenuPrimitive.Portal>
     </ContextMenuPrimitive.Root>
   )
 }
 
-function MessageActionMenuItem({
+export function MessageMoreActionsMenu({
+  align,
+  onOpenChange,
+  ...options
+}: MessageActionOptions & {
+  align: "start" | "end"
+  onOpenChange?: (open: boolean) => void
+}) {
+  const actions = resolveMessageActions(options)
+
+  return (
+    <DropdownMenu onOpenChange={onOpenChange}>
+      <DropdownMenuTrigger asChild>
+        <button
+          aria-label="更多操作"
+          className={messageHoverActionButtonClassName}
+          data-slot="message-more-actions"
+          title="更多操作"
+          type="button"
+        >
+          <Ellipsis className="size-3.5" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align={align} className="w-32">
+        {actions.map((action) => (
+          <React.Fragment key={action.key}>
+            {action.separatorBefore && <DropdownMenuSeparator />}
+            <DropdownMenuItem
+              disabled={action.disabled}
+              onSelect={action.onSelect}
+              variant={action.variant}
+            >
+              <action.icon aria-hidden="true" className="size-4" />
+              <span>{action.label}</span>
+            </DropdownMenuItem>
+          </React.Fragment>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+function resolveMessageActions({
+  canRevoke = false,
+  copyDisabled = false,
+  onCopy,
+  onCreateTopic,
+  onForward,
+  onMultiSelect,
+  onReply,
+  onRevoke,
+}: MessageActionOptions): MessageActionItem[] {
+  const actions: MessageActionItem[] = [
+    {
+      disabled: copyDisabled,
+      icon: Copy,
+      key: "copy",
+      label: "复制",
+      onSelect: onCopy,
+    },
+    {
+      disabled: !onReply,
+      icon: Reply,
+      key: "reply",
+      label: "回复",
+      onSelect: onReply,
+    },
+    {
+      disabled: !onForward,
+      icon: Forward,
+      key: "forward",
+      label: "转发",
+      onSelect: onForward,
+    },
+    {
+      disabled: !onMultiSelect,
+      icon: ListChecks,
+      key: "multi-select",
+      label: "多选",
+      onSelect: onMultiSelect,
+    },
+  ]
+
+  if (onCreateTopic) {
+    actions.push({
+      disabled: false,
+      icon: MessageSquareText,
+      key: "create-topic",
+      label: "创建话题",
+      onSelect: onCreateTopic,
+    })
+  }
+  if (canRevoke) {
+    actions.push({
+      disabled: !onRevoke,
+      icon: Undo2,
+      key: "revoke",
+      label: "撤回",
+      onSelect: onRevoke,
+      separatorBefore: true,
+      variant: "destructive",
+    })
+  }
+
+  return actions
+}
+
+function MessageContextMenuItem({
   children,
   className,
   disabled = false,

@@ -752,6 +752,7 @@ function normalizeConversation(
       conversation.last_message_sender
     ),
     lastMessageSummary: conversation.last_message_summary ?? "",
+    lastChoiceSeq: conversation.last_choice_seq ?? 0,
     lastMentionedSeq: conversation.last_mentioned_seq ?? 0,
     lastReadSeq: conversation.last_read_seq ?? 0,
     memberCount: conversation.member_count ?? 0,

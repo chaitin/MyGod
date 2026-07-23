@@ -51,6 +51,7 @@ export function toConversationPanelMessage(
       appsById
     ),
     body: message.body,
+    choice: message.choice,
     canRevoke: canRevokeMessage(message, conversation, currentUser.id),
     createdAt: message.createdAt,
     delegatedByName: message.delegatedBy?.name ?? "",

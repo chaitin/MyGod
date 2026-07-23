@@ -6,6 +6,7 @@ import {
   type MarkConversationReadOptions,
   type ClientMessage,
   type MessageReactionsUpdatedEvent,
+  type MessageChoiceUpdatedEvent,
   type MessageReactionSnapshot,
   type ClientMessageTopic,
   type ClientCardSendInput,
@@ -71,6 +72,8 @@ export type ClientDataContextValue = {
   ) => Promise<ClientProjectDetail>
   dissolveGroupConversation: (conversationId: string) => Promise<void>
   dismissConversation: (conversationId: string) => Promise<void>
+  compactConversationMessages: (conversationId: string) => void
+  registerConversationMessageView: (conversationId: string) => () => void
   ensureConversationMessages: (conversationId: string) => void
   getConversation: (conversationId: string) => ClientConversation | null
   getConversationMessageState: (
@@ -96,6 +99,16 @@ export type ClientDataContextValue = {
   handleIncomingConversationMessageUpdate: (message: ClientMessage) => void
   handleIncomingMessageReactionsUpdate: (
     event: MessageReactionsUpdatedEvent
+  ) => void
+  handleIncomingMessageChoiceUpdate: (event: MessageChoiceUpdatedEvent) => void
+  respondToChoice: (
+    conversationId: string,
+    messageId: string,
+    optionIds: string[]
+  ) => Promise<void>
+  updateConversationLastChoiceSeq: (
+    conversationId: string,
+    lastChoiceSeq: number
   ) => void
   updateConversationLastMentionedSeq: (
     conversationId: string,

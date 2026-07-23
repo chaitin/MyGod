@@ -3,12 +3,15 @@ import {
   formatClientMessageBodySummary,
   type ClientConversation,
   type ClientMessage,
+  type ClientMessageChoiceState,
   type ClientMessagePage,
+  type MessageChoiceSnapshot,
   type MessageReactionsUpdatedEvent,
 } from "@/lib/client-data-api"
 import type { ClientConversationMessageState } from "@/lib/client-data-context"
 
 export const messagePageLimit = 20
+export const conversationMessageRetentionLimit = 300
 
 export const emptyConversationMessageState: ClientConversationMessageState = {
   error: null,
@@ -78,6 +81,67 @@ export function applyMessageReactionSnapshot(
   }
 }
 
+export function applyMessageChoiceState(
+  message: ClientMessage,
+  choice: ClientMessageChoiceState
+) {
+  if (
+    message.body.type !== "choice" ||
+    message.body.options.length !== choice.options.length
+  ) {
+    return message
+  }
+
+  const previous = message.choice
+  if (previous) {
+    if (previous.responseCount > choice.responseCount) {
+      if (previous.myOptionIds.length === 0 && choice.myOptionIds.length > 0) {
+        return {
+          ...message,
+          choice: { ...previous, myOptionIds: choice.myOptionIds },
+        }
+      }
+      return message
+    }
+    if (
+      previous.responseCount === choice.responseCount &&
+      previous.myOptionIds.length > 0 &&
+      choice.myOptionIds.length === 0
+    ) {
+      return message
+    }
+  }
+
+  return { ...message, choice }
+}
+
+export function applyMessageChoiceSnapshot(
+  message: ClientMessage,
+  snapshot: MessageChoiceSnapshot
+): ClientMessage | null {
+  if (
+    message.id !== snapshot.messageId ||
+    message.conversationId !== snapshot.conversationId
+  ) {
+    return message
+  }
+  if (snapshot.status === "deleted") {
+    return null
+  }
+  if (snapshot.status === "revoked") {
+    return {
+      ...message,
+      body: { type: "revoked" },
+      choice: undefined,
+      reactions: [],
+    }
+  }
+  if (!snapshot.choice) {
+    return message
+  }
+  return applyMessageChoiceState(message, snapshot.choice)
+}
+
 export function createConversationMessageState(): ClientConversationMessageState {
   return {
     error: null,
@@ -87,6 +151,31 @@ export function createConversationMessageState(): ClientConversationMessageState
     messages: [],
     page: null,
     sending: false,
+  }
+}
+
+export function compactConversationMessageState(
+  state: ClientConversationMessageState,
+  limit = conversationMessageRetentionLimit
+): ClientConversationMessageState {
+  if (state.messages.length <= limit) {
+    return state
+  }
+
+  const messages = state.messages.slice(-limit)
+  const firstMessage = messages[0]
+  const lastMessage = messages[messages.length - 1]
+
+  return {
+    ...state,
+    messages,
+    page: {
+      hasMoreAfter: state.page?.hasMoreAfter ?? false,
+      hasMoreBefore: true,
+      limit: state.page?.limit ?? messagePageLimit,
+      newestSeq: lastMessage?.seq ?? 0,
+      oldestSeq: firstMessage?.seq ?? 0,
+    },
   }
 }
 

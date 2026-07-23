@@ -199,6 +199,7 @@ type groupConversationResponse struct {
 	LastMessageSender  *conversationLastMessageSenderResponse `json:"last_message_sender"`
 	LastMessageSummary string                                 `json:"last_message_summary"`
 	LastMentionedSeq   int64                                  `json:"last_mentioned_seq"`
+	LastChoiceSeq      int64                                  `json:"last_choice_seq"`
 	LastReadSeq        int64                                  `json:"last_read_seq"`
 	MemberCount        int                                    `json:"member_count"`
 	Members            []conversationMemberResponse           `json:"members"`
@@ -220,6 +221,7 @@ type conversationListItemResponse struct {
 	LastMessageSender  *conversationLastMessageSenderResponse `json:"last_message_sender"`
 	LastMessageSummary string                                 `json:"last_message_summary"`
 	LastMentionedSeq   int64                                  `json:"last_mentioned_seq"`
+	LastChoiceSeq      int64                                  `json:"last_choice_seq"`
 	LastReadSeq        int64                                  `json:"last_read_seq"`
 	MemberCount        int                                    `json:"member_count"`
 	Members            []conversationMemberResponse           `json:"members"`
@@ -375,6 +377,7 @@ func newConversationListItemResponse(conversation store.Conversation, currentUse
 	name, avatar := conversation.Name, conversation.Avatar
 	lastReadSeq := currentMemberLastReadSeq(currentUserID, members)
 	lastMentionedSeq := currentMemberLastMentionedSeq(currentUserID, members)
+	lastChoiceSeq := currentMemberLastChoiceSeq(currentUserID, members)
 	if conversation.Kind == store.ConversationKindDirect {
 		for _, member := range members {
 			if member.MemberID == currentUserID {
@@ -400,7 +403,7 @@ func newConversationListItemResponse(conversation store.Conversation, currentUse
 		Avatar: avatar, CreatedAt: conversation.CreatedAt, ID: conversation.ID,
 		LastMessageAt: conversation.LastMessageAt, LastMessageID: conversation.LastMessageID,
 		LastMessageSeq: conversation.LastMessageSeq, LastMessageSummary: conversation.LastMessageSummary,
-		LastMentionedSeq: lastMentionedSeq, LastReadSeq: lastReadSeq,
+		LastMentionedSeq: lastMentionedSeq, LastChoiceSeq: lastChoiceSeq, LastReadSeq: lastReadSeq,
 		MemberCount: conversationListMemberCount(conversation.Kind, members),
 		Members:     newConversationMemberResponses(members, users, apps), Name: name, Type: conversation.Kind,
 		UnreadCount: unreadCount(conversation.LastMessageSeq, lastReadSeq), Visibility: conversation.Visibility,
@@ -420,6 +423,15 @@ func currentMemberLastMentionedSeq(currentUserID string, members []store.Convers
 	for _, member := range members {
 		if member.MemberType == store.ConversationMemberTypeUser && member.MemberID == currentUserID {
 			return member.LastMentionedSeq
+		}
+	}
+	return 0
+}
+
+func currentMemberLastChoiceSeq(currentUserID string, members []store.ConversationMember) int64 {
+	for _, member := range members {
+		if member.MemberType == store.ConversationMemberTypeUser && member.MemberID == currentUserID {
+			return member.LastChoiceSeq
 		}
 	}
 	return 0

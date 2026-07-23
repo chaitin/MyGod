@@ -95,6 +95,7 @@ type Item struct {
 	LastMessageSender  *LastMessageSender
 	LastMessageSummary string
 	LastMentionedSeq   int64
+	LastChoiceSeq      int64
 	LastReadSeq        int64
 	MemberCount        int
 	Members            []Member
@@ -220,6 +221,7 @@ type Group struct {
 	LastMessageSender  *LastMessageSender
 	LastMessageSummary string
 	LastMentionedSeq   int64
+	LastChoiceSeq      int64
 	LastReadSeq        int64
 	MemberCount        int
 	Members            []Member

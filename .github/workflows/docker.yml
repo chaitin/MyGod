@@ -84,10 +84,13 @@ jobs:
         include:
           - image: server
             dockerfile: server/Dockerfile
+            build_args: ""
           - image: assistant
             dockerfile: assistant/Dockerfile
+            build_args: ""
           - image: caddy
             dockerfile: deploy/caddy/Dockerfile
+            build_args: CLIENT_BUILD_COMMIT=${{ github.sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -121,6 +124,7 @@ jobs:
         with:
           context: .
           file: ${{ matrix.dockerfile }}
+          build-args: ${{ matrix.build_args }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter } from "react-router"
 import { beforeEach, describe, expect, it, vi } from "vitest"
@@ -85,6 +91,27 @@ describe("conversation image copy", () => {
     })
     expect(mocks.toastSuccess).not.toHaveBeenCalled()
   })
+
+  it("copies an image from the hover more menu", async () => {
+    const user = userEvent.setup()
+    mocks.copyTemporaryImageToClipboard.mockResolvedValue(undefined)
+    renderImageConversation()
+
+    const image = await screen.findByRole("button", { name: "预览图片" })
+    const messageRow = image.closest<HTMLElement>(
+      "[data-conversation-message-id]"
+    )
+    expect(messageRow).not.toBeNull()
+    await user.click(
+      within(messageRow!).getByRole("button", { name: "更多操作" })
+    )
+    await user.click(screen.getByRole("menuitem", { name: "复制" }))
+
+    await waitFor(() => {
+      expect(mocks.copyTemporaryImageToClipboard).toHaveBeenCalledWith("file-1")
+      expect(mocks.toastSuccess).toHaveBeenCalledWith("图片已复制")
+    })
+  })
 })
 
 function renderImageConversation() {
@@ -163,6 +190,7 @@ function createConversation(): ClientConversation {
     lastMessageSeq: 1,
     lastMessageSender: null,
     lastMessageSummary: "[图片]",
+    lastChoiceSeq: 0,
     lastMentionedSeq: 0,
     lastReadSeq: 1,
     memberCount: 2,

@@ -436,6 +436,19 @@ definitions:
       message:
         $ref: '#/definitions/client.messageResponse'
     type: object
+  client.choiceResponseResponse:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      option_ids:
+        items:
+          type: string
+        type: array
+      user_id:
+        type: string
+    type: object
   client.clientAppCredentialResponse:
     properties:
       app:
@@ -593,6 +606,9 @@ definitions:
       id:
         example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
         type: string
+      last_choice_seq:
+        example: 0
+        type: integer
       last_mentioned_seq:
         example: 0
         type: integer
@@ -959,6 +975,9 @@ definitions:
       id:
         example: 7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4
         type: string
+      last_choice_seq:
+        example: 0
+        type: integer
       last_mentioned_seq:
         example: 0
         type: integer
@@ -1034,6 +1053,22 @@ definitions:
         type: string
       message:
         $ref: '#/definitions/client.messageResponse'
+    type: object
+  client.listChoiceSnapshotsRequest:
+    properties:
+      message_ids:
+        items:
+          type: string
+        type: array
+    type: object
+  client.listChoiceSnapshotsResponse:
+    properties:
+      conversation_id:
+        type: string
+      snapshots:
+        items:
+          $ref: '#/definitions/client.messageChoiceSnapshotResponse'
+        type: array
     type: object
   client.listClientAppsResponse:
     properties:
@@ -1154,6 +1189,35 @@ definitions:
         example: 0
         type: integer
     type: object
+  client.messageChoiceOptionStateResponse:
+    properties:
+      id:
+        type: string
+      response_count:
+        type: integer
+    type: object
+  client.messageChoiceSnapshotResponse:
+    properties:
+      choice:
+        $ref: '#/definitions/client.messageChoiceStateResponse'
+      message_id:
+        type: string
+      status:
+        type: string
+    type: object
+  client.messageChoiceStateResponse:
+    properties:
+      my_option_ids:
+        items:
+          type: string
+        type: array
+      options:
+        items:
+          $ref: '#/definitions/client.messageChoiceOptionStateResponse'
+        type: array
+      response_count:
+        type: integer
+    type: object
   client.messageDelegatedByResponse:
     properties:
       id:
@@ -1227,6 +1291,8 @@ definitions:
     properties:
       body:
         type: object
+      choice:
+        $ref: '#/definitions/client.messageChoiceStateResponse'
       client_message_id:
         example: 9c08f2dd-0af6-4e99-b486-2f0c841822be
         type: string
@@ -1522,6 +1588,26 @@ definitions:
         items:
           $ref: '#/definitions/client.messageReactionResponse'
         type: array
+    type: object
+  client.submitChoiceResponseRequest:
+    properties:
+      option_ids:
+        items:
+          type: string
+        type: array
+    type: object
+  client.submitChoiceResponseResponse:
+    properties:
+      choice:
+        $ref: '#/definitions/client.messageChoiceStateResponse'
+      conversation_id:
+        type: string
+      created:
+        type: boolean
+      message_id:
+        type: string
+      response:
+        $ref: '#/definitions/client.choiceResponseResponse'
     type: object
   client.successEnvelope:
     properties:
@@ -3838,6 +3924,72 @@ paths:
       summary: 发送消息
       tags:
       - 客户端消息
+  /api/client/conversations/{conversation_id}/messages/{message_id}/choice-response:
+    put:
+      consumes:
+      - application/json
+      description: 当前用户为一条可见且未撤回的 choice 消息提交一次单选或多选答案；重复提交相同答案按幂等请求处理。
+      parameters:
+      - description: 会话 ID
+        in: path
+        name: conversation_id
+        required: true
+        type: string
+      - description: 选择消息 ID
+        in: path
+        name: message_id
+        required: true
+        type: string
+      - description: 所选选项
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/client.submitChoiceResponseRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.submitChoiceResponseResponse'
+              type: object
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.submitChoiceResponseResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/client.errorEnvelope'
+      summary: 回复选择消息
+      tags:
+      - 客户端消息
   /api/client/conversations/{conversation_id}/messages/{message_id}/reactions:
     put:
       consumes:
@@ -4004,6 +4156,38 @@ paths:
           schema:
             $ref: '#/definitions/client.errorEnvelope'
       summary: 撤回会话消息
+      tags:
+      - 客户端消息
+  /api/client/conversations/{conversation_id}/messages/choices/query:
+    post:
+      consumes:
+      - application/json
+      description: 返回当前用户视角下至多 100 条 choice 消息的聚合结果和本人答案，用于客户端断线恢复。
+      parameters:
+      - description: 会话 ID
+        in: path
+        name: conversation_id
+        required: true
+        type: string
+      - description: 选择消息 ID 列表
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/client.listChoiceSnapshotsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/client.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/client.listChoiceSnapshotsResponse'
+              type: object
+      summary: 批量查询选择消息状态
       tags:
       - 客户端消息
   /api/client/conversations/{conversation_id}/messages/files:

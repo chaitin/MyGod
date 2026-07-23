@@ -17,6 +17,7 @@ describe("ConversationSidebar", () => {
           type: "user",
         },
         lastMessageSummary: "我发送的消息",
+        lastChoiceSeq: 0,
         name: "我的会话",
       }),
       createAppConversation({
@@ -28,6 +29,7 @@ describe("ConversationSidebar", () => {
           type: "user",
         },
         lastMessageSummary: "其他人的消息",
+        lastChoiceSeq: 0,
         name: "用户私聊",
         type: "direct",
       }),
@@ -40,6 +42,7 @@ describe("ConversationSidebar", () => {
           type: "app",
         },
         lastMessageSummary: "应用消息",
+        lastChoiceSeq: 0,
         name: "应用会话",
       }),
       createAppConversation({
@@ -51,6 +54,7 @@ describe("ConversationSidebar", () => {
           type: "user",
         },
         lastMessageSummary: "群聊消息",
+        lastChoiceSeq: 0,
         name: "用户群聊",
         type: "group",
       }),
@@ -63,6 +67,7 @@ describe("ConversationSidebar", () => {
           type: "system",
         },
         lastMessageSummary: "张三加入群聊",
+        lastChoiceSeq: 0,
         name: "系统会话",
         type: "group",
       }),
@@ -103,6 +108,7 @@ describe("ConversationSidebar", () => {
       },
       lastMessageSeq: 2,
       lastMessageSummary: "请看一下",
+      lastChoiceSeq: 0,
       name: "有提醒",
     })
     const drafted = createAppConversation({
@@ -114,6 +120,7 @@ describe("ConversationSidebar", () => {
         type: "user",
       },
       lastMessageSummary: "旧消息",
+      lastChoiceSeq: 0,
       name: "有草稿",
     })
     render(
@@ -150,6 +157,52 @@ describe("ConversationSidebar", () => {
     expect(screen.getByText("[草稿]")).toBeInTheDocument()
     expect(screen.getByText("尚未发送的内容")).toBeInTheDocument()
     expect(screen.queryByText("不会覆盖 @ 提醒")).not.toBeInTheDocument()
+  })
+
+  it("highlights the newest unread choice or mention without repeating the choice prefix", () => {
+    const choice = createAppConversation({
+      id: "choice",
+      lastChoiceSeq: 5,
+      lastMentionedSeq: 4,
+      lastMessageSeq: 5,
+      lastMessageSender: {
+        id: "app-1",
+        name: "茉莉",
+        nickname: "",
+        type: "app",
+      },
+      lastMessageSummary: "[选择] 请选择项目",
+      name: "等待选择",
+      type: "group",
+    })
+    const mention = createAppConversation({
+      id: "mention",
+      lastChoiceSeq: 4,
+      lastMentionedSeq: 5,
+      lastMessageSeq: 5,
+      lastMessageSummary: "请确认",
+      name: "等待确认",
+    })
+    render(
+      <SidebarProvider>
+        <ConversationSidebar
+          activeConversationId=""
+          appsById={new Map()}
+          contactsById={new Map()}
+          conversations={[choice, mention]}
+          currentUser={createCurrentUser()}
+          drafts={{}}
+          onCreateGroup={vi.fn()}
+          onSelectConversation={vi.fn()}
+          onSetConversationPinned={vi.fn()}
+        />
+      </SidebarProvider>
+    )
+
+    expect(screen.getByText("[选择]")).toBeInTheDocument()
+    expect(screen.getByText("茉莉：请选择项目")).toBeInTheDocument()
+    expect(screen.getAllByText("[有人 @ 我]")).toHaveLength(1)
+    expect(screen.queryByText("[选择] 请选择项目")).not.toBeInTheDocument()
   })
 
   it("pins an ordinary conversation from its context menu", async () => {
@@ -298,6 +351,7 @@ function createAppConversation(
     lastMessageSeq: 0,
     lastMessageSender: null,
     lastMessageSummary: "暂无消息",
+    lastChoiceSeq: 0,
     lastMentionedSeq: 0,
     lastReadSeq: 0,
     memberCount: 2,

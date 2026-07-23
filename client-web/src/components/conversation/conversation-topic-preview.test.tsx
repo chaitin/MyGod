@@ -106,6 +106,7 @@ function createConversation(): ClientConversation {
     lastMessageSeq: 1,
     lastMessageSender: null,
     lastMessageSummary: "我们讨论一下",
+    lastChoiceSeq: 0,
     lastMentionedSeq: 0,
     lastReadSeq: 1,
     memberCount: 2,

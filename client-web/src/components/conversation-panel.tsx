@@ -58,12 +58,18 @@ type ConversationPanelProps = {
   onForwardMessage?: (message: ConversationPanelMessage) => void
   onForwardSelectedMessages?: (mode: ConversationPanelForwardMode) => void
   onCancelReply: () => void
+  onCompactMessages?: () => void
+  onRegisterMessageView?: (conversationId: string) => () => void
   onReplyToMessage: (message: ConversationPanelMessage) => void
   onRevokeMessage: (message: ConversationPanelMessage) => void
   onSetMessageReaction?: (
     message: ConversationPanelMessage,
     text: string,
     reacted: boolean
+  ) => Promise<void>
+  onRespondToChoice?: (
+    message: ConversationPanelMessage,
+    optionIds: string[]
   ) => Promise<void>
   onSendFile: (file: File) => Promise<ClientMessage | null>
   onSendImage: (image: File) => Promise<ClientMessage | null>
@@ -103,9 +109,12 @@ export function ConversationPanel({
   onForwardMessage,
   onForwardSelectedMessages,
   onCancelReply,
+  onCompactMessages,
+  onRegisterMessageView,
   onReplyToMessage,
   onRevokeMessage,
   onSetMessageReaction,
+  onRespondToChoice,
   onSendFile,
   onSendImage,
   onSendVoice,
@@ -288,6 +297,8 @@ export function ConversationPanel({
             mentionLabelResolver={mentionLabelResolver}
             messageSelection={messageSelection}
             messages={messages}
+            onCompactMessages={onCompactMessages}
+            onRegisterMessageView={onRegisterMessageView}
             onForwardMessage={onForwardMessage}
             onCreateTopic={onCreateTopic}
             onLoadBeforeMessages={onLoadBeforeMessages}
@@ -298,6 +309,9 @@ export function ConversationPanel({
             onRevokeMessage={readOnlyReason ? undefined : onRevokeMessage}
             onSetMessageReaction={
               readOnlyReason ? undefined : onSetMessageReaction
+            }
+            onRespondToChoice={
+              conversationReadOnly ? undefined : onRespondToChoice
             }
             onToggleMessageSelection={onToggleMessageSelection}
           />

@@ -1,3 +1,4 @@
+import * as React from "react"
 import { act, render, screen } from "@testing-library/react"
 import { MemoryRouter } from "react-router"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -197,6 +198,151 @@ describe("ClientDataProvider", () => {
     expect(screen.getByTestId("reaction-state")).toHaveTextContent("4:🎉")
     expect(snapshotRequestCount).toBe(2)
   })
+
+  it("does not cache message bodies for an inactive unloaded conversation", async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === "/api/client/me") {
+        return Promise.resolve(jsonResponse(createCurrentUserResponse()))
+      }
+      if (url === "/api/client/contacts") {
+        return Promise.resolve(jsonResponse(createContactsResponse()))
+      }
+      if (url === "/api/client/conversations") {
+        return Promise.resolve(
+          jsonResponse(
+            createConversationsResponse([
+              createConversationResponse("conversation-1"),
+            ])
+          )
+        )
+      }
+      if (url === "/api/client/projects?limit=100") {
+        return Promise.resolve(jsonResponse(createProjectsResponse()))
+      }
+      return Promise.reject(new Error(`unexpected request: ${url}`))
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(
+      <MemoryRouter>
+        <ClientDataProvider>
+          <IncomingMessageCacheProbe />
+        </ClientDataProvider>
+      </MemoryRouter>
+    )
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000)
+    })
+
+    act(() => screen.getByRole("button", { name: "receive inactive" }).click())
+    expect(screen.getByTestId("cached-message-count")).toHaveTextContent("0")
+
+    act(() => screen.getByRole("button", { name: "receive active" }).click())
+    expect(screen.getByTestId("cached-message-count")).toHaveTextContent("1")
+  })
+
+  it("updates a parent topic preview without caching an unopened topic", async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === "/api/client/me") {
+        return Promise.resolve(jsonResponse(createCurrentUserResponse()))
+      }
+      if (url === "/api/client/contacts") {
+        return Promise.resolve(jsonResponse(createContactsResponse()))
+      }
+      if (url === "/api/client/conversations") {
+        return Promise.resolve(
+          jsonResponse(
+            createConversationsResponse([
+              createConversationResponse("parent-1"),
+              createTopicConversationResponse(),
+            ])
+          )
+        )
+      }
+      if (url === "/api/client/projects?limit=100") {
+        return Promise.resolve(jsonResponse(createProjectsResponse()))
+      }
+      return Promise.reject(new Error(`unexpected request: ${url}`))
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(
+      <MemoryRouter>
+        <ClientDataProvider>
+          <TopicPreviewCacheProbe />
+        </ClientDataProvider>
+      </MemoryRouter>
+    )
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000)
+    })
+
+    act(() => screen.getByRole("button", { name: "seed topic" }).click())
+    act(() =>
+      screen.getByRole("button", { name: "receive topic reply" }).click()
+    )
+
+    expect(screen.getByTestId("topic-preview-reply-count")).toHaveTextContent(
+      "1"
+    )
+    expect(screen.getByTestId("topic-cache-count")).toHaveTextContent("0")
+  })
+
+  it("enforces the retention limit after a message view is released", async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === "/api/client/me") {
+        return Promise.resolve(jsonResponse(createCurrentUserResponse()))
+      }
+      if (url === "/api/client/contacts") {
+        return Promise.resolve(jsonResponse(createContactsResponse()))
+      }
+      if (url === "/api/client/conversations") {
+        return Promise.resolve(
+          jsonResponse(
+            createConversationsResponse([
+              createConversationResponse("conversation-1"),
+            ])
+          )
+        )
+      }
+      if (url === "/api/client/projects?limit=100") {
+        return Promise.resolve(jsonResponse(createProjectsResponse()))
+      }
+      return Promise.reject(new Error(`unexpected request: ${url}`))
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    render(
+      <MemoryRouter>
+        <ClientDataProvider>
+          <MessageRetentionProbe />
+        </ClientDataProvider>
+      </MemoryRouter>
+    )
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000)
+    })
+
+    act(() => screen.getByRole("button", { name: "retain messages" }).click())
+    act(() => screen.getByRole("button", { name: "add 301 messages" }).click())
+    expect(screen.getByTestId("retained-message-count")).toHaveTextContent(
+      "301"
+    )
+
+    act(() => screen.getByRole("button", { name: "release messages" }).click())
+    act(() => screen.getByRole("button", { name: "add final message" }).click())
+
+    expect(screen.getByTestId("retained-message-count")).toHaveTextContent(
+      "300"
+    )
+    expect(screen.getByTestId("oldest-retained-seq")).toHaveTextContent("3")
+  })
 })
 
 function ConversationCount() {
@@ -277,6 +423,168 @@ function ReactionSyncProbe() {
       </div>
     </>
   )
+}
+
+function IncomingMessageCacheProbe() {
+  const { getConversationMessageState, handleIncomingConversationMessage } =
+    useClientData()
+  const messageCount =
+    getConversationMessageState("conversation-1").messages.length
+
+  function receiveMessage(id: string, activeConversationId: string) {
+    handleIncomingConversationMessage(
+      {
+        body: { content: id, type: "text" },
+        clientMessageId: `client-${id}`,
+        conversationId: "conversation-1",
+        createdAt: "2026-07-23T00:00:00Z",
+        id,
+        reactionVersion: 0,
+        reactions: [],
+        sender: { id: "user-2", type: "user" },
+        seq: id === "message-1" ? 1 : 2,
+      },
+      { activeConversationId, visible: true }
+    )
+  }
+
+  return (
+    <>
+      <button
+        aria-label="receive inactive"
+        onClick={() => receiveMessage("message-1", "conversation-2")}
+        type="button"
+      />
+      <button
+        aria-label="receive active"
+        onClick={() => receiveMessage("message-2", "conversation-1")}
+        type="button"
+      />
+      <div data-testid="cached-message-count">{messageCount}</div>
+    </>
+  )
+}
+
+function TopicPreviewCacheProbe() {
+  const {
+    getConversationMessageState,
+    handleIncomingConversationMessage,
+    mergeIncomingConversationMessage,
+  } = useClientData()
+  const parentState = getConversationMessageState("parent-1")
+  const topicState = getConversationMessageState("topic-1")
+
+  return (
+    <>
+      <button
+        aria-label="seed topic"
+        onClick={() =>
+          mergeIncomingConversationMessage(
+            {
+              body: { content: "source", type: "text" },
+              clientMessageId: "client-source",
+              conversationId: "parent-1",
+              createdAt: "2026-07-23T00:00:00Z",
+              id: "message-1",
+              reactionVersion: 0,
+              reactions: [],
+              sender: { id: "user-1", type: "user" },
+              seq: 1,
+              topic: {
+                archived: false,
+                conversationId: "topic-1",
+                recentReplies: [],
+              },
+            },
+            { markLoaded: true, updateList: false }
+          )
+        }
+        type="button"
+      />
+      <button
+        aria-label="receive topic reply"
+        onClick={() =>
+          handleIncomingConversationMessage(
+            createProbeMessage("topic-reply-1", "topic-1", 1),
+            { activeConversationId: "parent-1", visible: true }
+          )
+        }
+        type="button"
+      />
+      <div data-testid="topic-preview-reply-count">
+        {parentState.messages[0]?.topic?.recentReplies.length ?? 0}
+      </div>
+      <div data-testid="topic-cache-count">{topicState.messages.length}</div>
+    </>
+  )
+}
+
+function MessageRetentionProbe() {
+  const {
+    getConversationMessageState,
+    mergeIncomingConversationMessage,
+    registerConversationMessageView,
+  } = useClientData()
+  const releaseViewRef = React.useRef<(() => void) | null>(null)
+  const state = getConversationMessageState("conversation-1")
+
+  function mergeMessage(seq: number) {
+    mergeIncomingConversationMessage(
+      createProbeMessage(`message-${seq}`, "conversation-1", seq),
+      { markLoaded: true, updateList: false }
+    )
+  }
+
+  return (
+    <>
+      <button
+        aria-label="retain messages"
+        onClick={() => {
+          releaseViewRef.current ??=
+            registerConversationMessageView("conversation-1")
+        }}
+        type="button"
+      />
+      <button
+        aria-label="add 301 messages"
+        onClick={() => {
+          for (let seq = 1; seq <= 301; seq += 1) {
+            mergeMessage(seq)
+          }
+        }}
+        type="button"
+      />
+      <button
+        aria-label="release messages"
+        onClick={() => {
+          releaseViewRef.current?.()
+          releaseViewRef.current = null
+        }}
+        type="button"
+      />
+      <button
+        aria-label="add final message"
+        onClick={() => mergeMessage(302)}
+        type="button"
+      />
+      <div data-testid="retained-message-count">{state.messages.length}</div>
+      <div data-testid="oldest-retained-seq">{state.messages[0]?.seq ?? 0}</div>
+    </>
+  )
+}
+
+function createProbeMessage(id: string, conversationId: string, seq: number) {
+  return {
+    body: { content: id, type: "text" as const },
+    clientMessageId: `client-${id}`,
+    conversationId,
+    createdAt: `2026-07-23T00:00:${String(seq % 60).padStart(2, "0")}Z`,
+    id,
+    reactionVersion: 0,
+    reactions: [],
+    sender: { id: "user-2", type: "user" as const },
+    seq,
+  }
 }
 
 function jsonResponse(body: unknown) {

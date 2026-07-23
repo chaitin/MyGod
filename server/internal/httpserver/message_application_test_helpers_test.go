@@ -40,3 +40,8 @@ func (applicationMessageNotificationRecorder) PublishMessageUpdated(context.Cont
 
 func (applicationMessageNotificationRecorder) PublishMembersMentioned(context.Context, []string, string, int64) {
 }
+
+func (applicationMessageNotificationRecorder) PublishMembersChoiceReceived(context.Context, []string, string, int64) {
+}
+func (applicationMessageNotificationRecorder) PublishMessageChoiceUpdated(context.Context, []string, messageapp.ChoiceUpdatedEvent) {
+}

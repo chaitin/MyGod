@@ -21,6 +21,7 @@ func (s *Service) CreateAsApp(ctx context.Context, cmd CreateAsAppCommand) (Crea
 	var message store.Message
 	memberUserIDs := []string{}
 	mentionedUserIDs := []string{}
+	choiceUserIDs := []string{}
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if _, err := appapp.LockUsableApp(tx, cmd.AppID); err != nil {
@@ -80,6 +81,10 @@ func (s *Service) CreateAsApp(ctx context.Context, cmd CreateAsAppCommand) (Crea
 		if err != nil {
 			return err
 		}
+		choiceUserIDs, err = updateConversationChoiceSeq(tx, access, message.Seq, finalBody, memberUserIDs, now)
+		if err != nil {
+			return err
+		}
 		created = true
 		return nil
 	})
@@ -90,6 +95,7 @@ func (s *Service) CreateAsApp(ctx context.Context, cmd CreateAsAppCommand) (Crea
 	if created && s.notifications != nil {
 		s.notifications.PublishSharedMessageCreated(ctx, memberUserIDs, converted)
 		s.notifications.PublishMembersMentioned(ctx, mentionedUserIDs, message.ConversationID, message.Seq)
+		s.notifications.PublishMembersChoiceReceived(ctx, choiceUserIDs, message.ConversationID, message.Seq)
 	}
 	return CreateResult{Created: created, Message: converted}, nil
 }
@@ -102,6 +108,7 @@ func (s *Service) CreateDelegated(ctx context.Context, cmd CreateDelegatedComman
 	var message store.Message
 	memberUserIDs := []string{}
 	mentionedUserIDs := []string{}
+	choiceUserIDs := []string{}
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		access, err := loadUserConversationAccess(tx, cmd.ConversationID, cmd.AccountID, true)
@@ -155,6 +162,10 @@ func (s *Service) CreateDelegated(ctx context.Context, cmd CreateDelegatedComman
 		if err != nil {
 			return err
 		}
+		choiceUserIDs, err = updateConversationChoiceSeq(tx, access.Context, message.Seq, finalBody, memberUserIDs, now)
+		if err != nil {
+			return err
+		}
 		created = true
 		return nil
 	})
@@ -165,6 +176,7 @@ func (s *Service) CreateDelegated(ctx context.Context, cmd CreateDelegatedComman
 	if created && s.notifications != nil {
 		s.notifications.PublishSharedMessageCreated(ctx, memberUserIDs, converted)
 		s.notifications.PublishMembersMentioned(ctx, mentionedUserIDs, message.ConversationID, message.Seq)
+		s.notifications.PublishMembersChoiceReceived(ctx, choiceUserIDs, message.ConversationID, message.Seq)
 	}
 	return CreateResult{Created: created, Message: converted}, nil
 }

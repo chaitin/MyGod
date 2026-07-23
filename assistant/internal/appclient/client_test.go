@@ -341,6 +341,82 @@ func TestHandleParsedServerMessageIgnoresGroupMessageWithoutDirectAppMention(t *
 	}
 }
 
+func TestChoiceResponseCreatedContinuesTheOriginalSessionAsTrustedUserTrigger(t *testing.T) {
+	choiceBody := json.RawMessage(`{"type":"choice","content_type":"markdown","content":"**请选择项目**","selection":"multiple","options":[{"id":"project-a","label":"项目 A"},{"id":"daily","label":"日常待办"}]}`)
+	payload, err := json.Marshal(choiceResponseCreatedPayload{
+		ChoiceMessage: messagePayload{
+			Body: choiceBody, ID: "choice-message-1", Seq: 8, Summary: "[选择] 请选择项目",
+		},
+		Conversation: conversationPayload{ID: "conversation-1", Name: "茉莉", Type: "app"},
+		Response: struct {
+			CreatedAt time.Time `json:"created_at"`
+			ID        string    `json:"id"`
+			OptionIDs []string  `json:"option_ids"`
+		}{
+			CreatedAt: time.Date(2026, 7, 23, 10, 1, 0, 0, time.UTC),
+			ID:        "11111111-1111-1111-1111-111111111111", OptionIDs: []string{"daily", "project-a"},
+		},
+		Sender: senderPayload{Email: "alice@example.com", ID: "user-1", Name: "Alice", Type: "user"},
+	})
+	if err != nil {
+		t.Fatalf("marshal choice response event: %v", err)
+	}
+	var historyRequest appListConversationMessagesRequestPayload
+	requester := appRequestFunc(func(_ context.Context, method string, request any) (json.RawMessage, error) {
+		if method != methodConversationMessagesList {
+			t.Fatalf("unexpected request method %q", method)
+		}
+		raw, marshalErr := json.Marshal(request)
+		if marshalErr != nil {
+			return nil, marshalErr
+		}
+		if unmarshalErr := json.Unmarshal(raw, &historyRequest); unmarshalErr != nil {
+			return nil, unmarshalErr
+		}
+		return json.Marshal(appListConversationMessagesResponsePayload{
+			Messages: []historyMessagePayload{{
+				Body: choiceBody, CreatedAt: time.Date(2026, 7, 23, 10, 0, 0, 0, time.UTC),
+				ID: "choice-message-1", Seq: 8,
+				Sender:  senderPayload{ID: "assistant-app", Name: "茉莉", Type: "app"},
+				Summary: "[选择] 请选择项目",
+			}},
+		})
+	})
+	runner := &capturingAgentRunner{}
+	handled := handleParsedServerMessage(
+		context.Background(),
+		envelope{V: protocolVersion, Kind: kindEvent, Event: eventChoiceResponseCreated, Payload: payload},
+		"assistant-app", requester,
+		replyAgentFunc(func(context.Context, agent.Request, agent.OutputSink) error { return nil }),
+		runner,
+		func(context.Context, envelope) error { return nil },
+	)
+	if !handled || !runner.started {
+		t.Fatalf("handled = %t, runner started = %t", handled, runner.started)
+	}
+	if runner.key != "conversation-1" || runner.prepared.EventConversationID != "conversation-1" || runner.prepared.MessageSeq != 0 {
+		t.Fatalf("runner key/prepared = %q/%#v", runner.key, runner.prepared)
+	}
+	if runner.prepared.Authorization.Authorization.ActorID != "user-1" ||
+		runner.prepared.Authorization.Authorization.TriggerMessageID != "11111111-1111-1111-1111-111111111111" ||
+		!strings.HasPrefix(runner.prepared.Authorization.Ref, "auth_choice_") {
+		t.Fatalf("choice authorization = %#v", runner.prepared.Authorization)
+	}
+	for _, snippet := range []string{"用户已回答", "项目 A", "日常待办", "project-a", "daily"} {
+		if !strings.Contains(runner.prepared.Request.Content, snippet) {
+			t.Fatalf("request content = %q, want %q", runner.prepared.Request.Content, snippet)
+		}
+	}
+	if runner.prepared.Request.MessageID != "11111111-1111-1111-1111-111111111111" ||
+		runner.prepared.Scope.CurrentAppID != "assistant-app" {
+		t.Fatalf("request/scope = %#v / %#v", runner.prepared.Request, runner.prepared.Scope)
+	}
+	if historyRequest.BeforeOrEqualSeq != 8 || historyRequest.RunAs == nil ||
+		historyRequest.RunAs.TriggerMessageID != "11111111-1111-1111-1111-111111111111" {
+		t.Fatalf("history request = %#v", historyRequest)
+	}
+}
+
 func TestHandleParsedServerMessageIgnoresTopicMessageWithoutDirectAppMention(t *testing.T) {
 	appID := "00000000-0000-0000-0000-000000000001"
 	body, err := json.Marshal(messageBody{Type: "text", Content: "我们先讨论一下实现方案"})
@@ -1484,6 +1560,19 @@ func preparedTextRun(conversationID string, messageID string, seq int64, content
 type sentMessages struct {
 	mu       sync.Mutex
 	messages []envelope
+}
+
+type capturingAgentRunner struct {
+	key      string
+	prepared preparedAgentRun
+	started  bool
+}
+
+func (r *capturingAgentRunner) Start(_ context.Context, key string, _ agent.OutputSink, _ replyAgent, prepared preparedAgentRun) bool {
+	r.key = key
+	r.prepared = prepared
+	r.started = true
+	return true
 }
 
 func (s *sentMessages) write(_ context.Context, message envelope) error {

@@ -5,10 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { ContactDirectorySidebar } from "@/components/contacts/contact-directory-sidebar"
 import { SidebarProvider } from "@/components/ui/sidebar"
-import type {
-  ContactApp,
-  ContactUser,
-} from "@/lib/client-data-api"
+import type { ContactApp, ContactUser } from "@/lib/client-data-api"
 import type { ClientAppCredentials } from "@/lib/client-api/apps"
 
 const appApiMocks = vi.hoisted(() => ({
@@ -193,7 +190,7 @@ describe("ContactDirectorySidebar", () => {
     resolveCreate(createCredentials())
 
     const credentialsDialog = await screen.findByRole("dialog", {
-      name: "应用接入信息",
+      name: "开发指南",
     })
     expect(within(credentialsDialog).getByLabelText("连接密钥")).toHaveValue(
       "app-secret"
@@ -251,7 +248,7 @@ describe("ContactDirectorySidebar", () => {
     expect(dialog).toBeInTheDocument()
     expect(submitButton).toBeEnabled()
     expect(
-      screen.queryByRole("dialog", { name: "应用接入信息" })
+      screen.queryByRole("dialog", { name: "开发指南" })
     ).not.toBeInTheDocument()
   })
 

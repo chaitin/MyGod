@@ -108,9 +108,23 @@ export async function getClientAppCredentials(
   return requestClientAppCredentials(
     `/api/client/apps/${encodeURIComponent(appId)}`,
     "GET",
-    "加载应用接入信息失败",
+    "加载开发指南失败",
     fetcher
   )
+}
+
+export async function getClientAppProfile(
+  appId: string,
+  fetcher: ClientDataFetch = fetch
+) {
+  const credentials = await requestClientAppCredentials(
+    `/api/client/apps/${encodeURIComponent(appId)}`,
+    "GET",
+    "加载应用资料失败",
+    fetcher
+  )
+
+  return credentials.app
 }
 
 export async function regenerateClientAppSecret(

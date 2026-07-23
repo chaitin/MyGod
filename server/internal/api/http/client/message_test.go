@@ -43,6 +43,40 @@ func TestMessageAPIListsMessages(t *testing.T) {
 	}
 }
 
+func TestMessageAPIListsMessagesEncodesEmptyChoiceOptionIDsAsArray(t *testing.T) {
+	conversationID := uuid.NewString()
+	stub := &messageServiceStub{listResult: messageapp.ListResult{
+		Messages: []messageapp.Message{{
+			ID: "message-id", ConversationID: conversationID,
+			Body: json.RawMessage(`{"type":"choice","content_type":"text","content":"请选择","selection":"single","options":[{"id":"yes","label":"是"},{"id":"no","label":"否"}]}`),
+			Choice: &messageapp.ChoiceState{
+				Options: []messageapp.ChoiceOptionState{{ID: "yes"}, {ID: "no"}},
+			},
+			Sender: messageapp.Identity{ID: "app-id", Type: "app"}, Seq: 1,
+		}},
+		Page: messageapp.Page{Limit: 20, OldestSeq: 1, NewestSeq: 1},
+	}}
+	api := NewMessageAPI(stub, nil)
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/conversations/"+conversationID+"/messages", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetPath("/conversations/:conversation_id/messages")
+	c.SetParamNames("conversation_id")
+	c.SetParamValues(conversationID)
+	c.Set(currentAccountKey, account.Account{ID: "account-id"})
+
+	if err := api.list(c); err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte(`"my_option_ids":[]`)) {
+		t.Fatalf("expected empty choice option ids to be encoded as an array, body = %s", rec.Body.String())
+	}
+}
+
 func TestMessageAPICreatesMessage(t *testing.T) {
 	conversationID := uuid.NewString()
 	createdAt := time.Date(2026, 7, 15, 14, 0, 0, 0, time.UTC)
@@ -171,6 +205,104 @@ func TestMessageAPIListsReactionSnapshots(t *testing.T) {
 	if !response.Success || len(response.Data.Snapshots) != 1 || response.Data.Snapshots[0].ReactionVersion != 4 ||
 		len(response.Data.Snapshots[0].Reactions) != 1 || !response.Data.Snapshots[0].Reactions[0].ReactedByMe ||
 		len(response.Data.Snapshots[0].Reactions[0].Users) != 2 {
+		t.Fatalf("response = %#v", response)
+	}
+}
+
+func TestMessageAPISubmitsChoiceResponse(t *testing.T) {
+	conversationID := uuid.NewString()
+	messageID := uuid.NewString()
+	responseID := uuid.NewString()
+	createdAt := time.Date(2026, 7, 23, 10, 0, 0, 0, time.UTC)
+	stub := &messageServiceStub{submitChoiceResponseResult: messageapp.SubmitChoiceResponseResult{
+		ConversationID: conversationID, MessageID: messageID, Created: true,
+		Response: messageapp.ChoiceResponse{
+			ID: responseID, UserID: "account-id", OptionIDs: []string{"a", "c"}, CreatedAt: createdAt,
+		},
+		Choice: messageapp.ChoiceState{
+			MyOptionIDs: []string{"a", "c"}, ResponseCount: 2,
+			Options: []messageapp.ChoiceOptionState{{ID: "a", ResponseCount: 2}, {ID: "b"}, {ID: "c", ResponseCount: 1}},
+		},
+	}}
+	api := NewMessageAPI(stub, nil)
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPut,
+		"/conversations/"+conversationID+"/messages/"+messageID+"/choice-response",
+		strings.NewReader(`{"option_ids":["a","c"]}`),
+	)
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetPath("/conversations/:conversation_id/messages/:message_id/choice-response")
+	c.SetParamNames("conversation_id", "message_id")
+	c.SetParamValues(conversationID, messageID)
+	c.Set(currentAccountKey, account.Account{ID: "account-id"})
+
+	if err := api.submitChoiceResponse(c); err != nil {
+		t.Fatalf("submit choice response: %v", err)
+	}
+	if rec.Code != http.StatusCreated || stub.submitChoiceResponseCommand.AccountID != "account-id" ||
+		stub.submitChoiceResponseCommand.ConversationID != conversationID || stub.submitChoiceResponseCommand.MessageID != messageID ||
+		len(stub.submitChoiceResponseCommand.OptionIDs) != 2 {
+		t.Fatalf("status = %d, command = %#v", rec.Code, stub.submitChoiceResponseCommand)
+	}
+	var response struct {
+		Success bool                         `json:"success"`
+		Data    submitChoiceResponseResponse `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !response.Success || response.Data.Response.ID != responseID || response.Data.Response.CreatedAt != createdAt ||
+		response.Data.Choice.ResponseCount != 2 || len(response.Data.Choice.MyOptionIDs) != 2 {
+		t.Fatalf("response = %#v", response)
+	}
+}
+
+func TestMessageAPIListsChoiceSnapshots(t *testing.T) {
+	conversationID := uuid.NewString()
+	messageID := uuid.NewString()
+	choice := messageapp.ChoiceState{
+		MyOptionIDs: []string{"yes"}, ResponseCount: 3,
+		Options: []messageapp.ChoiceOptionState{{ID: "yes", ResponseCount: 2}, {ID: "no", ResponseCount: 1}},
+	}
+	stub := &messageServiceStub{listChoiceSnapshotsResult: messageapp.ListChoiceSnapshotsResult{
+		ConversationID: conversationID,
+		Snapshots: []messageapp.ChoiceSnapshot{{
+			MessageID: messageID, Choice: &choice, Status: "active",
+		}},
+	}}
+	api := NewMessageAPI(stub, nil)
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost,
+		"/conversations/"+conversationID+"/messages/choices/query",
+		strings.NewReader(`{"message_ids":["`+messageID+`"]}`),
+	)
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetPath("/conversations/:conversation_id/messages/choices/query")
+	c.SetParamNames("conversation_id")
+	c.SetParamValues(conversationID)
+	c.Set(currentAccountKey, account.Account{ID: "account-id"})
+
+	if err := api.listChoiceSnapshots(c); err != nil {
+		t.Fatalf("list choice snapshots: %v", err)
+	}
+	if rec.Code != http.StatusOK || stub.listChoiceSnapshotsCommand.AccountID != "account-id" ||
+		stub.listChoiceSnapshotsCommand.ConversationID != conversationID || len(stub.listChoiceSnapshotsCommand.MessageIDs) != 1 {
+		t.Fatalf("status = %d, command = %#v", rec.Code, stub.listChoiceSnapshotsCommand)
+	}
+	var response struct {
+		Success bool                        `json:"success"`
+		Data    listChoiceSnapshotsResponse `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !response.Success || len(response.Data.Snapshots) != 1 ||
+		response.Data.Snapshots[0].Status != "active" || response.Data.Snapshots[0].Choice == nil ||
+		response.Data.Snapshots[0].Choice.ResponseCount != 3 || response.Data.Snapshots[0].Choice.MyOptionIDs[0] != "yes" {
 		t.Fatalf("response = %#v", response)
 	}
 }
@@ -353,6 +485,12 @@ type messageServiceStub struct {
 	listReactionUsersCommand     messageapp.ListReactionUsersCommand
 	listReactionUsersResult      messageapp.ListReactionUsersResult
 	listReactionUsersErr         error
+	submitChoiceResponseCommand  messageapp.SubmitChoiceResponseCommand
+	submitChoiceResponseResult   messageapp.SubmitChoiceResponseResult
+	submitChoiceResponseErr      error
+	listChoiceSnapshotsCommand   messageapp.ListChoiceSnapshotsCommand
+	listChoiceSnapshotsResult    messageapp.ListChoiceSnapshotsResult
+	listChoiceSnapshotsErr       error
 }
 
 func (s *messageServiceStub) List(_ context.Context, command messageapp.ListCommand) (messageapp.ListResult, error) {
@@ -398,4 +536,14 @@ func (s *messageServiceStub) ListReactionSnapshots(_ context.Context, command me
 func (s *messageServiceStub) ListReactionUsers(_ context.Context, command messageapp.ListReactionUsersCommand) (messageapp.ListReactionUsersResult, error) {
 	s.listReactionUsersCommand = command
 	return s.listReactionUsersResult, s.listReactionUsersErr
+}
+
+func (s *messageServiceStub) SubmitChoiceResponse(_ context.Context, command messageapp.SubmitChoiceResponseCommand) (messageapp.SubmitChoiceResponseResult, error) {
+	s.submitChoiceResponseCommand = command
+	return s.submitChoiceResponseResult, s.submitChoiceResponseErr
+}
+
+func (s *messageServiceStub) ListChoiceSnapshots(_ context.Context, command messageapp.ListChoiceSnapshotsCommand) (messageapp.ListChoiceSnapshotsResult, error) {
+	s.listChoiceSnapshotsCommand = command
+	return s.listChoiceSnapshotsResult, s.listChoiceSnapshotsErr
 }

@@ -4206,6 +4206,59 @@
                 }
             }
         },
+        "/api/client/conversations/{conversation_id}/messages/choices/query": {
+            "post": {
+                "description": "返回当前用户视角下至多 100 条 choice 消息的聚合结果和本人答案，用于客户端断线恢复。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端消息"
+                ],
+                "summary": "批量查询选择消息状态",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "会话 ID",
+                        "name": "conversation_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "选择消息 ID 列表",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.listChoiceSnapshotsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.listChoiceSnapshotsResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/api/client/conversations/{conversation_id}/messages/files": {
             "post": {
                 "description": "普通用户上传最大 200MiB 的文件并发送为会话文件消息。文件写入 temporary bucket，消息 body 保存 file_id、文件名和文件大小。",
@@ -4726,6 +4779,114 @@
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/client/conversations/{conversation_id}/messages/{message_id}/choice-response": {
+            "put": {
+                "description": "当前用户为一条可见且未撤回的 choice 消息提交一次单选或多选答案；重复提交相同答案按幂等请求处理。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "客户端消息"
+                ],
+                "summary": "回复选择消息",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "会话 ID",
+                        "name": "conversation_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "选择消息 ID",
+                        "name": "message_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "所选选项",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/client.submitChoiceResponseRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.submitChoiceResponseResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/client.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/client.submitChoiceResponseResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/client.errorEnvelope"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/client.errorEnvelope"
                         }
@@ -7905,6 +8066,26 @@
                 }
             }
         },
+        "client.choiceResponseResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "option_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "user_id": {
+                    "type": "string"
+                }
+            }
+        },
         "client.clientAppCredentialResponse": {
             "type": "object",
             "properties": {
@@ -8129,6 +8310,10 @@
                 "id": {
                     "type": "string",
                     "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
+                },
+                "last_choice_seq": {
+                    "type": "integer",
+                    "example": 0
                 },
                 "last_mentioned_seq": {
                     "type": "integer",
@@ -8662,6 +8847,10 @@
                     "type": "string",
                     "example": "7f8d8b84-6d2c-4b12-9a8a-019a7e2787d4"
                 },
+                "last_choice_seq": {
+                    "type": "integer",
+                    "example": 0
+                },
                 "last_mentioned_seq": {
                     "type": "integer",
                     "example": 0
@@ -8765,6 +8954,31 @@
                 },
                 "message": {
                     "$ref": "#/definitions/client.messageResponse"
+                }
+            }
+        },
+        "client.listChoiceSnapshotsRequest": {
+            "type": "object",
+            "properties": {
+                "message_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "client.listChoiceSnapshotsResponse": {
+            "type": "object",
+            "properties": {
+                "conversation_id": {
+                    "type": "string"
+                },
+                "snapshots": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.messageChoiceSnapshotResponse"
+                    }
                 }
             }
         },
@@ -8947,6 +9161,51 @@
                 }
             }
         },
+        "client.messageChoiceOptionStateResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "response_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "client.messageChoiceSnapshotResponse": {
+            "type": "object",
+            "properties": {
+                "choice": {
+                    "$ref": "#/definitions/client.messageChoiceStateResponse"
+                },
+                "message_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "client.messageChoiceStateResponse": {
+            "type": "object",
+            "properties": {
+                "my_option_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/client.messageChoiceOptionStateResponse"
+                    }
+                },
+                "response_count": {
+                    "type": "integer"
+                }
+            }
+        },
         "client.messageDelegatedByResponse": {
             "type": "object",
             "properties": {
@@ -9054,6 +9313,9 @@
             "properties": {
                 "body": {
                     "type": "object"
+                },
+                "choice": {
+                    "$ref": "#/definitions/client.messageChoiceStateResponse"
                 },
                 "client_message_id": {
                     "type": "string",
@@ -9497,6 +9759,37 @@
                     "items": {
                         "$ref": "#/definitions/client.messageReactionResponse"
                     }
+                }
+            }
+        },
+        "client.submitChoiceResponseRequest": {
+            "type": "object",
+            "properties": {
+                "option_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "client.submitChoiceResponseResponse": {
+            "type": "object",
+            "properties": {
+                "choice": {
+                    "$ref": "#/definitions/client.messageChoiceStateResponse"
+                },
+                "conversation_id": {
+                    "type": "string"
+                },
+                "created": {
+                    "type": "boolean"
+                },
+                "message_id": {
+                    "type": "string"
+                },
+                "response": {
+                    "$ref": "#/definitions/client.choiceResponseResponse"
                 }
             }
         },

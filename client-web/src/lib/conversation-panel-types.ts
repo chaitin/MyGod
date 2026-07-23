@@ -8,6 +8,7 @@ export type ConversationPanelMessage = {
   author: string
   avatar: string
   body: ClientMessage["body"]
+  choice?: ClientMessage["choice"]
   canRevoke: boolean
   createdAt: string
   delegatedByName: string

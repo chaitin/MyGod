@@ -1,5 +1,5 @@
 import * as React from "react"
-import { fireEvent, render, screen } from "@testing-library/react"
+import { act, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { ClientConversation } from "@/lib/client-data-api"
@@ -118,6 +118,7 @@ describe("ConversationPanelHistory", () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     Object.defineProperty(window, "ResizeObserver", {
       configurable: true,
       value: defaultResizeObserver,
@@ -268,6 +269,88 @@ describe("ConversationPanelHistory", () => {
     expect(testState.bubbleRenderCount).toBe(1)
   })
 
+  it("compacts an oversized history when it is at the bottom", () => {
+    const onCompactMessages = vi.fn()
+    const messages = Array.from({ length: 301 }, (_, index) =>
+      createMessage(`message-${index + 1}`, "other")
+    )
+
+    render(
+      <ConversationPanelHistory
+        {...createProps(messages)}
+        onCompactMessages={onCompactMessages}
+      />
+    )
+
+    expect(onCompactMessages).toHaveBeenCalledOnce()
+  })
+
+  it("does not compact while reading away from the bottom", () => {
+    const onCompactMessages = vi.fn()
+    const initialMessages = Array.from({ length: 300 }, (_, index) =>
+      createMessage(`message-${index + 1}`, "other")
+    )
+    const props = {
+      ...createProps(initialMessages),
+      onCompactMessages,
+    }
+    const { rerender } = render(<ConversationPanelHistory {...props} />)
+    const viewport = getViewport()
+    viewport.scrollTop = 100
+    fireEvent.scroll(viewport)
+
+    rerender(
+      <ConversationPanelHistory
+        {...props}
+        messages={[...initialMessages, createMessage("message-301", "other")]}
+      />
+    )
+
+    expect(onCompactMessages).not.toHaveBeenCalled()
+  })
+
+  it("compacts the conversation cache when leaving the history", () => {
+    const onCompactMessages = vi.fn()
+    const { unmount } = render(
+      <ConversationPanelHistory
+        {...createProps([createMessage("message-1", "other")])}
+        onCompactMessages={onCompactMessages}
+      />
+    )
+
+    unmount()
+
+    expect(onCompactMessages).toHaveBeenCalledOnce()
+  })
+
+  it("protects recently loaded history for three minutes", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-07-23T00:00:00Z"))
+    const onCompactMessages = vi.fn()
+    const latestMessages = Array.from({ length: 300 }, (_, index) =>
+      createMessage(`message-${index + 2}`, "other")
+    )
+    const props = {
+      ...createProps(latestMessages),
+      onCompactMessages,
+    }
+    const { rerender } = render(<ConversationPanelHistory {...props} />)
+
+    rerender(<ConversationPanelHistory {...props} loadingBefore />)
+    rerender(
+      <ConversationPanelHistory
+        {...props}
+        messages={[createMessage("message-1", "other"), ...latestMessages]}
+      />
+    )
+
+    expect(onCompactMessages).not.toHaveBeenCalled()
+
+    act(() => vi.advanceTimersByTime(3 * 60 * 1000))
+
+    expect(onCompactMessages).toHaveBeenCalledOnce()
+  })
+
   it("marks the newer message when adjacent messages are more than one hour apart", () => {
     const firstMessage = createMessage(
       "message-1",
@@ -343,6 +426,7 @@ function createConversation(): ClientConversation {
     lastMessageSeq: 1,
     lastMessageSender: null,
     lastMessageSummary: "测试消息",
+    lastChoiceSeq: 0,
     lastReadSeq: 1,
     memberCount: 2,
     name: "测试会话",

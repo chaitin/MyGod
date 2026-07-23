@@ -119,7 +119,7 @@ func (s *Service) createFinalizedMessage(
 	body json.RawMessage,
 	finalize finalizeBodyFunc,
 ) (CreateResult, error) {
-	stored, created, memberUserIDs, mentionedUserIDs, events, lockHeld, err := s.createUserMessage(
+	stored, created, memberUserIDs, mentionedUserIDs, choiceUserIDs, events, lockHeld, err := s.createUserMessage(
 		ctx, accountID, conversationID, clientMessageID, replyToMessageID, body, finalize,
 	)
 	if lockHeld {
@@ -141,6 +141,7 @@ func (s *Service) createFinalizedMessage(
 			}
 			s.notifications.PublishMessageCreated(ctx, deliveries)
 			s.notifications.PublishMembersMentioned(ctx, mentionedUserIDs, stored.ConversationID, stored.Seq)
+			s.notifications.PublishMembersChoiceReceived(ctx, choiceUserIDs, stored.ConversationID, stored.Seq)
 		}
 		if s.afterUserMessageCommit != nil {
 			s.afterUserMessageCommit(message)
@@ -165,13 +166,14 @@ func (s *Service) createUserMessage(
 	replyToMessageID *string,
 	body json.RawMessage,
 	finalize finalizeBodyFunc,
-) (store.Message, bool, []string, []string, []AppEvent, bool, error) {
+) (store.Message, bool, []string, []string, []string, []AppEvent, bool, error) {
 	var created bool
 	var message store.Message
 	var events []AppEvent
 	lockHeld := false
 	memberUserIDs := []string{}
 	mentionedUserIDs := []string{}
+	choiceUserIDs := []string{}
 
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		access, err := loadUserConversationAccess(tx, conversationID, userID, true)
@@ -229,6 +231,10 @@ func (s *Service) createUserMessage(
 		if err != nil {
 			return err
 		}
+		choiceUserIDs, err = updateConversationChoiceSeq(tx, access.Context, message.Seq, finalBody, memberUserIDs, now)
+		if err != nil {
+			return err
+		}
 		created = true
 		var sender store.User
 		if err := tx.First(&sender, "id = ?", userID).Error; err != nil {
@@ -245,7 +251,7 @@ func (s *Service) createUserMessage(
 		events, err = createAppMessageEventOutbox(tx, access.Context, sender, message)
 		return err
 	})
-	return message, created, memberUserIDs, mentionedUserIDs, events, lockHeld, err
+	return message, created, memberUserIDs, mentionedUserIDs, choiceUserIDs, events, lockHeld, err
 }
 
 func ensureConversationSendable(db *gorm.DB, conversation store.Conversation) error {

@@ -136,21 +136,25 @@ func parseMessageMentionTargets(body json.RawMessage) []messageMentionTarget {
 
 func messageMentionContent(body json.RawMessage) (string, bool) {
 	var envelope struct {
-		Type string `json:"type"`
+		Content     string `json:"content"`
+		ContentType string `json:"content_type"`
+		Type        string `json:"type"`
 	}
 	if json.Unmarshal(body, &envelope) != nil {
 		return "", false
 	}
-	if strings.TrimSpace(envelope.Type) != "text" && strings.TrimSpace(envelope.Type) != "markdown" {
+	messageType := strings.TrimSpace(envelope.Type)
+	if messageType == "choice" {
+		contentType := strings.TrimSpace(envelope.ContentType)
+		if contentType != "text" && contentType != "markdown" {
+			return "", false
+		}
+		return envelope.Content, true
+	}
+	if messageType != "text" && messageType != "markdown" {
 		return "", false
 	}
-	var value struct {
-		Content string `json:"content"`
-	}
-	if json.Unmarshal(body, &value) != nil {
-		return "", false
-	}
-	return value.Content, true
+	return envelope.Content, true
 }
 
 func mentionKey(memberType, memberID string) string {

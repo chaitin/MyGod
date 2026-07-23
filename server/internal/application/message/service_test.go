@@ -153,6 +153,303 @@ func TestDirectAppMessagesRequireCurrentAccessWhileGroupMessagesUseMembership(t 
 	}
 }
 
+func TestServiceChoiceResponsesAggregateAndRemainIdempotent(t *testing.T) {
+	db := openMessageTestDB(t)
+	fixture := insertMessageTestFixture(t, db)
+	order := []string{}
+	appEvents := &messageAppEventRecorder{db: db, order: &order}
+	service := NewService(Dependencies{DB: db, AppEvents: appEvents, AppEventLocker: &sync.Mutex{}})
+	now := time.Now().UTC()
+	appID := fixture.app.ID
+	clientMessageID := "choice-1"
+	body := json.RawMessage(`{"type":"choice","content_type":"text","content":"请选择","selection":"multiple","options":[{"id":"a","label":"选项 A"},{"id":"b","label":"选项 B"},{"id":"c","label":"选项 C"}]}`)
+	message := store.Message{
+		ID: uuid.NewString(), ConversationID: fixture.conversation.ID, Seq: 1,
+		SenderType: store.MessageSenderTypeApp, SenderID: &appID, ClientMessageID: &clientMessageID,
+		Body: body, Summary: "[选择] 请选择", CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Create(&message).Error; err != nil {
+		t.Fatalf("create choice message: %v", err)
+	}
+	if err := db.Model(&store.Conversation{}).Where("id = ?", fixture.conversation.ID).Updates(map[string]any{
+		"last_message_id": message.ID, "last_message_seq": message.Seq,
+	}).Error; err != nil {
+		t.Fatalf("advance conversation: %v", err)
+	}
+
+	first, err := service.SubmitChoiceResponse(context.Background(), SubmitChoiceResponseCommand{
+		AccountID: fixture.user.ID, ConversationID: fixture.conversation.ID,
+		MessageID: message.ID, OptionIDs: []string{"c", "a"},
+	})
+	if err != nil {
+		t.Fatalf("submit choice response: %v", err)
+	}
+	if !first.Created || !equalMessageTestStrings(first.Response.OptionIDs, []string{"a", "c"}) ||
+		first.Choice.ResponseCount != 1 || !equalMessageTestStrings(first.Choice.MyOptionIDs, []string{"a", "c"}) ||
+		first.Choice.Options[0].ResponseCount != 1 || first.Choice.Options[1].ResponseCount != 0 || first.Choice.Options[2].ResponseCount != 1 {
+		t.Fatalf("first response = %#v", first)
+	}
+	if len(appEvents.events) != 1 || appEvents.events[0].Event != "choice.response_created" || appEvents.events[0].AppID != fixture.app.ID {
+		t.Fatalf("choice app events = %#v", appEvents.events)
+	}
+	var eventPayload struct {
+		ChoiceMessage appMessagePayload `json:"choice_message"`
+		Response      struct {
+			ID        string   `json:"id"`
+			OptionIDs []string `json:"option_ids"`
+		} `json:"response"`
+		Sender appMessageSenderPayload `json:"sender"`
+	}
+	if err := json.Unmarshal(appEvents.events[0].Payload, &eventPayload); err != nil ||
+		eventPayload.ChoiceMessage.ID != message.ID || eventPayload.Response.ID != first.Response.ID ||
+		!equalMessageTestStrings(eventPayload.Response.OptionIDs, []string{"a", "c"}) || eventPayload.Sender.ID != fixture.user.ID {
+		t.Fatalf("choice app event payload = %#v, err = %v", eventPayload, err)
+	}
+	if err := service.AuthorizeRunAsTrigger(context.Background(), RunAsTriggerCommand{
+		ActorID: fixture.user.ID, ActorType: store.MessageSenderTypeUser,
+		AppID: fixture.app.ID, AuthorizationConversationID: fixture.conversation.ID,
+		TriggerMessageID: first.Response.ID,
+	}); err != nil {
+		t.Fatalf("authorize choice response trigger: %v", err)
+	}
+
+	duplicate, err := service.SubmitChoiceResponse(context.Background(), SubmitChoiceResponseCommand{
+		AccountID: fixture.user.ID, ConversationID: fixture.conversation.ID,
+		MessageID: message.ID, OptionIDs: []string{"a", "c"},
+	})
+	if err != nil || duplicate.Created || duplicate.Response.ID != first.Response.ID {
+		t.Fatalf("duplicate response = %#v, err = %v", duplicate, err)
+	}
+	if len(appEvents.events) != 1 {
+		t.Fatalf("duplicate delivered %d app events, want 1", len(appEvents.events))
+	}
+	_, err = service.SubmitChoiceResponse(context.Background(), SubmitChoiceResponseCommand{
+		AccountID: fixture.user.ID, ConversationID: fixture.conversation.ID,
+		MessageID: message.ID, OptionIDs: []string{"b"},
+	})
+	if ErrorCodeOf(err) != CodeConflict {
+		t.Fatalf("changed response error = %v, want conflict", err)
+	}
+
+	snapshots, err := service.ListChoiceSnapshots(context.Background(), ListChoiceSnapshotsCommand{
+		AccountID: fixture.user.ID, ConversationID: fixture.conversation.ID,
+		MessageIDs: []string{message.ID},
+	})
+	if err != nil || len(snapshots.Snapshots) != 1 || snapshots.Snapshots[0].Status != choiceSnapshotStatusActive ||
+		snapshots.Snapshots[0].Choice == nil || snapshots.Snapshots[0].Choice.ResponseCount != 1 {
+		t.Fatalf("choice snapshots = %#v, err = %v", snapshots, err)
+	}
+	listed, err := service.List(context.Background(), ListCommand{
+		AccountID: fixture.user.ID, ConversationID: fixture.conversation.ID, Limit: 20,
+	})
+	if err != nil || len(listed.Messages) != 1 || listed.Messages[0].Choice == nil || listed.Messages[0].Choice.ResponseCount != 1 {
+		t.Fatalf("listed choices = %#v, err = %v", listed, err)
+	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get choice test sql db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	concurrentClientMessageID := "choice-concurrent"
+	concurrentMessage := store.Message{
+		ID: uuid.NewString(), ConversationID: fixture.conversation.ID, Seq: 2,
+		SenderType: store.MessageSenderTypeApp, SenderID: &appID, ClientMessageID: &concurrentClientMessageID,
+		Body: body, Summary: "[选择] 请选择", CreatedAt: now.Add(time.Second), UpdatedAt: now.Add(time.Second),
+	}
+	if err := db.Create(&concurrentMessage).Error; err != nil {
+		t.Fatalf("create concurrent choice message: %v", err)
+	}
+	concurrentService := NewService(Dependencies{DB: db, AppEventLocker: &sync.Mutex{}})
+	results := make(chan SubmitChoiceResponseResult, 2)
+	errors := make(chan error, 2)
+	for range 2 {
+		go func() {
+			result, submitErr := concurrentService.SubmitChoiceResponse(context.Background(), SubmitChoiceResponseCommand{
+				AccountID: fixture.user.ID, ConversationID: fixture.conversation.ID,
+				MessageID: concurrentMessage.ID, OptionIDs: []string{"b"},
+			})
+			results <- result
+			errors <- submitErr
+		}()
+	}
+	createdCount := 0
+	responseIDs := map[string]struct{}{}
+	for range 2 {
+		if submitErr := <-errors; submitErr != nil {
+			t.Fatalf("concurrent choice response: %v", submitErr)
+		}
+		result := <-results
+		if result.Created {
+			createdCount++
+		}
+		responseIDs[result.Response.ID] = struct{}{}
+	}
+	if createdCount != 1 || len(responseIDs) != 1 {
+		t.Fatalf("concurrent created count = %d, response ids = %v", createdCount, responseIDs)
+	}
+}
+
+func TestServiceAppChoiceUpdatesUnreadChoiceSequence(t *testing.T) {
+	db := openMessageTestDB(t)
+	fixture := insertMessageTestFixture(t, db)
+	order := []string{}
+	notifications := &messageNotificationRecorder{db: db, order: &order}
+	service := NewService(Dependencies{DB: db, Notifications: notifications})
+	body := json.RawMessage(`{"type":"choice","content_type":"text","content":"请选择","selection":"single","options":[{"id":"a","label":"A"},{"id":"b","label":"B"}]}`)
+	result, err := service.CreateAsApp(context.Background(), CreateAsAppCommand{
+		AppID: fixture.app.ID, ConversationID: fixture.conversation.ID,
+		ClientMessageID: "app-choice-sequence", Body: body,
+		Finalize: func(_ context.Context, body json.RawMessage) (json.RawMessage, string, error) {
+			return body, "[选择] 请选择", nil
+		},
+	})
+	if err != nil || !result.Created || result.Message.Seq != 1 {
+		t.Fatalf("create app choice = %#v, err = %v", result, err)
+	}
+	var member store.ConversationMember
+	if err := db.First(&member,
+		"conversation_id = ? AND member_type = ? AND member_id = ?",
+		fixture.conversation.ID, store.ConversationMemberTypeUser, fixture.user.ID,
+	).Error; err != nil {
+		t.Fatalf("load choice recipient member: %v", err)
+	}
+	if member.LastChoiceSeq != result.Message.Seq {
+		t.Fatalf("last choice seq = %d, want %d", member.LastChoiceSeq, result.Message.Seq)
+	}
+}
+
+func TestServiceChoiceResponseRejectsInvalidUnavailableAndSingleSelection(t *testing.T) {
+	db := openMessageTestDB(t)
+	fixture := insertMessageTestFixture(t, db)
+	service := NewService(Dependencies{DB: db})
+	now := time.Now().UTC()
+	appID := fixture.app.ID
+	clientMessageID := "single-choice"
+	message := store.Message{
+		ID: uuid.NewString(), ConversationID: fixture.conversation.ID, Seq: 1,
+		SenderType: store.MessageSenderTypeApp, SenderID: &appID, ClientMessageID: &clientMessageID,
+		Body:    json.RawMessage(`{"type":"choice","content_type":"text","content":"请选择","selection":"single","options":[{"id":"a","label":"A"},{"id":"b","label":"B"}]}`),
+		Summary: "[选择] 请选择", CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Create(&message).Error; err != nil {
+		t.Fatalf("create choice message: %v", err)
+	}
+	command := SubmitChoiceResponseCommand{
+		AccountID: fixture.user.ID, ConversationID: fixture.conversation.ID, MessageID: message.ID,
+	}
+	outsider := store.User{
+		ID: uuid.NewString(), Email: "choice-outsider@example.com", Name: "Outsider", PasswordHash: "hash",
+		Status: store.UserStatusActive, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Create(&outsider).Error; err != nil {
+		t.Fatalf("create choice outsider: %v", err)
+	}
+	command.AccountID = outsider.ID
+	command.OptionIDs = []string{"a"}
+	if _, err := service.SubmitChoiceResponse(context.Background(), command); ErrorCodeOf(err) != CodeForbidden {
+		t.Fatalf("outsider choice response error = %v, want forbidden", err)
+	}
+	command.AccountID = fixture.user.ID
+	for _, options := range [][]string{{"missing"}, {"a", "b"}, {"a", "a"}} {
+		command.OptionIDs = options
+		if _, err := service.SubmitChoiceResponse(context.Background(), command); ErrorCodeOf(err) != CodeInvalidRequest {
+			t.Fatalf("options %v error = %v, want invalid_request", options, err)
+		}
+	}
+	revokedAt := now.Add(time.Minute)
+	if err := db.Model(&store.Message{}).Where("id = ?", message.ID).Update("revoked_at", revokedAt).Error; err != nil {
+		t.Fatalf("revoke choice message: %v", err)
+	}
+	revokedSnapshots, err := service.ListChoiceSnapshots(context.Background(), ListChoiceSnapshotsCommand{
+		AccountID: fixture.user.ID, ConversationID: fixture.conversation.ID, MessageIDs: []string{message.ID},
+	})
+	if err != nil || len(revokedSnapshots.Snapshots) != 1 ||
+		revokedSnapshots.Snapshots[0].Status != choiceSnapshotStatusRevoked || revokedSnapshots.Snapshots[0].Choice != nil {
+		t.Fatalf("revoked choice snapshots = %#v, err = %v", revokedSnapshots, err)
+	}
+	command.OptionIDs = []string{"a"}
+	if _, err := service.SubmitChoiceResponse(context.Background(), command); ErrorCodeOf(err) != CodeConflict {
+		t.Fatalf("revoked choice response error = %v, want conflict", err)
+	}
+	deletedAt := revokedAt.Add(time.Minute)
+	if err := db.Model(&store.Message{}).Where("id = ?", message.ID).Update("deleted_at", deletedAt).Error; err != nil {
+		t.Fatalf("delete choice message: %v", err)
+	}
+	deletedSnapshots, err := service.ListChoiceSnapshots(context.Background(), ListChoiceSnapshotsCommand{
+		AccountID: fixture.user.ID, ConversationID: fixture.conversation.ID, MessageIDs: []string{message.ID},
+	})
+	if err != nil || len(deletedSnapshots.Snapshots) != 1 ||
+		deletedSnapshots.Snapshots[0].Status != choiceSnapshotStatusDeleted || deletedSnapshots.Snapshots[0].Choice != nil {
+		t.Fatalf("deleted choice snapshots = %#v, err = %v", deletedSnapshots, err)
+	}
+	if _, err := service.SubmitChoiceResponse(context.Background(), command); ErrorCodeOf(err) != CodeNotFound {
+		t.Fatalf("deleted choice response error = %v, want not_found", err)
+	}
+}
+
+func TestServiceRevokeChoiceRewindsUnreadChoiceSequence(t *testing.T) {
+	db := openMessageTestDB(t)
+	fixture := insertMessageTestFixture(t, db)
+	service := NewService(Dependencies{DB: db, AppEventLocker: &sync.Mutex{}})
+	body := json.RawMessage(`{"type":"choice","content_type":"text","content":"请选择","selection":"single","options":[{"id":"a","label":"A"},{"id":"b","label":"B"}]}`)
+	createChoice := func(clientMessageID string) CreateResult {
+		t.Helper()
+		result, err := service.createFinalizedMessage(
+			context.Background(), fixture.user.ID, fixture.conversation.ID,
+			clientMessageID, nil, body,
+			func(_ context.Context, body json.RawMessage) (json.RawMessage, string, error) {
+				return body, "[选择] 请选择", nil
+			},
+		)
+		if err != nil {
+			t.Fatalf("create choice %s: %v", clientMessageID, err)
+		}
+		return result
+	}
+	first := createChoice("rewind-choice-1")
+	second := createChoice("rewind-choice-2")
+
+	if _, err := service.Revoke(context.Background(), RevokeCommand{
+		AccountID: fixture.user.ID, ConversationID: fixture.conversation.ID, MessageID: second.Message.ID,
+	}); err != nil {
+		t.Fatalf("revoke latest choice: %v", err)
+	}
+	var member store.ConversationMember
+	if err := db.First(&member,
+		"conversation_id = ? AND member_type = ? AND member_id = ?",
+		fixture.conversation.ID, store.ConversationMemberTypeUser, fixture.user.ID,
+	).Error; err != nil {
+		t.Fatalf("load member after latest revoke: %v", err)
+	}
+	if member.LastChoiceSeq != first.Message.Seq {
+		t.Fatalf("last choice seq after latest revoke = %d, want %d", member.LastChoiceSeq, first.Message.Seq)
+	}
+
+	if _, err := service.Revoke(context.Background(), RevokeCommand{
+		AccountID: fixture.user.ID, ConversationID: fixture.conversation.ID, MessageID: first.Message.ID,
+	}); err != nil {
+		t.Fatalf("revoke remaining choice: %v", err)
+	}
+	if err := db.First(&member,
+		"conversation_id = ? AND member_type = ? AND member_id = ?",
+		fixture.conversation.ID, store.ConversationMemberTypeUser, fixture.user.ID,
+	).Error; err != nil {
+		t.Fatalf("load member after remaining revoke: %v", err)
+	}
+	if member.LastChoiceSeq != 0 {
+		t.Fatalf("last choice seq after all choices revoked = %d, want 0", member.LastChoiceSeq)
+	}
+}
+
+func TestParseMessageMentionTargetsSupportsChoiceContent(t *testing.T) {
+	userID := uuid.NewString()
+	targets := parseMessageMentionTargets(json.RawMessage(`{"type":"choice","content_type":"markdown","content":"{(@user/` + userID + `)} 请选择","selection":"single","options":[{"id":"a","label":"A"},{"id":"b","label":"B"}]}`))
+	if len(targets) != 1 || targets[0].MemberType != store.ConversationMemberTypeUser || targets[0].MemberID != userID {
+		t.Fatalf("choice mention targets = %#v", targets)
+	}
+}
+
 func TestServiceListAndRevokeHideMessagesOutsideOnlineWindow(t *testing.T) {
 	db := openMessageTestDB(t)
 	fixture := insertMessageTestFixture(t, db)
@@ -596,6 +893,11 @@ func (*messageNotificationRecorder) PublishMessageUpdated(context.Context, []Del
 func (*messageNotificationRecorder) PublishMembersMentioned(context.Context, []string, string, int64) {
 }
 
+func (*messageNotificationRecorder) PublishMembersChoiceReceived(context.Context, []string, string, int64) {
+}
+func (*messageNotificationRecorder) PublishMessageChoiceUpdated(context.Context, []string, ChoiceUpdatedEvent) {
+}
+
 type messageAppEventRecorder struct {
 	db     *gorm.DB
 	events []AppEvent
@@ -631,6 +933,7 @@ func openMessageTestDB(t *testing.T) *gorm.DB {
 		&store.Message{}, &store.AppEventOutbox{}, &store.AppConversation{}, &store.AppUserGrant{},
 		&store.ConversationTopic{}, &store.ConversationTopicParticipant{},
 		&store.MessageReaction{}, &store.MessageReactionState{},
+		&store.MessageChoiceResponse{},
 		&store.Project{}, &store.ProjectGroup{},
 	); err != nil {
 		t.Fatalf("migrate database: %v", err)

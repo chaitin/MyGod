@@ -34,14 +34,15 @@ const (
 )
 
 const (
-	protocolVersion         = 1
-	kindRequest             = "request"
-	kindResponse            = "response"
-	kindEvent               = "event"
-	eventMessageCreated     = "message.created"
-	eventTopicClosed        = "topic.closed"
-	methodMessageSend       = "message.send"
-	methodMessageSendAsUser = "message.send_as_user"
+	protocolVersion            = 1
+	kindRequest                = "request"
+	kindResponse               = "response"
+	kindEvent                  = "event"
+	eventMessageCreated        = "message.created"
+	eventChoiceResponseCreated = "choice.response_created"
+	eventTopicClosed           = "topic.closed"
+	methodMessageSend          = "message.send"
+	methodMessageSendAsUser    = "message.send_as_user"
 
 	methodConversationMessagesList = "conversation.messages.list"
 	methodConversationTopicCreate  = "conversation.topic.create"
@@ -154,6 +155,30 @@ type messageBody struct {
 	Transcript  string                     `json:"transcript"`
 	Type        string                     `json:"type"`
 	URL         string                     `json:"url"`
+}
+
+type choiceMessageBody struct {
+	Content     string                       `json:"content"`
+	ContentType string                       `json:"content_type"`
+	Options     []choiceMessageOptionPayload `json:"options"`
+	Selection   string                       `json:"selection"`
+	Type        string                       `json:"type"`
+}
+
+type choiceMessageOptionPayload struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+}
+
+type choiceResponseCreatedPayload struct {
+	ChoiceMessage messagePayload      `json:"choice_message"`
+	Conversation  conversationPayload `json:"conversation"`
+	Response      struct {
+		CreatedAt time.Time `json:"created_at"`
+		ID        string    `json:"id"`
+		OptionIDs []string  `json:"option_ids"`
+	} `json:"response"`
+	Sender senderPayload `json:"sender"`
 }
 
 type forwardBundleItemPayload struct {
@@ -601,6 +626,9 @@ func handleParsedServerMessageWithTopicRouter(ctx context.Context, message envel
 		}
 		return true
 	}
+	if message.Kind == kindEvent && message.Event == eventChoiceResponseCreated {
+		return handleChoiceResponseCreated(ctx, message, appID, requester, assistantAgent, runner, writeJSON)
+	}
 	if message.Kind != kindEvent || message.Event != eventMessageCreated {
 		return true
 	}
@@ -706,6 +734,39 @@ func handleParsedServerMessageWithTopicRouter(ctx context.Context, message envel
 	return runner.Start(ctx, replyConversation.ID, sink, assistantAgent, prepared)
 }
 
+func handleChoiceResponseCreated(
+	ctx context.Context,
+	message envelope,
+	appID string,
+	requester appRequester,
+	assistantAgent replyAgent,
+	runner agentRunner,
+	writeJSON func(context.Context, envelope) error,
+) bool {
+	var payload choiceResponseCreatedPayload
+	if err := json.Unmarshal(message.Payload, &payload); err != nil {
+		log.Printf("ignore invalid choice.response_created payload: %v", err)
+		return true
+	}
+	prepared, err := prepareChoiceResponseAgentRun(ctx, requester, payload)
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return false
+		}
+		log.Printf("prepare choice response agent run failed: %v", err)
+		fallbackSink := agent.OutputSinkFunc(func(ctx context.Context, content string) error {
+			return sendMarkdownReply(ctx, writeJSON, payload.Conversation, content)
+		})
+		return sendAgentFallback(ctx, fallbackSink) == nil
+	}
+	sink := agent.OutputSinkFunc(func(ctx context.Context, content string) error {
+		return sendMarkdownReply(ctx, writeJSON, payload.Conversation, content)
+	})
+	prepared.ErrorSink = sink
+	prepared.Scope.CurrentAppID = strings.TrimSpace(appID)
+	return runner.Start(ctx, payload.Conversation.ID, sink, assistantAgent, prepared)
+}
+
 func agentErrorConversation(conversation conversationPayload, prepared *preparedAgentRun) conversationPayload {
 	if conversation.Type != "topic" {
 		return conversation
@@ -741,6 +802,10 @@ func createConversationTopic(ctx context.Context, requester appRequester, conver
 
 func prepareAgentRun(ctx context.Context, requester appRequester, payload messageCreatedPayload, body messageBody, senderName string) (preparedAgentRun, error) {
 	authorization := authorizationForMessage(payload)
+	return prepareAgentRunWithAuthorization(ctx, requester, payload, body, senderName, authorization)
+}
+
+func prepareAgentRunWithAuthorization(ctx context.Context, requester appRequester, payload messageCreatedPayload, body messageBody, senderName string, authorization preparedAuthorization) (preparedAgentRun, error) {
 	conversationContext, err := loadConversationContext(ctx, requester, payload, authorization)
 	if err != nil {
 		return preparedAgentRun{}, fmt.Errorf("load conversation context: %w", err)
@@ -803,6 +868,117 @@ func prepareAgentRun(ctx context.Context, requester appRequester, payload messag
 		},
 		Scope: scope,
 	}, nil
+}
+
+func prepareChoiceResponseAgentRun(ctx context.Context, requester appRequester, payload choiceResponseCreatedPayload) (preparedAgentRun, error) {
+	if strings.TrimSpace(payload.Conversation.ID) == "" || strings.TrimSpace(payload.Conversation.Type) == "" {
+		return preparedAgentRun{}, errors.New("choice response conversation is missing")
+	}
+	if strings.TrimSpace(payload.ChoiceMessage.ID) == "" || payload.ChoiceMessage.Seq <= 0 {
+		return preparedAgentRun{}, errors.New("choice message is missing")
+	}
+	responseID := strings.TrimSpace(payload.Response.ID)
+	if responseID == "" || len(payload.Response.OptionIDs) == 0 {
+		return preparedAgentRun{}, errors.New("choice response is missing")
+	}
+	if !strings.EqualFold(strings.TrimSpace(payload.Sender.Type), "user") || strings.TrimSpace(payload.Sender.ID) == "" {
+		return preparedAgentRun{}, errors.New("choice response sender must be a user")
+	}
+	content, labels, err := buildChoiceResponseAgentContent(payload.ChoiceMessage.Body, payload.Response.OptionIDs)
+	if err != nil {
+		return preparedAgentRun{}, err
+	}
+	senderName := payload.Sender.Name
+	if payload.Sender.Nickname != "" {
+		senderName = payload.Sender.Nickname
+	}
+	authorization := authorizationForChoiceResponse(payload, strings.Join(labels, "、"))
+	synthetic := messageCreatedPayload{
+		Conversation: payload.Conversation,
+		Message: messagePayload{
+			Body: payload.ChoiceMessage.Body, ID: responseID, Seq: payload.ChoiceMessage.Seq,
+			Summary: "[选择回答] " + strings.Join(labels, "、"),
+		},
+		Sender: payload.Sender,
+	}
+	prepared, err := prepareAgentRunWithAuthorization(
+		ctx,
+		requester,
+		synthetic,
+		messageBody{Content: content, Type: "text"},
+		senderName,
+		authorization,
+	)
+	if err != nil {
+		return preparedAgentRun{}, err
+	}
+	prepared.MessageSeq = 0
+	prepared.EventConversationID = payload.Conversation.ID
+	prepared.Request.MessageID = responseID
+	prepared.Request.Content = content
+	return prepared, nil
+}
+
+func authorizationForChoiceResponse(payload choiceResponseCreatedPayload, summary string) preparedAuthorization {
+	responseID := strings.TrimSpace(payload.Response.ID)
+	senderID := strings.TrimSpace(payload.Sender.ID)
+	senderName := payload.Sender.Name
+	if payload.Sender.Nickname != "" {
+		senderName = payload.Sender.Nickname
+	}
+	ref := "auth_choice_" + strings.ReplaceAll(responseID, "-", "")
+	return preparedAuthorization{
+		Authorization: builtintools.Authorization{
+			ActorID: senderID, ActorType: "user", TriggerMessageID: responseID,
+		},
+		Candidate: agent.AuthorizationCandidate{
+			Ref: ref, SenderID: senderID, SenderName: senderName, SenderType: "user",
+			MessageSummary: "[选择回答] " + summary,
+		},
+		Ref: ref,
+	}
+}
+
+func buildChoiceResponseAgentContent(rawBody json.RawMessage, optionIDs []string) (string, []string, error) {
+	var choice choiceMessageBody
+	if err := json.Unmarshal(rawBody, &choice); err != nil {
+		return "", nil, fmt.Errorf("parse choice message body: %w", err)
+	}
+	if choice.Type != "choice" || (choice.ContentType != "text" && choice.ContentType != "markdown") || strings.TrimSpace(choice.Content) == "" {
+		return "", nil, errors.New("choice message body is invalid")
+	}
+	if choice.Selection != "single" && choice.Selection != "multiple" {
+		return "", nil, errors.New("choice selection is invalid")
+	}
+	optionsByID := make(map[string]string, len(choice.Options))
+	for _, option := range choice.Options {
+		id := strings.TrimSpace(option.ID)
+		label := strings.TrimSpace(option.Label)
+		if id == "" || label == "" {
+			return "", nil, errors.New("choice option is invalid")
+		}
+		optionsByID[id] = label
+	}
+	if choice.Selection == "single" && len(optionIDs) != 1 {
+		return "", nil, errors.New("single choice response must contain exactly one option")
+	}
+	labels := make([]string, 0, len(optionIDs))
+	var selected strings.Builder
+	for _, rawOptionID := range optionIDs {
+		optionID := strings.TrimSpace(rawOptionID)
+		label, ok := optionsByID[optionID]
+		if !ok {
+			return "", nil, fmt.Errorf("choice response contains unknown option %q", optionID)
+		}
+		labels = append(labels, label)
+		fmt.Fprintf(&selected, "\n- %s（选项 ID：%s）", label, optionID)
+	}
+	return fmt.Sprintf(
+		"用户已回答你发送的选择消息。\n问题正文（%s）：%s\n用户选择：%s",
+		choice.ContentType,
+		strings.TrimSpace(choice.Content),
+		selected.String(),
+	), labels, nil
 }
 
 func authorizationForMessage(payload messageCreatedPayload) preparedAuthorization {

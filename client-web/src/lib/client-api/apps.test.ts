@@ -5,6 +5,7 @@ import {
   createClientApp,
   deleteClientApp,
   getClientAppCredentials,
+  getClientAppProfile,
   regenerateClientAppSecret,
   updateClientApp,
   uploadClientAppAvatar,
@@ -115,6 +116,29 @@ describe("client app API", () => {
       credentials: "include",
       method: "GET",
     })
+  })
+
+  it("loads an owned application profile with a profile-specific error", async () => {
+    const successFetcher = vi.fn().mockResolvedValue(
+      createJSONResponse({
+        success: true,
+        data: {
+          app: createAppResponse(),
+          connection_secret: "current-secret",
+        },
+      })
+    )
+
+    await expect(
+      getClientAppProfile("app/1", successFetcher)
+    ).resolves.toMatchObject({ id: "app-1" })
+
+    const failureFetcher = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 500 }))
+    await expect(getClientAppProfile("app-1", failureFetcher)).rejects.toThrow(
+      "加载应用资料失败"
+    )
   })
 
   it("regenerates an owned application secret", async () => {

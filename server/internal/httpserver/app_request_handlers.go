@@ -1858,7 +1858,7 @@ func (s *Server) prepareAppSendMessageBodyForUser(ctx context.Context, userID st
 			Body:     body,
 			Finalize: contents.Finalize,
 		}, nil
-	case messageTypeText, messageTypeMarkdown, messageTypeLink, messageTypeCard, messageTypeChart:
+	case messageTypeText, messageTypeMarkdown, messageTypeLink, messageTypeCard, messageTypeChart, messageTypeChoice:
 		body, err := s.normalizeAppSendMessageBody(ctx, raw)
 		if err != nil {
 			return preparedAppSendMessageBody{}, err

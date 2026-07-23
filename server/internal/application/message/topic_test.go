@@ -413,6 +413,10 @@ func (r *topicMessageNotificationRecorder) PublishSharedMessageCreated(_ context
 func (*topicMessageNotificationRecorder) PublishMessageUpdated(context.Context, []Delivery) {}
 func (*topicMessageNotificationRecorder) PublishMembersMentioned(context.Context, []string, string, int64) {
 }
+func (*topicMessageNotificationRecorder) PublishMembersChoiceReceived(context.Context, []string, string, int64) {
+}
+func (*topicMessageNotificationRecorder) PublishMessageChoiceUpdated(context.Context, []string, ChoiceUpdatedEvent) {
+}
 
 type topicMessageAppEventRecorder struct {
 	events []AppEvent

@@ -2,6 +2,9 @@ FROM node:24-bookworm-slim AS client-build
 
 WORKDIR /src/client-web
 
+ARG CLIENT_BUILD_COMMIT=development
+ENV VITE_CLIENT_BUILD_COMMIT=${CLIENT_BUILD_COMMIT}
+
 RUN corepack enable && corepack prepare pnpm@10.32.1 --activate
 
 COPY client-web/package.json client-web/pnpm-lock.yaml client-web/pnpm-workspace.yaml ./

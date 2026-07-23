@@ -196,6 +196,7 @@ function createConversation(
     lastMessageId: null,
     lastMessageSeq: 0,
     lastMessageSummary: "暂无消息",
+    lastChoiceSeq: 0,
     lastMentionedSeq: 0,
     lastReadSeq: 0,
     memberCount: 0,

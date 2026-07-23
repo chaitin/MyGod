@@ -7,6 +7,7 @@ import { ClientDataProvider } from "@/components/client-data-provider"
 import { ClientDocumentTitle } from "@/components/client-document-title"
 import { ClientMessageNotificationSync } from "@/components/client-message-notification-sync"
 import { ClientRealtimeProvider } from "@/components/client-realtime-provider"
+import { ClientVersionUpdateDialog } from "@/components/client-version-update-dialog"
 import { GlobalBeforeUnloadGuard } from "@/components/global-before-unload-guard"
 import { AppInfoProvider } from "@/components/app-info-provider"
 import { ChatPage } from "@/pages/chat-page"
@@ -18,6 +19,7 @@ export function App() {
   return (
     <AppInfoProvider>
       <ClientBrandMetadata />
+      <ClientVersionUpdateDialog />
       <Routes>
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route

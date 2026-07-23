@@ -26,7 +26,7 @@ const (
 func (s *Service) handlers() map[string]bodyHandler {
 	return map[string]bodyHandler{
 		TypeText: textHandler{}, TypeMarkdown: markdownHandler{}, TypeLink: linkHandler{fetchTitle: s.fetchLinkTitle},
-		TypeCard: cardHandler{}, TypeChart: chartHandler{},
+		TypeCard: cardHandler{}, TypeChart: chartHandler{}, TypeChoice: choiceHandler{},
 	}
 }
 

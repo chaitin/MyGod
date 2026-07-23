@@ -436,16 +436,18 @@ func newTopicItem(conversation store.Conversation, currentUserID string, members
 	parentItem := newItem(presentation.parent, currentUserID, members, users, apps)
 	lastReadSeq := int64(0)
 	lastMentionedSeq := int64(0)
+	lastChoiceSeq := int64(0)
 	participating := presentation.participant != nil
 	if presentation.participant != nil {
 		lastReadSeq = presentation.participant.LastReadSeq
 		lastMentionedSeq = presentation.participant.LastMentionedSeq
+		lastChoiceSeq = presentation.participant.LastChoiceSeq
 	}
 	return Item{
 		Avatar: parentItem.Avatar, CanSend: true, CreatedAt: conversation.CreatedAt, ID: conversation.ID,
 		LastMessageAt: conversation.LastMessageAt, LastMessageID: conversation.LastMessageID,
 		LastMessageSeq: conversation.LastMessageSeq, LastMessageSummary: conversation.LastMessageSummary,
-		LastMentionedSeq: lastMentionedSeq, LastReadSeq: lastReadSeq,
+		LastMentionedSeq: lastMentionedSeq, LastChoiceSeq: lastChoiceSeq, LastReadSeq: lastReadSeq,
 		MemberCount: len(members), Members: newMembers(members, users, apps), Name: conversation.Name,
 		Topic: &TopicMetadata{
 			Archived:             presentation.topic.ArchivedAt != nil,
@@ -463,6 +465,7 @@ func newItem(conversation store.Conversation, currentUserID string, members []st
 	name, avatar := conversation.Name, conversation.Avatar
 	lastReadSeq := currentMemberLastReadSeq(currentUserID, members)
 	lastMentionedSeq := currentMemberLastMentionedSeq(currentUserID, members)
+	lastChoiceSeq := currentMemberLastChoiceSeq(currentUserID, members)
 	if conversation.Kind == store.ConversationKindDirect {
 		for _, member := range members {
 			if member.MemberID == currentUserID {
@@ -500,7 +503,7 @@ func newItem(conversation store.Conversation, currentUserID string, members []st
 		Avatar: avatar, CanSend: true, CreatedAt: conversation.CreatedAt, ID: conversation.ID,
 		LastMessageAt: conversation.LastMessageAt, LastMessageID: conversation.LastMessageID,
 		LastMessageSeq: conversation.LastMessageSeq, LastMessageSummary: conversation.LastMessageSummary,
-		LastMentionedSeq: lastMentionedSeq, LastReadSeq: lastReadSeq,
+		LastMentionedSeq: lastMentionedSeq, LastChoiceSeq: lastChoiceSeq, LastReadSeq: lastReadSeq,
 		MemberCount: listMemberCount(conversation.Kind, members), Members: newMembers(members, users, apps),
 		Name: name, Type: conversation.Kind, UnreadCount: unreadCount(conversation.LastMessageSeq, lastReadSeq),
 		Visibility: conversation.Visibility,
@@ -638,6 +641,15 @@ func currentMemberLastMentionedSeq(currentUserID string, members []store.Convers
 	for _, member := range members {
 		if member.MemberType == store.ConversationMemberTypeUser && member.MemberID == currentUserID {
 			return member.LastMentionedSeq
+		}
+	}
+	return 0
+}
+
+func currentMemberLastChoiceSeq(currentUserID string, members []store.ConversationMember) int64 {
+	for _, member := range members {
+		if member.MemberType == store.ConversationMemberTypeUser && member.MemberID == currentUserID {
+			return member.LastChoiceSeq
 		}
 	}
 	return 0

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import config from "./vite.config"
+import config, { createClientVersionManifest } from "./vite.config"
 
 describe("vite dev proxy", () => {
   it("allows the maosite.cc development host", () => {
@@ -28,5 +28,9 @@ describe("vite dev proxy", () => {
     }
 
     expect(clientProxy.changeOrigin).toBe(false)
+  })
+
+  it("serializes the client commit into the version manifest", () => {
+    expect(createClientVersionManifest("abc123")).toBe('{"commit":"abc123"}\n')
   })
 })

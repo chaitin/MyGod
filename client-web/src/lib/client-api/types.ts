@@ -97,6 +97,7 @@ export type ConversationResponse = {
   last_message_seq?: number
   last_message_sender?: ConversationLastMessageSenderResponse | null
   last_message_summary?: string
+  last_choice_seq?: number
   last_mentioned_seq?: number
   last_read_seq?: number
   member_count?: number
@@ -281,6 +282,17 @@ export type MarkdownMessageBodyResponse = {
   type?: "markdown"
 }
 
+export type ChoiceMessageBodyResponse = {
+  content?: string
+  content_type?: "text" | "markdown"
+  options?: Array<{
+    id?: string
+    label?: string
+  }>
+  selection?: "single" | "multiple"
+  type?: "choice"
+}
+
 export type LinkMessageBodyResponse = {
   title?: string
   type?: "link"
@@ -416,6 +428,7 @@ export type TopicClosedSystemEventBodyResponse = {
 export type MessageBodyResponse =
   | TextMessageBodyResponse
   | MarkdownMessageBodyResponse
+  | ChoiceMessageBodyResponse
   | LinkMessageBodyResponse
   | CardMessageBodyResponse
   | ChartMessageBodyResponse
@@ -435,6 +448,7 @@ export type MessageBodyResponse =
 
 export type MessageResponse = {
   body?: MessageBodyResponse
+  choice?: MessageChoiceStateResponse | null
   client_message_id?: string
   conversation_id?: string
   created_at?: string
@@ -449,6 +463,39 @@ export type MessageResponse = {
   sender?: MessageSenderResponse
   seq?: number
   topic?: MessageTopicResponse | null
+}
+
+export type MessageChoiceStateResponse = {
+  my_option_ids?: string[] | null
+  options?: Array<{
+    id?: string
+    response_count?: number
+  }>
+  response_count?: number
+}
+
+export type SubmitChoiceResponseResponse = {
+  choice?: MessageChoiceStateResponse
+  conversation_id?: string
+  created?: boolean
+  message_id?: string
+  response?: {
+    created_at?: string
+    id?: string
+    option_ids?: string[]
+    user_id?: string
+  }
+}
+
+export type MessageChoiceSnapshotResponse = {
+  choice?: MessageChoiceStateResponse
+  message_id?: string
+  status?: "active" | "deleted" | "revoked"
+}
+
+export type ListChoiceSnapshotsResponse = {
+  conversation_id?: string
+  snapshots?: MessageChoiceSnapshotResponse[]
 }
 
 export type MessageReactionResponse = {
@@ -579,6 +626,19 @@ export type ConversationMemberMentionedEventPayloadResponse = {
   last_mentioned_seq?: number
 }
 
+export type ConversationMemberChoiceReceivedEventPayloadResponse = {
+  conversation_id?: string
+  last_choice_seq?: number
+}
+
+export type MessageChoiceUpdatedEventPayloadResponse = {
+  actor_option_ids?: string[]
+  actor_user_id?: string
+  choice?: MessageChoiceStateResponse
+  conversation_id?: string
+  message_id?: string
+}
+
 export type ConversationPinUpdatedEventPayloadResponse = {
   conversation_id?: string
   pinned?: boolean
@@ -674,6 +734,7 @@ export type ClientConversation = {
   lastMessageSeq: number
   lastMessageSender: ClientConversationLastMessageSender | null
   lastMessageSummary: string
+  lastChoiceSeq: number
   lastMentionedSeq: number
   lastReadSeq: number
   memberCount: number
@@ -788,6 +849,17 @@ export type ClientTextMessageBody = {
 export type ClientMarkdownMessageBody = {
   content: string
   type: "markdown"
+}
+
+export type ClientChoiceMessageBody = {
+  content: string
+  contentType: "text" | "markdown"
+  options: Array<{
+    id: string
+    label: string
+  }>
+  selection: "single" | "multiple"
+  type: "choice"
 }
 
 export type ClientLinkMessageBody = {
@@ -1001,6 +1073,7 @@ export type ClientTopicClosedSystemEventBody = {
 export type ClientMessageBody =
   | ClientTextMessageBody
   | ClientMarkdownMessageBody
+  | ClientChoiceMessageBody
   | ClientLinkMessageBody
   | ClientCardMessageBody
   | ClientChartMessageBody
@@ -1023,6 +1096,7 @@ export type ClientMessageBody =
 export type ClientMessage = {
   body: ClientMessageBody
   clientMessageId: string
+  choice?: ClientMessageChoiceState
   conversationId: string
   createdAt: string
   delegatedBy?: ClientMessageDelegatedBy
@@ -1036,6 +1110,43 @@ export type ClientMessage = {
   sender: ClientMessageSender
   seq: number
   topic?: ClientMessageTopic
+}
+
+export type ClientMessageChoiceState = {
+  myOptionIds: string[]
+  options: Array<{
+    id: string
+    responseCount: number
+  }>
+  responseCount: number
+}
+
+export type MessageChoiceSnapshot = {
+  choice: ClientMessageChoiceState | null
+  conversationId: string
+  messageId: string
+  status: "active" | "deleted" | "revoked"
+}
+
+export type SubmitChoiceResponseResult = {
+  choice: ClientMessageChoiceState
+  conversationId: string
+  created: boolean
+  messageId: string
+  response: {
+    createdAt: string
+    id: string
+    optionIds: string[]
+    userId: string
+  }
+}
+
+export type MessageChoiceUpdatedEvent = {
+  actorOptionIds: string[]
+  actorUserId: string
+  choice: ClientMessageChoiceState
+  conversationId: string
+  messageId: string
 }
 
 export type ClientMessageReaction = {

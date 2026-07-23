@@ -47,6 +47,20 @@ func (s *Server) PublishMembersMentioned(_ context.Context, userIDs []string, co
 	s.realtime.SendToUsers(userIDs, realtimeConversationMemberMentionedEvent(conversationID, seq))
 }
 
+func (s *Server) PublishMembersChoiceReceived(_ context.Context, userIDs []string, conversationID string, seq int64) {
+	if len(userIDs) == 0 {
+		return
+	}
+	s.realtime.SendToUsers(userIDs, realtimeConversationMemberChoiceReceivedEvent(conversationID, seq))
+}
+
+func (s *Server) PublishMessageChoiceUpdated(_ context.Context, userIDs []string, event messageapp.ChoiceUpdatedEvent) {
+	if len(userIDs) == 0 {
+		return
+	}
+	s.realtime.SendToUsers(userIDs, realtimeMessageChoiceUpdatedEvent(event))
+}
+
 func (s *Server) PublishMessageReactionsUpdated(_ context.Context, userIDs []string, event messageapp.ReactionEvent) {
 	if len(userIDs) == 0 {
 		return
@@ -84,6 +98,11 @@ func legacyMessageResponse(value messageapp.Message) messageResponse {
 		RevokedByUserID:  value.RevokedByUserID,
 		Sender:           messageSenderResponse{ID: value.Sender.ID, Type: value.Sender.Type},
 		Seq:              value.Seq,
+	}
+	if value.Choice != nil {
+		choice := newRealtimeMessageChoiceState(*value.Choice)
+		choice.MyOptionIDs = append([]string{}, value.Choice.MyOptionIDs...)
+		response.Choice = &choice
 	}
 	if value.DelegatedBy != nil {
 		response.DelegatedBy = &messageDelegatedByResponse{

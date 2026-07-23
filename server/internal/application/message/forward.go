@@ -186,11 +186,51 @@ func normalizeForwardUUIDs(rawIDs []string, fieldName string, limit int) ([]stri
 
 func (s *Service) loadForwardSourceMessages(ctx context.Context, userID, conversationID string, messageIDs []string) ([]store.Message, error) {
 	db := s.db.WithContext(ctx)
-	member, err := requireReadableConversationMember(db, userID, conversationID)
+	access, err := loadUserConversationAccess(db, conversationID, userID, false)
 	if err != nil {
 		return nil, err
 	}
-	visibleFromSeq := member.HistoryVisibleFromSeq
+	topicMessageIDs := messageIDs
+	includeTopicSource := false
+	if access.Context.Topic != nil {
+		topicMessageIDs = make([]string, 0, len(messageIDs))
+		for _, messageID := range messageIDs {
+			if messageID == access.Context.Topic.SourceMessageID {
+				includeTopicSource = true
+				continue
+			}
+			topicMessageIDs = append(topicMessageIDs, messageID)
+		}
+	}
+	messages, err := loadForwardStoredMessages(ctx, db, conversationID, topicMessageIDs, access.visibleFromSeq())
+	if err != nil {
+		return nil, err
+	}
+	if includeTopicSource {
+		topic := access.Context.Topic
+		sourceMessages, err := loadForwardStoredMessages(
+			ctx, db, topic.ParentConversationID, []string{topic.SourceMessageID}, access.Member.HistoryVisibleFromSeq,
+		)
+		if err != nil {
+			return nil, err
+		}
+		messages = append(sourceMessages, messages...)
+	}
+	if len(messages) != len(messageIDs) {
+		return nil, errForwardSourceUnavailable
+	}
+	for _, message := range messages {
+		if message.RevokedAt != nil {
+			return nil, errForwardSourceUnavailable
+		}
+	}
+	return messages, nil
+}
+
+func loadForwardStoredMessages(ctx context.Context, db *gorm.DB, conversationID string, messageIDs []string, visibleFromSeq int64) ([]store.Message, error) {
+	if len(messageIDs) == 0 {
+		return nil, nil
+	}
 	if visibleFromSeq < 1 {
 		visibleFromSeq = 1
 	}
@@ -218,14 +258,6 @@ func (s *Service) loadForwardSourceMessages(ctx context.Context, userID, convers
 		"conversation_id = ? AND id IN ? AND deleted_at IS NULL AND seq >= ?", conversationID, messageIDs, visibleFromSeq,
 	).Find(&messages).Error; err != nil {
 		return nil, err
-	}
-	if len(messages) != len(messageIDs) {
-		return nil, errForwardSourceUnavailable
-	}
-	for _, message := range messages {
-		if message.RevokedAt != nil {
-			return nil, errForwardSourceUnavailable
-		}
 	}
 	sort.Slice(messages, func(left, right int) bool { return messages[left].Seq < messages[right].Seq })
 	return messages, nil

@@ -236,9 +236,60 @@ const ws = new WebSocket(process.env.MAGICCHAT_APP_WS_URL, {
 
 收到后应停止向该话题发送新消息，并结束与该话题关联的本地任务或 Session。
 
-### 3.3 可靠投递与 ACK
+### 3.3 `choice.response_created`
 
-`message.created` 和 `topic.closed` 会先写入 Server outbox。未确认事件会在重连后按 cursor 升序重放。
+用户回答由当前应用发送的选择消息后，Server 会向该应用推送可靠事件：
+
+```json
+{
+  "v": 1,
+  "kind": "event",
+  "id": "event-id",
+  "cursor": 1289,
+  "event": "choice.response_created",
+  "payload": {
+    "conversation": {
+      "id": "会话 ID",
+      "name": "项目讨论组",
+      "type": "group"
+    },
+    "choice_message": {
+      "id": "选择消息 ID",
+      "seq": 43,
+      "body": {
+        "type": "choice",
+        "content_type": "markdown",
+        "content": "**请选择部署时间**",
+        "selection": "single",
+        "options": [
+          {"id": "today", "label": "今天"},
+          {"id": "tomorrow", "label": "明天"}
+        ]
+      },
+      "summary": "[选择] 请选择部署时间",
+      "created_at": "2026-07-24T08:00:00Z"
+    },
+    "sender": {
+      "id": "用户 ID",
+      "type": "user",
+      "name": "Alice",
+      "nickname": "Alice",
+      "email": "alice@example.com"
+    },
+    "response": {
+      "id": "回答 ID",
+      "option_ids": ["tomorrow"],
+      "created_at": "2026-07-24T08:01:00Z"
+    }
+  }
+}
+```
+
+`response.option_ids` 使用发送选择消息时定义的选项 ID；`single` 只会包含一个 ID，`multiple` 可以包含多个。每名用户只能回答同一条选择消息一次。只有原始选择消息的发送应用会收到该事件；选择消息被撤回或删除后不能再回答。话题中的事件会在 `conversation` 中附带与 `message.created` 相同的 `parent` 和 `source_message` 信息。
+
+### 3.4 可靠投递与 ACK
+
+`message.created`、`choice.response_created` 和 `topic.closed` 会先写入 Server outbox。未确认事件会在重连后按 cursor 升序重放。
 
 推荐处理顺序：
 
@@ -359,7 +410,43 @@ function resolvePendingRequest(replyTo, envelope) {
 
 `target.type=user` 会创建或复用用户与应用的一对一会话，目标用户必须处于应用可见范围内。其他目标要求当前应用仍是会话成员且会话可发言。
 
-可发送的普通消息类型包括 `text`、`markdown`、`link`、`card`、`chart`、`image` 和 `file`。不能发送 `entity_card`。图片和文件应提供可由 Server 拉取的 URL，整个 Envelope 仍受 1 MiB 限制。
+可发送的消息类型包括 `text`、`markdown`、`choice`、`link`、`card`、`chart`、`image` 和 `file`。不能发送 `entity_card`。图片和文件应提供可由 Server 拉取的 URL，整个 Envelope 仍受 1 MiB 限制。
+
+发送选择消息仍使用 `message.send`，把 `message` 设置为 `choice` body：
+
+```json
+{
+  "target": {
+    "type": "group",
+    "conversation_id": "群聊 ID"
+  },
+  "message": {
+    "type": "choice",
+    "content_type": "markdown",
+    "content": "**请选择部署时间**",
+    "selection": "single",
+    "options": [
+      {"id": "today", "label": "今天"},
+      {"id": "tomorrow", "label": "明天"},
+      {"id": "next_week", "label": "下周"}
+    ]
+  }
+}
+```
+
+选择消息字段约束：
+
+| 字段 | 必填 | 说明 |
+| --- | --- | --- |
+| `message.type` | 是 | 固定为 `choice`。 |
+| `message.content_type` | 是 | `text` 或 `markdown`，决定问题正文的渲染方式。 |
+| `message.content` | 是 | 问题正文，去除首尾空白后不能为空，最多 5000 个字符。 |
+| `message.selection` | 是 | `single` 表示单选，`multiple` 表示多选。 |
+| `message.options` | 是 | 2 到 20 个选项。 |
+| `message.options[].id` | 是 | 选项唯一 ID，1 到 64 个字符，只允许字母、数字、`-` 和 `_`。 |
+| `message.options[].label` | 是 | 展示给用户的单行纯文本，最多 200 个字符，不能包含换行或控制字符。 |
+
+用户提交后，应用通过可靠的 `choice.response_created` 事件获取所选 ID。该事件必须与其他可靠事件一样在业务处理成功后调用 `events.ack`。
 
 响应包含 `conversation`、`message` 和 `created`。同一请求 ID 重试不会重复发送。
 

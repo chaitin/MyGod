@@ -13,6 +13,7 @@ const (
 	TypeLink          = "link"
 	TypeCard          = "card"
 	TypeChart         = "chart"
+	TypeChoice        = "choice"
 	TypeEntityCard    = "entity_card"
 	TypeFile          = "file"
 	TypeImage         = "image"

@@ -158,6 +158,9 @@ func (s *Service) revokeForUser(ctx context.Context, userID, conversationID, mes
 		message.RevokedAt = &now
 		message.RevokedByUserID = &revokedByUserID
 		message.UpdatedAt = now
+		if err := s.rewindConversationChoiceSeqOnRevoke(tx, access.Context, message, now); err != nil {
+			return err
+		}
 		reactionState, err := lockMessageReactionState(tx, message.ID, now)
 		if err != nil {
 			return err

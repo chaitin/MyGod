@@ -273,13 +273,13 @@ func TestMessageToolMetadataDocumentsSupportedMessageTypes(t *testing.T) {
 	source := NewSource()
 	for _, operation := range []string{conversationsOperationReply, conversationsOperationSend} {
 		description, schema := helpOperationForTest(t, source, operation)
-		for _, snippet := range []string{"text", "markdown", "image", "file", "card", "不要默认使用 text/markdown", "即使用户没有明确要求图表", "分析、对比、趋势、分布、占比、排名、统计或多维评分", "单个孤立数字"} {
+		for _, snippet := range []string{"text", "markdown", "choice", "image", "file", "card", "不要默认使用 text/markdown", "即使用户没有明确要求图表", "分析、对比、趋势、分布、占比、排名、统计或多维评分", "单个孤立数字"} {
 			if !strings.Contains(description, snippet) {
 				t.Fatalf("%s description = %q, want to contain %q", operation, description, snippet)
 			}
 		}
 		properties := schema["properties"].(map[string]any)["arguments"].(map[string]any)["properties"].(map[string]any)
-		for _, property := range []string{"name", "url", "content", "title", "description"} {
+		for _, property := range []string{"name", "url", "content", "content_type", "selection", "options", "title", "description"} {
 			if _, ok := properties[property]; !ok {
 				t.Fatalf("%s arguments = %#v, want %s", operation, properties, property)
 			}
@@ -1345,6 +1345,57 @@ func TestReplyToolCallsMessageSendForCard(t *testing.T) {
 	}
 	if payload.Message.URL != "/projects/project-1?taskId=task-1" {
 		t.Fatalf("message url = %q, want card URL", payload.Message.URL)
+	}
+}
+
+func TestReplyToolSendsChoiceAndEndsTheCurrentCycle(t *testing.T) {
+	requester := &fakeRequester{}
+	ctx := WithScope(context.Background(), Scope{
+		ConversationID: "conversation-1", ConversationType: "app", Requester: requester,
+	})
+	result, err := callReply(ctx, json.RawMessage(`{
+		"type":"choice",
+		"content_type":"markdown",
+		"content":"**请选择项目**",
+		"selection":"multiple",
+		"options":[
+			{"id":"project-a","label":"项目 A"},
+			{"id":"project_b","label":"项目 B"}
+		]
+	}`))
+	if err != nil {
+		t.Fatalf("callReply() error = %v", err)
+	}
+	if !result.Final {
+		t.Fatal("choice reply result.Final = false, want true")
+	}
+	if len(requester.calls) != 1 || requester.calls[0].method != methodMessageSend {
+		t.Fatalf("request calls = %#v", requester.calls)
+	}
+	var payload sendMessagePayload
+	if err := json.Unmarshal(requester.calls[0].payload, &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if payload.Message.Type != messageTypeChoice || payload.Message.ContentType != messageTypeMarkdown ||
+		payload.Message.Selection != "multiple" || len(payload.Message.Options) != 2 || payload.Message.Options[1].ID != "project_b" {
+		t.Fatalf("choice payload = %#v", payload.Message)
+	}
+}
+
+func TestReplyToolRejectsInvalidChoiceMessages(t *testing.T) {
+	ctx := WithScope(context.Background(), Scope{
+		ConversationID: "conversation-1", ConversationType: "app", Requester: &fakeRequester{},
+	})
+	for _, input := range []string{
+		`{"type":"choice","content_type":"html","content":"请选择","selection":"single","options":[{"id":"a","label":"A"},{"id":"b","label":"B"}]}`,
+		`{"type":"choice","content_type":"text","content":"请选择","selection":"any","options":[{"id":"a","label":"A"},{"id":"b","label":"B"}]}`,
+		`{"type":"choice","content_type":"text","content":"请选择","selection":"single","options":[{"id":"a","label":"A"}]}`,
+		`{"type":"choice","content_type":"text","content":"请选择","selection":"single","options":[{"id":"a b","label":"A"},{"id":"b","label":"B"}]}`,
+		`{"type":"choice","content_type":"text","content":"请选择","selection":"single","options":[{"id":"a","label":"A"},{"id":"a","label":"B"}]}`,
+	} {
+		if _, err := callReply(ctx, json.RawMessage(input)); err == nil {
+			t.Fatalf("callReply(%s) error = nil, want choice validation error", input)
+		}
 	}
 }
 

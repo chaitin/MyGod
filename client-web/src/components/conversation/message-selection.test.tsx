@@ -1,5 +1,5 @@
 import * as React from "react"
-import { render, screen } from "@testing-library/react"
+import { render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter } from "react-router"
 import { describe, expect, it, vi } from "vitest"
@@ -16,6 +16,36 @@ import {
 } from "@/lib/client-data-context"
 
 describe("conversation message selection", () => {
+  it("opens the message actions from the hover more button", async () => {
+    const user = userEvent.setup()
+    const onForwardSelected = vi.fn()
+
+    render(
+      <MemoryRouter>
+        <ClientDataContext.Provider value={createClientDataValue()}>
+          <SelectionHarness onForwardSelected={onForwardSelected} />
+        </ClientDataContext.Provider>
+      </MemoryRouter>
+    )
+
+    const messageRow = screen
+      .getByText("第一条")
+      .closest<HTMLElement>("[data-conversation-message-id]")
+    expect(messageRow).not.toBeNull()
+    await user.click(
+      within(messageRow!).getByRole("button", { name: "更多操作" })
+    )
+
+    const menu = screen.getByRole("menu")
+    expect(
+      within(menu)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent)
+    ).toEqual(["复制", "回复", "转发", "多选"])
+    await user.click(within(menu).getByRole("menuitem", { name: "多选" }))
+    expect(screen.getByText("已选择 1 条")).toBeInTheDocument()
+  })
+
   it("enters multi-select from the context menu and chooses a forward mode", async () => {
     const user = userEvent.setup()
     const onForwardSelected = vi.fn()
@@ -256,6 +286,7 @@ function createConversation(): ClientConversation {
     lastMessageSeq: 2,
     lastMessageSender: null,
     lastMessageSummary: "第二条",
+    lastChoiceSeq: 0,
     lastMentionedSeq: 0,
     lastReadSeq: 2,
     memberCount: 2,

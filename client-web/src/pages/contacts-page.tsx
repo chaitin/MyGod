@@ -28,6 +28,7 @@ import type {
 import {
   deleteClientApp,
   getClientAppCredentials,
+  getClientAppProfile,
   type ClientAppCredentials,
   type ClientOwnedApp,
 } from "@/lib/client-api/apps"
@@ -183,9 +184,7 @@ export function ContactsPage() {
     try {
       setAppCredentials(await getClientAppCredentials(app.id))
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "加载应用接入信息失败"
-      )
+      toast.error(error instanceof Error ? error.message : "加载开发指南失败")
     } finally {
       setLoadingAccessInfoAppId("")
     }
@@ -201,8 +200,7 @@ export function ContactsPage() {
 
     setLoadingProfileAppId(app.id)
     try {
-      const credentials = await getClientAppCredentials(app.id)
-      setAppProfile(credentials.app)
+      setAppProfile(await getClientAppProfile(app.id))
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "加载应用资料失败")
     } finally {

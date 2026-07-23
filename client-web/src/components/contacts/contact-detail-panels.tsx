@@ -4,7 +4,6 @@ import {
   Loader2Icon,
   Mail,
   Phone,
-  Trash2,
   UserPen,
   UserRound,
   UsersRound,
@@ -150,18 +149,6 @@ export function AppDetailPanel({
             <div className="grid gap-2">
               <Button
                 className="w-full"
-                disabled={viewingAccessInfo}
-                onClick={onViewAccessInfo}
-                type="button"
-                variant="secondary"
-              >
-                {viewingAccessInfo ? (
-                  <Loader2Icon aria-hidden="true" className="animate-spin" />
-                ) : null}
-                查看接入信息
-              </Button>
-              <Button
-                className="w-full"
                 disabled={editingProfile}
                 onClick={onEditProfile}
                 type="button"
@@ -172,6 +159,18 @@ export function AppDetailPanel({
                 ) : null}
                 修改资料
               </Button>
+              <Button
+                className="w-full"
+                disabled={viewingAccessInfo}
+                onClick={onViewAccessInfo}
+                type="button"
+                variant="secondary"
+              >
+                {viewingAccessInfo ? (
+                  <Loader2Icon aria-hidden="true" className="animate-spin" />
+                ) : null}
+                开发指南
+              </Button>
               {onDelete && (
                 <Button
                   className="w-full"
@@ -180,7 +179,6 @@ export function AppDetailPanel({
                   type="button"
                   variant="destructive"
                 >
-                  <Trash2 />
                   删除应用
                 </Button>
               )}

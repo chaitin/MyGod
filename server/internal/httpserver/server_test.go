@@ -98,6 +98,7 @@ func migrateTestSchema(db *gorm.DB) error {
 		&store.Message{},
 		&store.MessageReaction{},
 		&store.MessageReactionState{},
+		&store.MessageChoiceResponse{},
 		&store.DirectConversation{},
 		&store.Project{},
 		&store.ProjectGroup{},
@@ -3559,6 +3560,40 @@ func TestAppWebSocketMessageSendAsUserCanSendToGroupConversation(t *testing.T) {
 	if storedMessage.DelegatedByID == nil || *storedMessage.DelegatedByID != app.ID {
 		t.Fatalf("stored delegated_by_id = %v, want %s", storedMessage.DelegatedByID, app.ID)
 	}
+
+	choiceResponse := sendAppRequest(t, appConn, realtime.Envelope{
+		V: realtime.ProtocolVersion, Kind: realtime.KindRequest,
+		ID: "app-send-as-user-group-choice", Method: appMethodMessageSendAsUser,
+		Payload: mustMarshalPayloadForTest(t, map[string]any{
+			"actor_user_id": alice.ID, "trigger_message_id": triggerMessage["id"],
+			"target": map[string]any{
+				"type": "group", "conversation_id": group.ID,
+			},
+			"message": map[string]any{
+				"type": "choice", "content_type": "text", "content": "选择发布窗口",
+				"selection": "multiple", "options": []map[string]any{
+					{"id": "morning", "label": "上午"},
+					{"id": "afternoon", "label": "下午"},
+				},
+			},
+		}),
+	})
+	choicePayload := requireAppSendMessageResponsePayload(t, choiceResponse)
+	choiceMessage := choicePayload["message"].(map[string]any)
+	if choiceMessage["summary"] != "[选择] 选择发布窗口" || choiceMessage["seq"] != float64(5) {
+		t.Fatalf("send_as_user choice message = %#v", choiceMessage)
+	}
+	pushedChoice := readMessageCreatedEvent(t, bobConn)
+	if pushedChoice["id"] != choiceMessage["id"] {
+		t.Fatalf("pushed delegated choice id = %v, want %v", pushedChoice["id"], choiceMessage["id"])
+	}
+	var bobMember store.ConversationMember
+	if err := db.First(&bobMember,
+		"conversation_id = ? AND member_type = ? AND member_id = ?",
+		group.ID, store.ConversationMemberTypeUser, bob.ID,
+	).Error; err != nil || bobMember.LastChoiceSeq != 5 {
+		t.Fatalf("bob choice sequence = %d, err = %v", bobMember.LastChoiceSeq, err)
+	}
 }
 
 func TestAppWebSocketMessageSendSupportsUserGroupAppAndTopicTargets(t *testing.T) {
@@ -3655,6 +3690,79 @@ func TestAppWebSocketMessageSendSupportsUserGroupAppAndTopicTargets(t *testing.T
 	if pushedAppMessage["id"] != appMessage["id"] {
 		t.Fatalf("app target pushed id = %v, want %v", pushedAppMessage["id"], appMessage["id"])
 	}
+
+	choiceResponse := sendAppRequest(t, appConn, realtime.Envelope{
+		V: realtime.ProtocolVersion, Kind: realtime.KindRequest,
+		ID: "app-request-choice", Method: appMethodMessageSend,
+		Payload: mustMarshalPayloadForTest(t, map[string]any{
+			"target": map[string]any{
+				"type": "app", "conversation_id": appConversationID,
+			},
+			"message": map[string]any{
+				"type": "choice", "content_type": "markdown", "content": "**请选择项目**",
+				"selection": "single", "options": []map[string]any{
+					{"id": "project-a", "label": "项目 A"},
+					{"id": "project-b", "label": "项目 B"},
+				},
+			},
+		}),
+	})
+	choicePayload := requireAppSendMessageResponsePayload(t, choiceResponse)
+	choiceMessage := choicePayload["message"].(map[string]any)
+	if choiceMessage["summary"] != "[选择] 请选择项目" || choiceMessage["seq"] != float64(3) {
+		t.Fatalf("choice message = %#v", choiceMessage)
+	}
+	choiceBody := choiceMessage["body"].(map[string]any)
+	if choiceBody["type"] != messageTypeChoice || choiceBody["selection"] != "single" {
+		t.Fatalf("choice body = %#v", choiceBody)
+	}
+	pushedChoiceMessage := readMessageCreatedEvent(t, userConn)
+	if pushedChoiceMessage["id"] != choiceMessage["id"] {
+		t.Fatalf("pushed choice id = %v, want %v", pushedChoiceMessage["id"], choiceMessage["id"])
+	}
+	choiceState := pushedChoiceMessage["choice"].(map[string]any)
+	if choiceState["response_count"] != float64(0) || len(choiceState["options"].([]any)) != 2 {
+		t.Fatalf("pushed choice state = %#v", choiceState)
+	}
+	choiceUnreadEvent := readRealtimeEvent(t, userConn)
+	if choiceUnreadEvent.Event != realtime.EventMemberChoiceReceived {
+		t.Fatalf("choice unread event = %#v", choiceUnreadEvent)
+	}
+	choiceResponseHTTP, choiceResponseBody := putJSON(t, server,
+		"/api/client/conversations/"+appConversationID+"/messages/"+choiceMessage["id"].(string)+"/choice-response",
+		map[string]any{"option_ids": []string{"project-b"}}, userCookie,
+	)
+	if choiceResponseHTTP.StatusCode != http.StatusCreated {
+		t.Fatalf("choice response status = %d, body = %#v", choiceResponseHTTP.StatusCode, choiceResponseBody)
+	}
+	choiceUpdatedEvent := readRealtimeEvent(t, userConn)
+	if choiceUpdatedEvent.Event != realtime.EventMessageChoiceUpdated {
+		t.Fatalf("choice updated event = %#v", choiceUpdatedEvent)
+	}
+	choiceAppEvent := readRealtimeEvent(t, appConn)
+	if choiceAppEvent.Event != "choice.response_created" || choiceAppEvent.Cursor <= 0 {
+		t.Fatalf("choice app event = %#v", choiceAppEvent)
+	}
+	var choiceAppPayload map[string]any
+	if err := json.Unmarshal(choiceAppEvent.Payload, &choiceAppPayload); err != nil {
+		t.Fatalf("unmarshal choice app event: %v", err)
+	}
+	choiceAppResponse := choiceAppPayload["response"].(map[string]any)
+	if choiceAppPayload["choice_message"].(map[string]any)["id"] != choiceMessage["id"] ||
+		choiceAppResponse["id"] != requireSuccess(t, choiceResponseBody)["response"].(map[string]any)["id"] ||
+		choiceAppPayload["sender"].(map[string]any)["id"] != alice.ID {
+		t.Fatalf("choice app event payload = %#v", choiceAppPayload)
+	}
+	choiceReplayConn := dialAppWebSocket(t, server, app.ID, app.ConnectionSecret)
+	replayedChoiceAppEvent := readRealtimeEvent(t, choiceReplayConn)
+	if replayedChoiceAppEvent.Cursor != choiceAppEvent.Cursor || replayedChoiceAppEvent.Event != choiceAppEvent.Event ||
+		string(replayedChoiceAppEvent.Payload) != string(choiceAppEvent.Payload) {
+		t.Fatalf("replayed choice app event = %#v, want %#v", replayedChoiceAppEvent, choiceAppEvent)
+	}
+	ackAppEvent(t, choiceReplayConn, replayedChoiceAppEvent.Cursor)
+	_ = choiceReplayConn.Close()
+	_ = appConn.Close()
+	appConn = dialAppWebSocket(t, server, app.ID, app.ConnectionSecret)
 
 	group := insertTestConversation(t, db, testConversationInput{
 		createdByUserID: alice.ID,
@@ -3791,8 +3899,8 @@ func TestAppWebSocketMessageSendSupportsUserGroupAppAndTopicTargets(t *testing.T
 	if err := db.Order("created_at ASC").Find(&storedMessages, "sender_type = ? AND sender_id = ?", store.MessageSenderTypeApp, app.ID).Error; err != nil {
 		t.Fatalf("find app messages: %v", err)
 	}
-	if len(storedMessages) != 4 {
-		t.Fatalf("stored app message count = %d, want 4", len(storedMessages))
+	if len(storedMessages) != 5 {
+		t.Fatalf("stored app message count = %d, want 5", len(storedMessages))
 	}
 }
 

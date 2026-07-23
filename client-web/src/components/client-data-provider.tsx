@@ -9,10 +9,12 @@ import {
   isClientMessageInitiatedByUser,
   listClientContacts,
   listClientConversations,
+  listConversationMessageChoiceSnapshots,
   listConversationMessageReactionSnapshots,
   listConversationMessages,
   markConversationRead as markConversationReadRequest,
   setConversationMessageReaction as setConversationMessageReactionRequest,
+  submitConversationMessageChoiceResponse,
   setConversationMuted as setConversationMutedRequest,
   setConversationPinned as setConversationPinnedRequest,
   type ClientConversation,
@@ -24,6 +26,8 @@ import {
   type ContactUser,
   type MarkConversationReadOptions,
   type MessageReactionsUpdatedEvent,
+  type MessageChoiceSnapshot,
+  type MessageChoiceUpdatedEvent,
   type MessageReactionSnapshot,
 } from "@/lib/client-data-api"
 import {
@@ -33,8 +37,11 @@ import {
 } from "@/lib/client-data-context"
 import { ClientProfileProvider } from "@/components/client-profile-provider"
 import {
+  compactConversationMessageState,
   createConversationMessageState,
+  applyMessageChoiceSnapshot,
   applyMessageReactionSnapshot,
+  applyMessageChoiceState,
   applyMessageReactionsUpdate,
   getClientDataErrorMessage,
   getMessageSummary,
@@ -55,6 +62,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { ClientLoadingPage } from "@/components/client-loading-page"
 import { useConversationActions } from "@/hooks/use-conversation-actions"
+import { useConversationMessageRetention } from "@/hooks/use-conversation-message-retention"
 import { useConversationSenders } from "@/hooks/use-conversation-senders"
 import { useAppInfo } from "@/lib/app-info-context"
 
@@ -63,6 +71,7 @@ type BootstrapState = "loading" | "ready" | "error"
 const minimumBootstrapLoadingMs = 1_000
 const refreshIntervalMs = 15_000
 const reactionSnapshotBatchSize = 100
+const choiceSnapshotBatchSize = 100
 const maxReactionSnapshotCatchUpAttempts = 3
 
 export function ClientDataProvider({ children }: { children: ReactNode }) {
@@ -108,6 +117,8 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
   const reactionSnapshotMinimumVersionsRef = useRef<Map<string, number>>(
     new Map()
   )
+  const { applyConversationMessageRetention, registerConversationMessageView } =
+    useConversationMessageRetention()
 
   useEffect(() => {
     conversationMessageStatesRef.current = conversationMessageStates
@@ -287,7 +298,11 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
       setConversationMessageStates((currentStates) => {
         const previousState =
           currentStates[conversationId] ?? createConversationMessageState()
-        const nextState = updater(previousState)
+        const updatedState = updater(previousState)
+        const nextState = applyConversationMessageRetention(
+          conversationId,
+          updatedState
+        )
 
         return {
           ...currentStates,
@@ -295,8 +310,25 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
         }
       })
     },
-    []
+    [applyConversationMessageRetention]
   )
+
+  const compactConversationMessages = useCallback((conversationId: string) => {
+    if (!conversationId) {
+      return
+    }
+
+    setConversationMessageStates((currentStates) => {
+      const currentState = currentStates[conversationId]
+      if (!currentState) {
+        return currentStates
+      }
+      const nextState = compactConversationMessageState(currentState)
+      return nextState === currentState
+        ? currentStates
+        : { ...currentStates, [conversationId]: nextState }
+    })
+  }, [])
 
   const applyConversationMessageToList = useCallback(
     (message: ClientMessage, options: { countUnread?: boolean } = {}) => {
@@ -563,8 +595,18 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
       const visibleInActiveConversation =
         Boolean(options.visible) &&
         options.activeConversationId === message.conversationId
+      const messageState =
+        conversationMessageStatesRef.current[message.conversationId]
+      const activeConversation =
+        options.activeConversationId === message.conversationId
+      const shouldCacheMessage =
+        activeConversation || messageState?.loaded || messageState?.loading
 
-      mergeIncomingConversationMessage(message, { updateList: false })
+      if (shouldCacheMessage) {
+        mergeIncomingConversationMessage(message, { updateList: false })
+      } else {
+        updateTopicSourcePreview(message)
+      }
       applyConversationMessageToList(message, {
         countUnread: !fromCurrentUser && !visibleInActiveConversation,
       })
@@ -573,6 +615,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
       applyConversationMessageToList,
       currentUserId,
       mergeIncomingConversationMessage,
+      updateTopicSourcePreview,
     ]
   )
 
@@ -653,6 +696,102 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     [currentUserId, refreshMessageReactions]
   )
 
+  const applyChoiceSnapshots = useCallback(
+    (snapshots: MessageChoiceSnapshot[]) => {
+      if (snapshots.length === 0) {
+        return
+      }
+      const snapshotsByMessageId = new Map(
+        snapshots.map((snapshot) => [snapshot.messageId, snapshot])
+      )
+      setConversationMessageStates((currentStates) => {
+        let statesChanged = false
+        const nextStates = { ...currentStates }
+        for (const [conversationId, state] of Object.entries(currentStates)) {
+          let messagesChanged = false
+          const messages = state.messages
+            .map((message) => {
+              const snapshot = snapshotsByMessageId.get(message.id)
+              if (!snapshot || snapshot.conversationId !== conversationId) {
+                return message
+              }
+              const nextMessage = applyMessageChoiceSnapshot(message, snapshot)
+              if (nextMessage !== message) {
+                messagesChanged = true
+              }
+              return nextMessage
+            })
+            .filter((message): message is ClientMessage => message !== null)
+          if (messagesChanged) {
+            statesChanged = true
+            nextStates[conversationId] = { ...state, messages }
+          }
+        }
+        return statesChanged ? nextStates : currentStates
+      })
+    },
+    []
+  )
+
+  const handleIncomingMessageChoiceUpdate = useCallback(
+    (event: MessageChoiceUpdatedEvent) => {
+      setConversationMessageStates((currentStates) => {
+        const state = currentStates[event.conversationId]
+        if (!state) {
+          return currentStates
+        }
+        const messageIndex = state.messages.findIndex(
+          (message) => message.id === event.messageId
+        )
+        if (messageIndex < 0) {
+          return currentStates
+        }
+        const previousMessage = state.messages[messageIndex]
+        const choice = {
+          ...event.choice,
+          myOptionIds:
+            event.actorUserId === currentUserId
+              ? event.actorOptionIds
+              : (previousMessage.choice?.myOptionIds ?? []),
+        }
+        const nextMessage = applyMessageChoiceState(previousMessage, choice)
+        if (nextMessage === previousMessage) {
+          return currentStates
+        }
+        const messages = [...state.messages]
+        messages[messageIndex] = nextMessage
+        return {
+          ...currentStates,
+          [event.conversationId]: { ...state, messages },
+        }
+      })
+    },
+    [currentUserId]
+  )
+
+  const respondToChoice = useCallback(
+    async (conversationId: string, messageId: string, optionIds: string[]) => {
+      try {
+        const result = await submitConversationMessageChoiceResponse(
+          conversationId,
+          messageId,
+          optionIds
+        )
+        applyChoiceSnapshots([
+          {
+            choice: result.choice,
+            conversationId: result.conversationId,
+            messageId: result.messageId,
+            status: "active",
+          },
+        ])
+      } catch (error) {
+        throw handleError(error, "提交选择失败")
+      }
+    },
+    [applyChoiceSnapshots, handleError]
+  )
+
   const setMessageReaction = useCallback(
     async (
       conversationId: string,
@@ -708,6 +847,29 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
                 lastMentionedSeq: Math.max(
                   conversation.lastMentionedSeq,
                   lastMentionedSeq
+                ),
+              }
+            : conversation
+        )
+      )
+    },
+    []
+  )
+
+  const updateConversationLastChoiceSeq = useCallback(
+    (conversationId: string, lastChoiceSeq: number) => {
+      if (!conversationId || lastChoiceSeq <= 0) {
+        return
+      }
+
+      setConversations((currentConversations) =>
+        currentConversations.map((conversation) =>
+          conversation.id === conversationId
+            ? {
+                ...conversation,
+                lastChoiceSeq: Math.max(
+                  conversation.lastChoiceSeq,
+                  lastChoiceSeq
                 ),
               }
             : conversation
@@ -1034,8 +1196,27 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
         conversationId,
         state.messages.map((message) => message.id)
       ).catch(() => undefined)
+      const choiceMessageIds = state.messages
+        .filter((message) => message.body.type === "choice")
+        .map((message) => message.id)
+      for (
+        let index = 0;
+        index < choiceMessageIds.length;
+        index += choiceSnapshotBatchSize
+      ) {
+        void listConversationMessageChoiceSnapshots(
+          conversationId,
+          choiceMessageIds.slice(index, index + choiceSnapshotBatchSize)
+        )
+          .then(applyChoiceSnapshots)
+          .catch(() => undefined)
+      }
     }
-  }, [refreshMessageReactions, syncAfterConversationMessages])
+  }, [
+    applyChoiceSnapshots,
+    refreshMessageReactions,
+    syncAfterConversationMessages,
+  ])
 
   const {
     sendConversationFile,
@@ -1225,6 +1406,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     addGroupConversationMembers,
     contactApps,
     contactGroups,
+    compactConversationMessages,
     conversations,
     contacts,
     contactsError,
@@ -1246,6 +1428,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     setConversationMuted,
     handleIncomingConversationMessage,
     handleIncomingConversationMessageUpdate,
+    handleIncomingMessageChoiceUpdate,
     handleIncomingMessageReactionsUpdate,
     me,
     meError,
@@ -1261,6 +1444,8 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     projectsLoadingMore,
     projectsNextCursor,
     projectsRefreshing,
+    registerConversationMessageView,
+    respondToChoice,
     refreshConversations,
     refreshContacts,
     refreshMe,
@@ -1284,6 +1469,7 @@ export function ClientDataProvider({ children }: { children: ReactNode }) {
     syncLoadedConversationMessages,
     updateConversationLastMessage,
     updateConversationLastMentionedSeq,
+    updateConversationLastChoiceSeq,
     updateConversationPinned,
     updateConversationMuted,
     updateMessageTopic,
