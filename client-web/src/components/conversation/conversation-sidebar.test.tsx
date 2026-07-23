@@ -6,7 +6,7 @@ import { SidebarProvider } from "@/components/ui/sidebar"
 import type { ClientConversation, ClientUser } from "@/lib/client-data-api"
 
 describe("ConversationSidebar", () => {
-  it("shows the last message sender before the summary", () => {
+  it("omits the sender in direct chats and shows it in group chats", () => {
     const conversations = [
       createAppConversation({
         id: "mine",
@@ -20,7 +20,7 @@ describe("ConversationSidebar", () => {
         name: "我的会话",
       }),
       createAppConversation({
-        id: "other-user",
+        id: "direct-user",
         lastMessageSender: {
           id: "user-2",
           name: "张三",
@@ -28,7 +28,8 @@ describe("ConversationSidebar", () => {
           type: "user",
         },
         lastMessageSummary: "其他人的消息",
-        name: "用户会话",
+        name: "用户私聊",
+        type: "direct",
       }),
       createAppConversation({
         id: "app",
@@ -42,7 +43,19 @@ describe("ConversationSidebar", () => {
         name: "应用会话",
       }),
       createAppConversation({
-        id: "system",
+        id: "group-user",
+        lastMessageSender: {
+          id: "user-2",
+          name: "张三",
+          nickname: "小张",
+          type: "user",
+        },
+        lastMessageSummary: "群聊消息",
+        name: "用户群聊",
+        type: "group",
+      }),
+      createAppConversation({
+        id: "group-system",
         lastMessageSender: {
           id: "",
           name: "系统",
@@ -51,6 +64,7 @@ describe("ConversationSidebar", () => {
         },
         lastMessageSummary: "张三加入群聊",
         name: "系统会话",
+        type: "group",
       }),
     ]
 
@@ -70,9 +84,10 @@ describe("ConversationSidebar", () => {
       </SidebarProvider>
     )
 
-    expect(screen.getByText("我：我发送的消息")).toBeInTheDocument()
-    expect(screen.getByText("小张：其他人的消息")).toBeInTheDocument()
-    expect(screen.getByText("发布助手：应用消息")).toBeInTheDocument()
+    expect(screen.getByText("我发送的消息")).toBeInTheDocument()
+    expect(screen.getByText("其他人的消息")).toBeInTheDocument()
+    expect(screen.getByText("应用消息")).toBeInTheDocument()
+    expect(screen.getByText("小张：群聊消息")).toBeInTheDocument()
     expect(screen.getByText("系统：张三加入群聊")).toBeInTheDocument()
   })
 
@@ -131,7 +146,7 @@ describe("ConversationSidebar", () => {
     )
 
     expect(screen.getByText("[有人 @ 我]")).toBeInTheDocument()
-    expect(screen.getByText("小张：请看一下")).toBeInTheDocument()
+    expect(screen.getByText("请看一下")).toBeInTheDocument()
     expect(screen.getByText("[草稿]")).toBeInTheDocument()
     expect(screen.getByText("尚未发送的内容")).toBeInTheDocument()
     expect(screen.queryByText("不会覆盖 @ 提醒")).not.toBeInTheDocument()

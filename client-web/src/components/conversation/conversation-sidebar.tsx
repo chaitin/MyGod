@@ -384,6 +384,9 @@ function getConversationListDescription(
   }
 
   const description = formatMentionTemplateText(summary, mentionLabelResolver)
+  if (conversation.type === "direct" || conversation.type === "app") {
+    return description
+  }
   const senderName = getLastMessageSenderName(conversation, currentUserId)
   return senderName ? `${senderName}：${description}` : description
 }
