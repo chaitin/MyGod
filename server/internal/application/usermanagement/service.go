@@ -81,11 +81,37 @@ func (s *Service) List(ctx context.Context, cmd ListCommand) (ListResult, error)
 	if err != nil {
 		return ListResult{}, err
 	}
+	onlineFilter, err := parseListOnline(cmd.Online)
+	if err != nil {
+		return ListResult{}, err
+	}
 	query := s.db.WithContext(ctx).Model(&store.User{})
 	keyword := strings.ToLower(strings.TrimSpace(cmd.Keyword))
 	if keyword != "" {
 		like := "%" + keyword + "%"
 		query = query.Where("LOWER(email) LIKE ? OR LOWER(name) LIKE ? OR LOWER(nickname) LIKE ? OR phone LIKE ?", like, like, like, like)
+	}
+	var onlineStatus map[string]bool
+	if onlineFilter != nil {
+		var candidateIDs []string
+		if err := query.Pluck("id", &candidateIDs).Error; err != nil {
+			return ListResult{}, internalError(err)
+		}
+		onlineStatus = map[string]bool{}
+		if s.presence != nil {
+			onlineStatus = s.presence.OnlineStatus(candidateIDs)
+		}
+		filteredIDs := make([]string, 0, len(candidateIDs))
+		for _, userID := range candidateIDs {
+			if onlineStatus[userID] == *onlineFilter {
+				filteredIDs = append(filteredIDs, userID)
+			}
+		}
+		if len(filteredIDs) == 0 {
+			query = query.Where("1 = 0")
+		} else {
+			query = query.Where("id IN ?", filteredIDs)
+		}
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -101,8 +127,10 @@ func (s *Service) List(ctx context.Context, cmd ListCommand) (ListResult, error)
 	for _, user := range storedUsers {
 		userIDs = append(userIDs, user.ID)
 	}
-	onlineStatus := map[string]bool{}
-	if s.presence != nil {
+	if onlineStatus == nil {
+		onlineStatus = map[string]bool{}
+	}
+	if onlineFilter == nil && s.presence != nil {
 		onlineStatus = s.presence.OnlineStatus(userIDs)
 	}
 	users := make([]User, 0, len(storedUsers))
@@ -112,6 +140,21 @@ func (s *Service) List(ctx context.Context, cmd ListCommand) (ListResult, error)
 	return ListResult{
 		Users: users, Total: total, Page: page, PageSize: pageSize, Sort: sortField, Order: order,
 	}, nil
+}
+
+func parseListOnline(rawOnline string) (*bool, error) {
+	switch strings.ToLower(strings.TrimSpace(rawOnline)) {
+	case "":
+		return nil, nil
+	case "true":
+		value := true
+		return &value, nil
+	case "false":
+		value := false
+		return &value, nil
+	default:
+		return nil, newError(CodeInvalidRequest, "在线状态筛选参数不支持", nil)
+	}
 }
 
 func (s *Service) Create(ctx context.Context, cmd CreateCommand) (CreateResult, error) {

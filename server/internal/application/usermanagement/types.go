@@ -25,6 +25,7 @@ type User struct {
 
 type ListCommand struct {
 	Keyword  string
+	Online   string
 	Page     string
 	PageSize string
 	Sort     string

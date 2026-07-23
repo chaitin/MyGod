@@ -89,6 +89,33 @@ definitions:
       user:
         $ref: '#/definitions/admin.userResponse'
     type: object
+  admin.dashboardStatsResponse:
+    properties:
+      active_conversations_7_days:
+        example: 74
+        type: integer
+      active_conversations_24_hours:
+        example: 27
+        type: integer
+      messages_7_days:
+        example: 1842
+        type: integer
+      messages_24_hours:
+        example: 326
+        type: integer
+      online_users:
+        example: 18
+        type: integer
+      total_users:
+        example: 120
+        type: integer
+      visited_users_7_days:
+        example: 86
+        type: integer
+      visited_users_24_hours:
+        example: 32
+        type: integer
+    type: object
   admin.emailLoginSettingsResponse:
     properties:
       enabled:
@@ -2084,6 +2111,32 @@ paths:
       summary: 管理员登录
       tags:
       - 管理员认证
+  /api/admin/dashboard:
+    get:
+      description: 返回用户访问、实时在线、消息和活跃会话的 24 小时及 7 天统计。
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/admin.successEnvelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/admin.dashboardStatsResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/admin.errorEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/admin.errorEnvelope'
+      summary: 获取管理仪表盘统计
+      tags:
+      - 管理仪表盘
   /api/admin/settings/email-login:
     get:
       description: 管理员读取邮箱验证码登录和完整 SMTP 设置，包括已保存的 SMTP 密码。
@@ -2598,13 +2651,17 @@ paths:
       - 管理员第三方登录
   /api/admin/users:
     get:
-      description: 管理员列出普通用户。keyword 会同时搜索邮箱、名称、昵称和手机号；sort 仅支持 email、created_at、status；order
-        仅支持 asc、desc。
+      description: 管理员列出普通用户。keyword 会同时搜索邮箱、名称、昵称和手机号；online 仅支持 true、false；sort
+        仅支持 email、created_at、status；order 仅支持 asc、desc。
       parameters:
       - description: 搜索关键字，匹配邮箱、名称、昵称或手机号
         in: query
         name: keyword
         type: string
+      - description: 在线状态，true 表示在线，false 表示不在线
+        in: query
+        name: online
+        type: boolean
       - description: 页码，从 1 开始
         in: query
         name: page

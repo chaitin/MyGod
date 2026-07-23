@@ -71,6 +71,7 @@ describe("admin users", () => {
     const result = await listAdminUsers(
       {
         keyword: " alice ",
+        online: true,
         order: "asc",
         page: 2,
         pageSize: 50,
@@ -101,12 +102,44 @@ describe("admin users", () => {
       ],
     })
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/admin/users?keyword=alice&page=2&page_size=50&sort=email&order=asc",
+      "/api/admin/users?keyword=alice&online=true&page=2&page_size=50&sort=email&order=asc",
       {
         credentials: "include",
         method: "GET",
       }
     )
+  })
+
+  it("allows a listed member to have an empty email and name", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            users: [
+              {
+                id: "user-1",
+                email: "",
+                name: "",
+                online: true,
+                status: "active",
+                created_at: "2026-07-01T12:34:56Z",
+              },
+            ],
+          },
+        }),
+        {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }
+      )
+    )
+
+    await expect(
+      listAdminUsers({ online: true }, fetcher)
+    ).resolves.toMatchObject({
+      users: [{ email: "", name: "", online: true }],
+    })
   })
 
   it("creates a member through the admin users API", async () => {

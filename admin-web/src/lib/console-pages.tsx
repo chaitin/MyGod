@@ -1,5 +1,6 @@
 import {
   AppWindowIcon,
+  LayoutDashboardIcon,
   SettingsIcon,
   UsersRoundIcon,
 } from "lucide-react"
@@ -10,6 +11,7 @@ type ConsoleChildPage = {
 }
 
 type ConsolePage = {
+  label: string
   path: string
   title: string
   icon: React.ReactNode
@@ -18,16 +20,25 @@ type ConsolePage = {
 
 export const consolePages: ConsolePage[] = [
   {
+    label: "仪表盘",
+    path: "/dashboard",
+    title: "仪表盘",
+    icon: <LayoutDashboardIcon />,
+  },
+  {
+    label: "成员",
     path: "/members",
     title: "成员管理",
     icon: <UsersRoundIcon />,
   },
   {
+    label: "应用",
     path: "/apps",
     title: "应用管理",
     icon: <AppWindowIcon />,
   },
   {
+    label: "设置",
     path: "/settings",
     title: "系统设置",
     icon: <SettingsIcon />,

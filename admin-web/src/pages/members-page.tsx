@@ -133,6 +133,12 @@ type MemberActionConfirmationCopy = {
 
 const pageSizeOptions = [50, 100, 200, 500] as const
 type PageSize = (typeof pageSizeOptions)[number]
+type MemberOnlineFilter = "all" | "online" | "offline"
+const memberOnlineFilterLabels: Record<MemberOnlineFilter, string> = {
+  all: "全部",
+  online: "在线",
+  offline: "不在线",
+}
 type PaginationItemModel =
   | {
       page: number
@@ -268,7 +274,7 @@ export function getColumns({
           <ArrowUpDownIcon data-icon="inline-end" />
         </Button>
       ),
-      cell: ({ row }) => row.getValue("email"),
+      cell: ({ row }) => <MemberOptionalText value={row.original.email} />,
     },
     {
       accessorKey: "phone",
@@ -354,6 +360,7 @@ export default function MembersPage() {
   const [memberTotal, setMemberTotal] = useState(0)
   const [members, setMembers] = useState<Member[]>([])
   const [membersReloadKey, setMembersReloadKey] = useState(0)
+  const [onlineFilter, setOnlineFilter] = useState<MemberOnlineFilter>("all")
   const [memberActionConfirmation, setMemberActionConfirmation] =
     useState<MemberActionConfirmationState | null>(null)
   const [pagination, setPagination] = useState<PaginationState>({
@@ -433,6 +440,9 @@ export default function MembersPage() {
       try {
         const result = await listAdminUsers({
           keyword,
+          ...(onlineFilter === "all"
+            ? {}
+            : { online: onlineFilter === "online" }),
           page: pagination.pageIndex + 1,
           pageSize: pagination.pageSize,
           ...sortingParams,
@@ -472,6 +482,7 @@ export default function MembersPage() {
   }, [
     keyword,
     membersReloadKey,
+    onlineFilter,
     pagination.pageIndex,
     pagination.pageSize,
     sorting,
@@ -486,6 +497,18 @@ export default function MembersPage() {
       pageIndex: 0,
       pageSize: Number(value),
     })
+  }
+
+  function handleOnlineFilterChange(value: string | null) {
+    if (!isMemberOnlineFilter(value)) {
+      return
+    }
+
+    setOnlineFilter(value)
+    setPagination((currentPagination) => ({
+      ...currentPagination,
+      pageIndex: 0,
+    }))
   }
 
   function handleResetPasswordOpenChange(open: boolean) {
@@ -599,18 +622,34 @@ export default function MembersPage() {
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-4 p-4 pt-0">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <Input
-          className="sm:max-w-sm"
-          onChange={(event) => {
-            setKeyword(event.target.value)
-            setPagination((currentPagination) => ({
-              ...currentPagination,
-              pageIndex: 0,
-            }))
-          }}
-          placeholder="搜索用户"
-          value={keyword}
-        />
+        <div className="flex min-w-0 gap-2 sm:max-w-lg sm:flex-1">
+          <Select onValueChange={handleOnlineFilterChange} value={onlineFilter}>
+            <SelectTrigger aria-label="在线状态筛选" className="w-28 shrink-0">
+              <SelectValue>
+                {memberOnlineFilterLabels[onlineFilter]}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent alignItemWithTrigger={false}>
+              <SelectGroup>
+                <SelectItem value="all">全部</SelectItem>
+                <SelectItem value="online">在线</SelectItem>
+                <SelectItem value="offline">不在线</SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          <Input
+            className="min-w-0 flex-1"
+            onChange={(event) => {
+              setKeyword(event.target.value)
+              setPagination((currentPagination) => ({
+                ...currentPagination,
+                pageIndex: 0,
+              }))
+            }}
+            placeholder="搜索用户"
+            value={keyword}
+          />
+        </div>
         <div className="flex items-center justify-end gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger render={<Button variant="outline" />}>
@@ -1011,7 +1050,11 @@ function MemberActions({
 }
 
 function MemberIdentity({ member }: { member: Member }) {
-  const displayName = member.name.trim() || member.email
+  const displayName =
+    member.name.trim() ||
+    member.nickname.trim() ||
+    member.email.trim() ||
+    member.id
 
   return (
     <div className="flex min-w-0 items-center gap-3">
@@ -1130,6 +1173,12 @@ function toAdminUserStatus(status: Member["status"]): AdminUser["status"] {
   return status === "enabled" ? "active" : "disabled"
 }
 
+function isMemberOnlineFilter(
+  value: string | null
+): value is MemberOnlineFilter {
+  return value === "all" || value === "online" || value === "offline"
+}
+
 function toMember(user: AdminUser): Member {
   return {
     avatar: user.avatar,
@@ -1169,7 +1218,10 @@ export function getMemberOnlineStatusText(
     return "当前在线"
   }
 
-  const lastOnlineDistance = formatRelativeTimeDistance(member.lastOnlineAt, now)
+  const lastOnlineDistance = formatRelativeTimeDistance(
+    member.lastOnlineAt,
+    now
+  )
 
   if (!lastOnlineDistance) {
     return "从未在线"

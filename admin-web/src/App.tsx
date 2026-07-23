@@ -5,6 +5,7 @@ import Console from "@/console"
 import { addAdminUnauthorizedListener, isAuthenticated } from "@/lib/auth"
 import { defaultConsolePage } from "@/lib/console-pages"
 import AppsPage from "@/pages/apps-page"
+import DashboardPage from "@/pages/dashboard-page"
 import LoginPage from "@/pages/login-page"
 import MembersPage from "@/pages/members-page"
 import SettingsPage from "@/pages/settings-page"
@@ -32,6 +33,7 @@ export function App() {
         path="/"
       >
         <Route element={<Navigate replace to={defaultConsolePage} />} index />
+        <Route element={<DashboardPage />} path="dashboard" />
         <Route element={<MembersPage />} path="members" />
         <Route element={<AppsPage />} path="apps" />
         <Route element={<SettingsPage />} path="settings" />

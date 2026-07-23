@@ -70,10 +70,11 @@ func (a *UserAPI) RegisterRoutes(group *echo.Group) {
 // list godoc
 //
 // @Summary 列出普通用户
-// @Description 管理员列出普通用户。keyword 会同时搜索邮箱、名称、昵称和手机号；sort 仅支持 email、created_at、status；order 仅支持 asc、desc。
+// @Description 管理员列出普通用户。keyword 会同时搜索邮箱、名称、昵称和手机号；online 仅支持 true、false；sort 仅支持 email、created_at、status；order 仅支持 asc、desc。
 // @Tags 管理员用户
 // @Produce json
 // @Param keyword query string false "搜索关键字，匹配邮箱、名称、昵称或手机号"
+// @Param online query bool false "在线状态，true 表示在线，false 表示不在线"
 // @Param page query int false "页码，从 1 开始"
 // @Param page_size query int false "每页数量，最大 1000"
 // @Param sort query string false "排序字段：email、created_at、status"
@@ -85,7 +86,7 @@ func (a *UserAPI) RegisterRoutes(group *echo.Group) {
 // @Router /api/admin/users [get]
 func (a *UserAPI) list(c echo.Context) error {
 	result, err := a.users.List(c.Request().Context(), usermanagement.ListCommand{
-		Keyword: c.QueryParam("keyword"), Page: c.QueryParam("page"), PageSize: c.QueryParam("page_size"),
+		Keyword: c.QueryParam("keyword"), Online: c.QueryParam("online"), Page: c.QueryParam("page"), PageSize: c.QueryParam("page_size"),
 		Sort: c.QueryParam("sort"), Order: c.QueryParam("order"),
 	})
 	if err != nil {

@@ -15,6 +15,7 @@ import (
 	appapp "app/internal/application/app"
 	contactapp "app/internal/application/contact"
 	conversationapp "app/internal/application/conversation"
+	"app/internal/application/dashboard"
 	"app/internal/application/emailauth"
 	entitycardapp "app/internal/application/entitycard"
 	externalauthapp "app/internal/application/externalauth"
@@ -48,6 +49,8 @@ type Server struct {
 	adminAuthAPI        *adminapi.AuthAPI
 	userManagement      *usermanagement.Service
 	adminUsers          *adminapi.UserAPI
+	dashboard           *dashboard.Service
+	adminDashboard      *adminapi.DashboardAPI
 	identityProviders   *identityprovider.Service
 	adminProviders      *adminapi.IdentityProviderAPI
 	externalAuth        *externalauthapp.Service
@@ -162,6 +165,10 @@ func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options,
 	server.clientTasks = clientapi.NewTaskAPI(server.tasks)
 	realtimeOptions.RecordUserPong = server.recordUserPong
 	server.realtime = realtime.NewConnectionPool(realtimeOptions)
+	server.dashboard = dashboard.NewService(dashboard.Dependencies{
+		DB: db, Presence: server.realtime,
+	})
+	server.adminDashboard = adminapi.NewDashboardAPI(server.dashboard)
 	server.userManagement = usermanagement.NewService(usermanagement.Dependencies{
 		DB: db, Presence: server.realtime, AppConnections: server.appConnections,
 	})
@@ -235,6 +242,7 @@ func newRouter(db *gorm.DB, cfg config.Config, realtimeOptions realtime.Options,
 	server.adminSettings.RegisterRoutes(admin)
 	server.adminPasswordLogin.RegisterRoutes(admin)
 	server.adminEmailLogin.RegisterRoutes(admin)
+	server.adminDashboard.RegisterRoutes(admin)
 	server.adminApps.RegisterRoutes(admin)
 	server.adminUsers.RegisterRoutes(admin)
 	server.adminProviders.RegisterRoutes(admin)

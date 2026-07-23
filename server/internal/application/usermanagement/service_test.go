@@ -141,11 +141,54 @@ func TestServiceValidatesUserManagementInput(t *testing.T) {
 	if _, err := service.List(context.Background(), ListCommand{Page: "0"}); ErrorCodeOf(err) != CodeInvalidRequest || ErrorMessage(err) != "页码必须是正整数" {
 		t.Fatalf("invalid page err = %v", err)
 	}
+	if _, err := service.List(context.Background(), ListCommand{Online: "unknown"}); ErrorCodeOf(err) != CodeInvalidRequest || ErrorMessage(err) != "在线状态筛选参数不支持" {
+		t.Fatalf("invalid online filter err = %v", err)
+	}
 	if _, err := service.SetStatus(context.Background(), SetStatusCommand{UserID: "invalid", Status: StatusDisabled}); ErrorCodeOf(err) != CodeInvalidRequest {
 		t.Fatalf("invalid user ID err = %v", err)
 	}
 	if _, err := service.ResetPassword(context.Background(), uuid.NewString()); ErrorCodeOf(err) != CodeNotFound {
 		t.Fatalf("missing user err = %v", err)
+	}
+}
+
+func TestServiceFiltersUsersByOnlinePresenceBeforePagination(t *testing.T) {
+	db := openUserManagementTestDB(t)
+	now := time.Date(2026, 7, 23, 10, 0, 0, 0, time.UTC)
+	users := []store.User{
+		{ID: uuid.NewString(), Email: "alice@example.com", Name: "Alice", PasswordHash: "hash", Status: StatusActive, CreatedAt: now.Add(-3 * time.Hour)},
+		{ID: uuid.NewString(), Email: "bob@example.com", Name: "Bob", PasswordHash: "hash", Status: StatusActive, CreatedAt: now.Add(-2 * time.Hour)},
+		{ID: uuid.NewString(), Email: "carol@example.com", Name: "Carol", PasswordHash: "hash", Status: StatusActive, CreatedAt: now.Add(-time.Hour)},
+	}
+	if err := db.Create(&users).Error; err != nil {
+		t.Fatalf("create users: %v", err)
+	}
+	presence := &fakeUserPresence{online: map[string]bool{
+		users[0].ID: true,
+		users[2].ID: true,
+	}}
+	service := NewService(Dependencies{DB: db, Presence: presence})
+
+	firstOnlinePage, err := service.List(context.Background(), ListCommand{
+		Online: "true", Page: "1", PageSize: "1", Sort: "created_at", Order: "asc",
+	})
+	if err != nil {
+		t.Fatalf("list first online page: %v", err)
+	}
+	if firstOnlinePage.Total != 2 || len(firstOnlinePage.Users) != 1 ||
+		firstOnlinePage.Users[0].ID != users[0].ID || !firstOnlinePage.Users[0].Online {
+		t.Fatalf("first online page = %#v", firstOnlinePage)
+	}
+
+	offlinePage, err := service.List(context.Background(), ListCommand{
+		Online: "false", Page: "1", PageSize: "20", Sort: "created_at", Order: "asc",
+	})
+	if err != nil {
+		t.Fatalf("list offline users: %v", err)
+	}
+	if offlinePage.Total != 1 || len(offlinePage.Users) != 1 ||
+		offlinePage.Users[0].ID != users[1].ID || offlinePage.Users[0].Online {
+		t.Fatalf("offline page = %#v", offlinePage)
 	}
 }
 

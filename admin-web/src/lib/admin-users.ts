@@ -78,6 +78,7 @@ export type CreateAdminUserInput = {
 
 export type ListAdminUsersInput = {
   keyword?: string
+  online?: boolean
   order?: AdminUsersSortOrder
   page?: number
   pageSize?: number
@@ -103,6 +104,10 @@ export async function listAdminUsers(
 
   if (keyword) {
     params.set("keyword", keyword)
+  }
+
+  if (input.online !== undefined) {
+    params.set("online", String(input.online))
   }
 
   if (input.page !== undefined) {
@@ -285,17 +290,17 @@ function createRequestError(
 }
 
 function normalizeAdminUser(user: AdminUserResponse): AdminUser {
-  if (!user.created_at || !user.email || !user.id || !user.name) {
-    throw new AdminUserRequestError("添加成员响应格式不正确")
+  if (!user.created_at || !user.id) {
+    throw new AdminUserRequestError("成员数据响应格式不正确")
   }
 
   return {
     avatar: user.avatar ?? "",
     createdAt: user.created_at,
-    email: user.email,
+    email: user.email ?? "",
     id: user.id,
     lastOnlineAt: user.last_online_at ?? "",
-    name: user.name,
+    name: user.name ?? "",
     nickname: user.nickname ?? "",
     online: user.online ?? false,
     phone: user.phone ?? "",

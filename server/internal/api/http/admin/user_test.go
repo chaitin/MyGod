@@ -24,9 +24,9 @@ func TestUserAPIRoutesUseApplicationService(t *testing.T) {
 	router := echo.New()
 	NewUserAPI(service).RegisterRoutes(router.Group("/api/admin"))
 
-	response := performAdminUserRequest(router, http.MethodGet, "/api/admin/users?keyword=alice&page=2&page_size=10&sort=email&order=asc", nil)
+	response := performAdminUserRequest(router, http.MethodGet, "/api/admin/users?keyword=alice&online=true&page=2&page_size=10&sort=email&order=asc", nil)
 	if response.Code != http.StatusOK || service.listCommand.Keyword != "alice" || service.listCommand.Page != "2" ||
-		service.listCommand.PageSize != "10" || service.listCommand.Sort != "email" || service.listCommand.Order != "asc" {
+		service.listCommand.Online != "true" || service.listCommand.PageSize != "10" || service.listCommand.Sort != "email" || service.listCommand.Order != "asc" {
 		t.Fatalf("list status = %d, command = %#v, body = %s", response.Code, service.listCommand, response.Body.String())
 	}
 

@@ -575,6 +575,50 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/admin/dashboard": {
+            "get": {
+                "description": "返回用户访问、实时在线、消息和活跃会话的 24 小时及 7 天统计。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "管理仪表盘"
+                ],
+                "summary": "获取管理仪表盘统计",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/admin.successEnvelope"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/admin.dashboardStatsResponse"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/admin.errorEnvelope"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/admin.errorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
         "/api/admin/settings/email-login": {
             "get": {
                 "description": "管理员读取邮箱验证码登录和完整 SMTP 设置，包括已保存的 SMTP 密码。",
@@ -1406,7 +1450,7 @@ const docTemplate = `{
         },
         "/api/admin/users": {
             "get": {
-                "description": "管理员列出普通用户。keyword 会同时搜索邮箱、名称、昵称和手机号；sort 仅支持 email、created_at、status；order 仅支持 asc、desc。",
+                "description": "管理员列出普通用户。keyword 会同时搜索邮箱、名称、昵称和手机号；online 仅支持 true、false；sort 仅支持 email、created_at、status；order 仅支持 asc、desc。",
                 "produces": [
                     "application/json"
                 ],
@@ -1419,6 +1463,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "搜索关键字，匹配邮箱、名称、昵称或手机号",
                         "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "在线状态，true 表示在线，false 表示不在线",
+                        "name": "online",
                         "in": "query"
                     },
                     {
@@ -7352,6 +7402,43 @@ const docTemplate = `{
                 },
                 "user": {
                     "$ref": "#/definitions/admin.userResponse"
+                }
+            }
+        },
+        "admin.dashboardStatsResponse": {
+            "type": "object",
+            "properties": {
+                "active_conversations_24_hours": {
+                    "type": "integer",
+                    "example": 27
+                },
+                "active_conversations_7_days": {
+                    "type": "integer",
+                    "example": 74
+                },
+                "messages_24_hours": {
+                    "type": "integer",
+                    "example": 326
+                },
+                "messages_7_days": {
+                    "type": "integer",
+                    "example": 1842
+                },
+                "online_users": {
+                    "type": "integer",
+                    "example": 18
+                },
+                "total_users": {
+                    "type": "integer",
+                    "example": 120
+                },
+                "visited_users_24_hours": {
+                    "type": "integer",
+                    "example": 32
+                },
+                "visited_users_7_days": {
+                    "type": "integer",
+                    "example": 86
                 }
             }
         },

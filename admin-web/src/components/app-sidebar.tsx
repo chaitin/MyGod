@@ -67,7 +67,7 @@ export function AppSidebar({
       <SidebarContent>
         <NavConsolePages
           pages={consolePages.map((page) => ({
-            name: page.title,
+            name: page.label,
             url: page.path,
             icon: page.icon,
             children: page.children?.map((child) => ({
