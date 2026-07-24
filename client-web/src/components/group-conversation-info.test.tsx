@@ -107,6 +107,86 @@ describe("GroupConversationInfo", () => {
       )
     })
   })
+
+  it("sorts members by owner, admin, app, and regular member", () => {
+    const conversation = createGroupConversation()
+    conversation.memberCount = 5
+    conversation.members = [
+      {
+        avatar: "",
+        email: "alice@example.com",
+        id: "user-1",
+        name: "Alice",
+        nickname: "",
+        phone: "",
+        role: "member",
+        type: "user",
+      },
+      {
+        avatar: "",
+        email: "",
+        id: "app-1",
+        name: "Moli",
+        nickname: "",
+        phone: "",
+        role: "member",
+        type: "app",
+      },
+      {
+        avatar: "",
+        email: "admin@example.com",
+        id: "user-3",
+        name: "Admin",
+        nickname: "",
+        phone: "",
+        role: "admin",
+        type: "user",
+      },
+      {
+        avatar: "",
+        email: "owner@example.com",
+        id: "user-2",
+        name: "Owner",
+        nickname: "",
+        phone: "",
+        role: "owner",
+        type: "user",
+      },
+      {
+        avatar: "",
+        email: "bob@example.com",
+        id: "user-4",
+        name: "Bob",
+        nickname: "",
+        phone: "",
+        role: "member",
+        type: "user",
+      },
+    ]
+
+    render(
+      <MemoryRouter>
+        <ClientDataContext.Provider
+          value={createClientDataContextValue({
+            conversations: [conversation],
+            getConversation: vi.fn((conversationId: string) =>
+              conversationId === conversation.id ? conversation : null
+            ),
+          })}
+        >
+          <Sheet open>
+            <SheetContent showCloseButton={false}>
+              <GroupConversationInfo conversationId={conversation.id} />
+            </SheetContent>
+          </Sheet>
+        </ClientDataContext.Provider>
+      </MemoryRouter>
+    )
+
+    const memberList = screen.getByText("群成员（5）").nextElementSibling
+    expect(memberList).not.toBeNull()
+    expect(memberList).toHaveTextContent(/Owner.*Admin.*Moli.*Alice.*Bob/)
+  })
 })
 
 function createClientDataContextValue(

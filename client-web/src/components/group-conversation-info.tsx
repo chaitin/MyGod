@@ -811,17 +811,25 @@ function getMemberRoleLabel(member: ClientConversationMember) {
   return "成员"
 }
 
-const memberRoleOrder: Record<ClientConversationMember["role"], number> = {
-  owner: 0,
-  admin: 1,
-  member: 2,
-}
-
 function compareConversationMembers(
   left: ClientConversationMember,
   right: ClientConversationMember
 ) {
-  return memberRoleOrder[left.role] - memberRoleOrder[right.role]
+  return getConversationMemberOrder(left) - getConversationMemberOrder(right)
+}
+
+function getConversationMemberOrder(member: ClientConversationMember) {
+  if (member.role === "owner") {
+    return 0
+  }
+  if (member.role === "admin") {
+    return 1
+  }
+  if (member.type === "app") {
+    return 2
+  }
+
+  return 3
 }
 
 function canManageGroupAvatar(

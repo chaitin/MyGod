@@ -539,6 +539,9 @@ function TopicDrawerContent({
                     : undefined
                 }
                 reactions={sourceReactionSnapshot?.reactions}
+                showChoiceResponseCounts={
+                  conversation.topic?.parentConversationType === "group"
+                }
                 sourceChoice={sourceChoiceSnapshot?.choice}
                 sourceChoiceStatus={sourceChoiceSnapshot?.status}
                 sourceMessage={detail?.sourceMessage}

@@ -23,10 +23,8 @@ describe("MessageBubble choice messages", () => {
       screen.getByText("请选择项目").closest('[data-slot="choice-message"]')
     ).toHaveClass("w-120", "max-w-full")
     expect(screen.queryByText("3 人已回答")).not.toBeInTheDocument()
-    expect(screen.getByText("2").closest('[data-slot="badge"]')).toHaveClass(
-      "bg-background/70"
-    )
-    expect(screen.getByText("1").closest('[data-slot="badge"]')).not.toBeNull()
+    expect(screen.queryByText("2")).not.toBeInTheDocument()
+    expect(screen.queryByText("1")).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "提交" })).toHaveClass("w-full")
     expect(screen.getByRole("button", { name: "提交" })).toHaveAttribute(
       "data-variant",
@@ -65,8 +63,9 @@ describe("MessageBubble choice messages", () => {
     expect(screen.queryByText("4 人已回答")).not.toBeInTheDocument()
   })
 
-  it("matches reaction chip backgrounds for choices from the current user", () => {
+  it("shows response counts in group conversations", () => {
     renderChoice({
+      conversationOverrides: { type: "group" },
       messageOverrides: { role: "me" },
       onRespondToChoice: vi.fn(),
     })
@@ -75,12 +74,66 @@ describe("MessageBubble choice messages", () => {
       "bg-background/70"
     )
   })
+
+  it.each(["direct", "app"] as const)(
+    "hides response counts in %s conversations",
+    (type) => {
+      renderChoice({
+        conversationOverrides: { type },
+        onRespondToChoice: vi.fn(),
+      })
+
+      expect(screen.queryByText("2")).not.toBeInTheDocument()
+      expect(screen.queryByText("1")).not.toBeInTheDocument()
+    }
+  )
+
+  it.each([
+    ["direct", false],
+    ["app", false],
+    ["group", true],
+  ] as const)(
+    "%s parent conversation controls topic response counts",
+    (parentConversationType, showsCounts) => {
+      renderChoice({
+        conversationOverrides: {
+          type: "topic",
+          topic: {
+            archived: false,
+            parentConversationId: "parent-1",
+            parentConversationName: "父会话",
+            parentConversationType,
+            participating: true,
+            sourceMessageId: "source-1",
+            sourceMessageSeq: 1,
+            sourceSender: {
+              avatar: "",
+              id: "user-2",
+              name: "Bob",
+              type: "user",
+            },
+          },
+        },
+        onRespondToChoice: vi.fn(),
+      })
+
+      if (showsCounts) {
+        expect(screen.getByText("2")).toBeInTheDocument()
+        expect(screen.getByText("1")).toBeInTheDocument()
+      } else {
+        expect(screen.queryByText("2")).not.toBeInTheDocument()
+        expect(screen.queryByText("1")).not.toBeInTheDocument()
+      }
+    }
+  )
 })
 
 function renderChoice({
+  conversationOverrides,
   messageOverrides,
   onRespondToChoice,
 }: {
+  conversationOverrides?: Partial<ClientConversation>
   messageOverrides?: Partial<ConversationPanelMessage>
   onRespondToChoice: (
     message: ConversationPanelMessage,
@@ -126,6 +179,7 @@ function renderChoice({
     id: "conversation-1",
     name: "茉莉",
     type: "app",
+    ...conversationOverrides,
   } as ClientConversation
   return render(
     <MessageBubble

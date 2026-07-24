@@ -20,6 +20,7 @@ import {
   imageMessageMaxBytes,
   isAcceptedImageMessageFile,
 } from "@/lib/image-message"
+import { getFileMessageUploadError } from "@/lib/file-message"
 import type { ConversationDraftMention } from "@/lib/conversation-drafts"
 import type { VoiceMessageRecording } from "@/lib/voice-message"
 import {
@@ -52,8 +53,6 @@ import type {
   ConversationPanelMentionTarget,
   ConversationPanelReplyTarget,
 } from "@/lib/conversation-panel-types"
-
-const maxFileMessageUploadBytes = 20 * 1024 * 1024
 
 export const ConversationPanelComposer = React.forwardRef<
   ConversationPanelComposerHandle,
@@ -425,10 +424,12 @@ export const ConversationPanelComposer = React.forwardRef<
   }
 
   function prepareSelectedFile(file: File) {
-    if (file.size > maxFileMessageUploadBytes) {
+    const validationError = getFileMessageUploadError(file)
+
+    if (validationError) {
       setSelectedFile(null)
       setFileDialogOpen(false)
-      toast.error("文件大于 20MB，无法上传")
+      toast.error(validationError)
       return
     }
 

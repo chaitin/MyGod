@@ -412,6 +412,14 @@ func TestDefaultSystemPromptDescribesBuiltinToolUsage(t *testing.T) {
 		"64KiB",
 		"目标不明确",
 		"先追问",
+		"应用发现是能力不足时的兜底",
+		"必须先调用 contacts.search_apps",
+		"不得推荐茉莉自身",
+		"优先推荐当前在线的应用",
+		"conversations.reply_entity_card 把应用名片发到当前会话",
+		"最多推荐 3 个最相关的应用",
+		"不要自动创建应用会话",
+		"不要虚构应用或能力",
 	} {
 		if !strings.Contains(DefaultSystemPrompt, snippet) {
 			t.Fatalf("DefaultSystemPrompt = %q, want to contain %q", DefaultSystemPrompt, snippet)

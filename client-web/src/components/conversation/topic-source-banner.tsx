@@ -43,6 +43,7 @@ type TopicSourceBannerProps = {
   reactions?: ClientMessageReaction[]
   selected?: boolean
   selectionMode?: boolean
+  showChoiceResponseCounts?: boolean
   sourceMessage?: ClientTopicSourceMessage
   sourceChoice?: ClientMessageChoiceState | null
   sourceChoiceStatus?: "active" | "deleted" | "revoked"
@@ -62,6 +63,7 @@ export function TopicSourceBanner({
   reactions = [],
   selected = false,
   selectionMode = false,
+  showChoiceResponseCounts = false,
   sourceMessage,
   sourceChoice,
   sourceChoiceStatus,
@@ -181,6 +183,7 @@ export function TopicSourceBanner({
             }
             messageId={loadedSource.id}
             onRespond={onRespondToChoice}
+            showResponseCounts={showChoiceResponseCounts}
           />
         )
       ) : (

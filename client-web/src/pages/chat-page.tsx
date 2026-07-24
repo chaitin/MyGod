@@ -607,6 +607,9 @@ export function ChatPage() {
             visibleMessageSelection.selectedMessageIds.has(activeTopicSource.id)
           )}
           selectionMode={visibleMessageSelection.active}
+          showChoiceResponseCounts={
+            activeConversation.topic?.parentConversationType === "group"
+          }
           sourceMessage={activeTopicSource ?? undefined}
         />
       ) : undefined,

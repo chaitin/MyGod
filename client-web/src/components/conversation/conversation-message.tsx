@@ -147,6 +147,9 @@ export const MessageBubble = React.memo(function MessageBubble({
     (conversation.type === "group" ||
       conversation.topic?.parentConversationType === "group") &&
     message.mentionTarget !== null
+  const showChoiceResponseCounts =
+    conversation.type === "group" ||
+    conversation.topic?.parentConversationType === "group"
   const unavailable =
     message.body.type === "revoked" || message.body.type === "unsupported"
   const canAddReaction = canReply && message.body.type !== "revoked"
@@ -257,6 +260,7 @@ export const MessageBubble = React.memo(function MessageBubble({
               ? (optionIds) => onRespondToChoice(message, optionIds)
               : undefined
           }
+          showResponseCounts={showChoiceResponseCounts}
         />
       ) : (
         <MessageBodyRenderer
@@ -699,6 +703,7 @@ export function MessageChoiceBody({
   mentionLabelResolver,
   messageId,
   onRespond,
+  showResponseCounts,
 }: {
   align: "start" | "end"
   body: Extract<ClientMessage["body"], { type: "choice" }>
@@ -708,6 +713,7 @@ export function MessageChoiceBody({
   mentionLabelResolver: MentionLabelResolver
   messageId: string
   onRespond?: (optionIds: string[]) => Promise<void>
+  showResponseCounts: boolean
 }) {
   const answered = Boolean(choice?.myOptionIds.length)
   const [draftOptionIds, setDraftOptionIds] = React.useState<string[]>([])
@@ -785,6 +791,7 @@ export function MessageChoiceBody({
               key={option.id}
               label={option.label}
               selected={selectedOptionIds.includes(option.id)}
+              showResponseCount={showResponseCounts}
             />
           ))}
         </RadioGroup>
@@ -809,6 +816,7 @@ export function MessageChoiceBody({
               key={option.id}
               label={option.label}
               selected={selectedOptionIds.includes(option.id)}
+              showResponseCount={showResponseCounts}
             />
           ))}
         </div>
@@ -840,6 +848,7 @@ function ChoiceOptionRow({
   htmlFor,
   label,
   selected,
+  showResponseCount,
 }: {
   align: "start" | "end"
   control: React.ReactNode
@@ -847,6 +856,7 @@ function ChoiceOptionRow({
   htmlFor: string
   label: string
   selected: boolean
+  showResponseCount: boolean
 }) {
   return (
     <label
@@ -858,15 +868,17 @@ function ChoiceOptionRow({
     >
       {control}
       <span className="min-w-0 flex-1 wrap-break-word">{label}</span>
-      <Badge
-        className={cn(
-          "shrink-0 tabular-nums",
-          messageReactionChipToneClassName[align]
-        )}
-        variant="secondary"
-      >
-        {count}
-      </Badge>
+      {showResponseCount && (
+        <Badge
+          className={cn(
+            "shrink-0 tabular-nums",
+            messageReactionChipToneClassName[align]
+          )}
+          variant="secondary"
+        >
+          {count}
+        </Badge>
+      )}
     </label>
   )
 }
