@@ -10390,6 +10390,64 @@ func TestRemoveGroupConversationMemberCanRemoveApp(t *testing.T) {
 	}
 }
 
+func TestAddGroupConversationMembersRejectsMemberApplicationInviteAtomically(t *testing.T) {
+	server, db := newTestRouter(t)
+	defer server.Close()
+
+	now := time.Date(2026, 7, 24, 1, 30, 0, 0, time.UTC)
+	alice := insertTestUser(t, db, "app-invite-owner@example.com", "Alice", store.UserStatusActive, now)
+	bob := insertTestUser(t, db, "app-invite-member@example.com", "Bob", store.UserStatusActive, now)
+	carol := insertTestUser(t, db, "app-invite-candidate@example.com", "Carol", store.UserStatusActive, now)
+	app := insertTestApp(t, db, store.App{
+		ID: uuid.NewString(), Name: "Report App", CreatorUserID: &alice.ID,
+		Enabled: true, Visibility: store.AppVisibilityPublic, ConnectionSecret: "report-app-secret",
+		CreatedAt: now, UpdatedAt: now,
+	})
+	conversation := insertTestConversation(t, db, testConversationInput{
+		createdByUserID: alice.ID, kind: store.ConversationKindGroup,
+		lastMessageSeq: 2, lastMessageSummary: "旧消息", memberIDs: []string{alice.ID, bob.ID},
+		name: "应用邀请权限群", now: now.Add(-time.Hour),
+	})
+	bobCookie := loginAsUser(t, server, bob.Email)
+
+	resp, body := postJSON(t, server, "/api/client/conversations/"+conversation.ID+"/members", map[string]any{
+		"member_ids": []string{carol.ID},
+		"app_ids":    []string{app.ID},
+	}, bobCookie)
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403, body = %#v", resp.StatusCode, body)
+	}
+	requireError(t, body, "forbidden")
+	if message := body["error"].(map[string]any)["message"]; message != "只有群主或管理员可以邀请应用加入群聊" {
+		t.Fatalf("error.message = %v", message)
+	}
+	for _, candidate := range []struct {
+		memberType string
+		memberID   string
+	}{{store.ConversationMemberTypeUser, carol.ID}, {store.ConversationMemberTypeApp, app.ID}} {
+		var count int64
+		if err := db.Model(&store.ConversationMember{}).
+			Where("conversation_id = ? AND member_type = ? AND member_id = ?", conversation.ID, candidate.memberType, candidate.memberID).
+			Count(&count).Error; err != nil || count != 0 {
+			t.Fatalf("denied candidate %s/%s count = %d, err = %v", candidate.memberType, candidate.memberID, count, err)
+		}
+	}
+	var unchanged store.Conversation
+	if err := db.First(&unchanged, "id = ?", conversation.ID).Error; err != nil {
+		t.Fatalf("load unchanged group: %v", err)
+	}
+	if unchanged.LastMessageSeq != 2 {
+		t.Fatalf("last message seq = %d, want 2", unchanged.LastMessageSeq)
+	}
+
+	userResp, userBody := postJSON(t, server, "/api/client/conversations/"+conversation.ID+"/members", map[string]any{
+		"member_ids": []string{carol.ID},
+	}, bobCookie)
+	if userResp.StatusCode != http.StatusOK {
+		t.Fatalf("ordinary member user invite status = %d, want 200, body = %#v", userResp.StatusCode, userBody)
+	}
+}
+
 func TestAddGroupConversationMembersNoopsWhenMembersAlreadyExist(t *testing.T) {
 	server, db := newTestRouter(t)
 	defer server.Close()

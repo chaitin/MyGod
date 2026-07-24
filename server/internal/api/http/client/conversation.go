@@ -625,7 +625,7 @@ func (a *ConversationAPI) createGroup(c echo.Context) error {
 // addMembers godoc
 //
 // @Summary 添加群聊成员
-// @Description 普通用户向自己参与的 active 群聊添加成员，并生成一条系统邀请消息。
+// @Description 普通用户向自己参与的 active 群聊添加用户成员；只有群主或管理员可以添加应用成员。成功后生成一条系统邀请消息。
 // @Tags 客户端会话
 // @Accept json
 // @Produce json

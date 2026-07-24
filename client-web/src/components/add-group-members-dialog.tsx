@@ -61,6 +61,12 @@ export function AddGroupMembersDialog({
   const [open, setOpen] = React.useState(false)
   const [tab, setTab] = React.useState<"users" | "apps">("users")
   const [submitting, setSubmitting] = React.useState(false)
+  const currentMember = (conversation.members ?? []).find(
+    (member) => member.type === "user" && member.id === me.id
+  )
+  const canInviteApps =
+    currentMember?.role === "owner" || currentMember?.role === "admin"
+  const activeTab = canInviteApps ? tab : "users"
   const existingMemberKeys = React.useMemo(
     () =>
       new Set(
@@ -122,13 +128,15 @@ export function AddGroupMembersDialog({
   )
   const newAppIds = React.useMemo(
     () =>
-      appCandidates
-        .map((candidate) => candidate.id)
-        .filter((appId) => {
-          const key = memberCandidateKey("app", appId)
-          return selectedMemberKeys.has(key) && !existingMemberKeys.has(key)
-        }),
-    [appCandidates, existingMemberKeys, selectedMemberKeys]
+      canInviteApps
+        ? appCandidates
+            .map((candidate) => candidate.id)
+            .filter((appId) => {
+              const key = memberCandidateKey("app", appId)
+              return selectedMemberKeys.has(key) && !existingMemberKeys.has(key)
+            })
+        : [],
+    [appCandidates, canInviteApps, existingMemberKeys, selectedMemberKeys]
   )
   const newMemberCount = newMemberIds.length + newAppIds.length
 
@@ -220,21 +228,28 @@ export function AddGroupMembersDialog({
         <form className="grid gap-4" onSubmit={handleSubmit}>
           <Tabs
             onValueChange={(value) =>
-              setTab(value === "apps" ? "apps" : "users")
+              setTab(value === "apps" && canInviteApps ? "apps" : "users")
             }
-            value={tab}
+            value={activeTab}
           >
-            <TabsList className="grid w-full grid-cols-2">
+            <TabsList
+              className={cn(
+                "grid w-full",
+                canInviteApps ? "grid-cols-2" : "grid-cols-1"
+              )}
+            >
               <TabsTrigger disabled={submitting} value="users">
                 成员
               </TabsTrigger>
-              <TabsTrigger disabled={submitting} value="apps">
-                应用
-              </TabsTrigger>
+              {canInviteApps && (
+                <TabsTrigger disabled={submitting} value="apps">
+                  应用
+                </TabsTrigger>
+              )}
             </TabsList>
             <div className="grid gap-2">
               <Label htmlFor="add-group-member-search">
-                {tab === "apps" ? "选择应用" : "选择成员"}
+                {activeTab === "apps" ? "选择应用" : "选择成员"}
               </Label>
               <div className="relative">
                 <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -243,7 +258,9 @@ export function AddGroupMembersDialog({
                   disabled={submitting}
                   id="add-group-member-search"
                   onChange={(event) => setKeyword(event.target.value)}
-                  placeholder={tab === "apps" ? "搜索应用" : "搜索联系人"}
+                  placeholder={
+                    activeTab === "apps" ? "搜索应用" : "搜索联系人"
+                  }
                   type="search"
                   value={keyword}
                 />

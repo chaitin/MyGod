@@ -3755,7 +3755,7 @@ paths:
     post:
       consumes:
       - application/json
-      description: 普通用户向自己参与的 active 群聊添加成员，并生成一条系统邀请消息。
+      description: 普通用户向自己参与的 active 群聊添加用户成员；只有群主或管理员可以添加应用成员。成功后生成一条系统邀请消息。
       parameters:
       - description: 会话 ID
         in: path

@@ -36,6 +36,8 @@ func (s *Service) AddMembers(ctx context.Context, cmd AddMembersCommand) (Conver
 			return ConversationMutationResult{}, notFound("会话不存在", err)
 		case errors.Is(err, ErrAccessDenied):
 			return ConversationMutationResult{}, forbidden("无权访问会话", err)
+		case errors.Is(err, ErrAppInviteForbidden):
+			return ConversationMutationResult{}, forbidden("只有群主或管理员可以邀请应用加入群聊", err)
 		case errors.Is(err, ErrNotGroup):
 			return ConversationMutationResult{}, invalidRequest("只能向群聊添加成员", err)
 		case errors.Is(err, ErrMemberCap):
@@ -79,6 +81,9 @@ func (s *Service) addMembers(db *gorm.DB, actor store.User, conversationID strin
 				return ErrAccessDenied
 			}
 			return err
+		}
+		if len(appIDs) > 0 && !canManage(currentMember.Role) {
+			return ErrAppInviteForbidden
 		}
 		var existing []store.ConversationMember
 		if err := tx.Where("conversation_id = ?", conversationID).Find(&existing).Error; err != nil {

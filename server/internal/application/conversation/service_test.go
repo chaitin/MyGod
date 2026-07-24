@@ -247,6 +247,87 @@ func TestServiceUsesInvitingUsersAppAccessForGroupMembers(t *testing.T) {
 	}
 }
 
+func TestServiceOnlyGroupManagersCanInviteApplications(t *testing.T) {
+	db := openConversationTestDB(t)
+	now := time.Date(2026, 7, 24, 1, 0, 0, 0, time.UTC)
+	owner := insertConversationTestUser(t, db, "invite-owner@example.com", "Owner", now)
+	admin := insertConversationTestUser(t, db, "invite-admin@example.com", "Admin", now)
+	member := insertConversationTestUser(t, db, "invite-member@example.com", "Member", now)
+	userInvitee := insertConversationTestUser(t, db, "user-invitee@example.com", "User Invitee", now)
+	mixedInvitee := insertConversationTestUser(t, db, "mixed-invitee@example.com", "Mixed Invitee", now)
+	ownerID := owner.ID
+	ownerApp := store.App{
+		ID: uuid.NewString(), Name: "Owner App", CreatorUserID: &ownerID, Enabled: true,
+		Visibility: store.AppVisibilityPublic, ConnectionSecret: "owner-app", CreatedAt: now, UpdatedAt: now,
+	}
+	adminApp := store.App{
+		ID: uuid.NewString(), Name: "Admin App", CreatorUserID: &ownerID, Enabled: true,
+		Visibility: store.AppVisibilityPublic, ConnectionSecret: "admin-app", CreatedAt: now, UpdatedAt: now,
+	}
+	deniedApp := store.App{
+		ID: uuid.NewString(), Name: "Denied App", CreatorUserID: &ownerID, Enabled: true,
+		Visibility: store.AppVisibilityPublic, ConnectionSecret: "denied-app", CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Create(&[]store.App{ownerApp, adminApp, deniedApp}).Error; err != nil {
+		t.Fatalf("create apps: %v", err)
+	}
+	service := NewService(Dependencies{DB: db, Now: func() time.Time { return now }})
+	created, err := service.CreateGroup(context.Background(), CreateGroupCommand{
+		Actor: actorFromTestUser(owner), Name: "Application invite permissions",
+		MemberIDs: []string{admin.ID, member.ID},
+	})
+	if err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := db.Model(&store.ConversationMember{}).
+		Where("conversation_id = ? AND member_type = ? AND member_id = ?", created.Conversation.ID, store.ConversationMemberTypeUser, admin.ID).
+		Update("role", store.ConversationMemberRoleAdmin).Error; err != nil {
+		t.Fatalf("promote admin: %v", err)
+	}
+
+	if _, err := service.AddMembers(context.Background(), AddMembersCommand{
+		Actor: actorFromTestUser(member), ConversationID: created.Conversation.ID, MemberIDs: []string{userInvitee.ID},
+	}); err != nil {
+		t.Fatalf("ordinary member adds user: %v", err)
+	}
+
+	if _, err := service.AddMembers(context.Background(), AddMembersCommand{
+		Actor: actorFromTestUser(member), ConversationID: created.Conversation.ID,
+		MemberIDs: []string{mixedInvitee.ID}, AppIDs: []string{deniedApp.ID},
+	}); ErrorCodeOf(err) != CodeForbidden || ErrorMessage(err) != "只有群主或管理员可以邀请应用加入群聊" {
+		t.Fatalf("ordinary member mixed invite error = %v", err)
+	}
+	for _, candidate := range []struct {
+		memberType string
+		memberID   string
+	}{{store.ConversationMemberTypeUser, mixedInvitee.ID}, {store.ConversationMemberTypeApp, deniedApp.ID}} {
+		var count int64
+		if err := db.Model(&store.ConversationMember{}).
+			Where("conversation_id = ? AND member_type = ? AND member_id = ?", created.Conversation.ID, candidate.memberType, candidate.memberID).
+			Count(&count).Error; err != nil || count != 0 {
+			t.Fatalf("denied candidate %s/%s count = %d, err = %v", candidate.memberType, candidate.memberID, count, err)
+		}
+	}
+	var afterDenied store.Conversation
+	if err := db.First(&afterDenied, "id = ?", created.Conversation.ID).Error; err != nil {
+		t.Fatalf("load group after denied invite: %v", err)
+	}
+	if afterDenied.LastMessageSeq != 2 {
+		t.Fatalf("last message seq after denied invite = %d, want 2", afterDenied.LastMessageSeq)
+	}
+
+	if _, err := service.AddMembers(context.Background(), AddMembersCommand{
+		Actor: actorFromTestUser(owner), ConversationID: created.Conversation.ID, AppIDs: []string{ownerApp.ID},
+	}); err != nil {
+		t.Fatalf("owner adds app: %v", err)
+	}
+	if _, err := service.AddMembers(context.Background(), AddMembersCommand{
+		Actor: actorFromTestUser(admin), ConversationID: created.Conversation.ID, AppIDs: []string{adminApp.ID},
+	}); err != nil {
+		t.Fatalf("admin adds app: %v", err)
+	}
+}
+
 type conversationNotificationRecorder struct {
 	db                  *gorm.DB
 	messages            int

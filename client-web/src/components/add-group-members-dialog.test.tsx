@@ -34,6 +34,34 @@ describe("AddGroupMembersDialog", () => {
       ["app-1"]
     )
   })
+
+  it("blocks ordinary members from inviting apps but still lets them invite users", async () => {
+    const user = userEvent.setup()
+    const conversation = createGroupConversation("member")
+    const addGroupConversationMembers = vi.fn().mockResolvedValue(conversation)
+
+    render(
+      <ClientDataContext.Provider
+        value={createClientDataContextValue({ addGroupConversationMembers })}
+      >
+        <AddGroupMembersDialog conversation={conversation} />
+      </ClientDataContext.Provider>
+    )
+
+    await user.click(screen.getByRole("button", { name: "添加成员" }))
+    expect(
+      screen.queryByRole("tab", { name: "应用" })
+    ).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole("checkbox", { name: "Bob" }))
+    await user.click(screen.getByRole("button", { name: "添加" }))
+
+    expect(addGroupConversationMembers).toHaveBeenCalledWith(
+      "conversation-group-1",
+      ["user-2"],
+      []
+    )
+  })
 })
 
 function createClientDataContextValue(
@@ -175,7 +203,9 @@ function createPersonalProject(me: ClientUser) {
   }
 }
 
-function createGroupConversation(): ClientConversation {
+function createGroupConversation(
+  currentUserRole: "owner" | "admin" | "member" = "owner"
+): ClientConversation {
   return {
     avatar: "",
     createdAt: "2026-07-09T00:00:00Z",
@@ -197,7 +227,7 @@ function createGroupConversation(): ClientConversation {
         name: "Alice",
         nickname: "",
         phone: "",
-        role: "owner",
+        role: currentUserRole,
         type: "user",
       },
     ],

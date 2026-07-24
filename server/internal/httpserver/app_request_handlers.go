@@ -2081,6 +2081,9 @@ func mapAppGroupConversationError(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return newAppRequestFailure("not_found", "会话不存在")
 	}
+	if errors.Is(err, conversationapp.ErrAppInviteForbidden) {
+		return newAppRequestFailure("forbidden", "只有群主或管理员可以邀请应用加入群聊")
+	}
 	if errors.Is(err, errConversationAccessDenied) || errors.Is(err, conversationapp.ErrAccessDenied) {
 		return newAppRequestFailure("forbidden", "无权访问会话")
 	}
